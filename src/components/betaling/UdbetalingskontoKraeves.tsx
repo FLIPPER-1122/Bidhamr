@@ -65,7 +65,7 @@ export default function UdbetalingskontoKraeves({
   // og vej tilbage til Firma oversigt.
   if (erFirma) {
     return (
-      <div className="space-y-4 rounded-[14px] border-2 border-advarsel-kant bg-advarsel-bg p-5 sm:p-6">
+      <div className="space-y-4 rounded-none border-2 border-advarsel-kant bg-advarsel-bg p-5 sm:p-6">
         <h2 className="font-sans text-[22px] font-semibold text-tekst">{FIRMA_UDBETALINGSKONTO.titel}</h2>
         <p className={E_TEKST}>{FIRMA_UDBETALINGSKONTO.tekst}</p>
         {fejl && <FejlBoks tekst={fejl} />}
@@ -96,7 +96,7 @@ export default function UdbetalingskontoKraeves({
 
   return (
     // Kun udseende er ændret her (10. okt. 2026) - flowet er det samme.
-    <div className="rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8">
+    <div className="rounded-none border border-kant bg-white p-5 shadow-kort sm:p-8">
       <span className="grid h-14 w-14 place-items-center rounded-full bg-groen-lys text-groen-mork">
         <Ikon navn="kort" className="h-6 w-6" />
       </span>

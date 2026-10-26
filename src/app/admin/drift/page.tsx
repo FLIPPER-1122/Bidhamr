@@ -77,7 +77,7 @@ function Badge({ farve, children }: { farve: "groen" | "roed" | "gul" | "graa"; 
     graa: "bg-neutral-100 text-tekst",
   }[farve];
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${cls}`}>
+    <span className={`inline-flex items-center rounded-none px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${cls}`}>
       {children}
     </span>
   );
@@ -85,7 +85,7 @@ function Badge({ farve, children }: { farve: "groen" | "roed" | "gul" | "graa"; 
 
 function Kort({ titel, children, hoejre }: { titel: string; children: React.ReactNode; hoejre?: React.ReactNode }) {
   return (
-    <section className="rounded-[14px] border border-admin-kant bg-white">
+    <section className="rounded-none border border-admin-kant bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 px-4 py-3 sm:px-5">
         <h2 className="text-base font-semibold text-tekst">{titel}</h2>
         {hoejre}
@@ -702,7 +702,7 @@ export default async function AdminDrift({
                         <Badge farve={type.alvor === "roed" ? "roed" : "gul"}>
                           {type.alvor === "roed" ? "Skal ses på nu" : "Hold øje"}
                         </Badge>
-                        <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-xs font-bold text-white">
+                        <span className="rounded-none bg-neutral-900 px-2 py-0.5 text-xs font-bold text-white">
                           {g.antal}×
                         </span>
                         <p className="min-w-0 flex-1 break-words text-sm font-semibold text-tekst">{type.titel}</p>

@@ -10,7 +10,7 @@ import { ADMIN_ERHVERV, ADMIN_ERHVERV_EKSTRA } from "@/lib/tekster/erhverv";
 export default function HenvendelseKort({ h }: { h: ErhvervHenvendelse }) {
   return (
     <article
-      className={`rounded-[14px] border bg-white p-4 sm:p-5 ${h.status === "ny" ? "border-advarsel-kant" : "border-admin-kant"}`}
+      className={`rounded-none border bg-white p-4 sm:p-5 ${h.status === "ny" ? "border-advarsel-kant" : "border-admin-kant"}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">

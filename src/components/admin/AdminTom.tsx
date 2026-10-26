@@ -17,7 +17,7 @@ export default function AdminTom({
 }) {
   const groen = ok && !nulstilHref;
   return (
-    <div className="flex flex-col items-center gap-3 rounded-[14px] border border-kant bg-white px-5 py-10 text-center">
+    <div className="flex flex-col items-center gap-3 rounded-none border border-kant bg-white px-5 py-10 text-center">
       <span
         aria-hidden="true"
         className={`grid h-12 w-12 place-items-center rounded-full ${groen ? "bg-groen-lys text-groen-mork" : "bg-admin-graa text-tekst-daempet"}`}

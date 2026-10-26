@@ -31,9 +31,9 @@ export default async function ErhvervFirmaerSide() {
         </p>
       )}
       {!fejl && firmaer.length === 0 ? (
-        <p className="rounded-[14px] border border-admin-kant bg-white p-8 text-center text-tekst-svag">{A.firmaer.tom}</p>
+        <p className="rounded-none border border-admin-kant bg-white p-8 text-center text-tekst-svag">{A.firmaer.tom}</p>
       ) : (
-        <ul className="divide-y divide-admin-kant overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+        <ul className="divide-y divide-admin-kant overflow-hidden rounded-none border border-admin-kant bg-white">
           {firmaer.map((f) => (
             <li key={f.id}>
               <Link
@@ -44,19 +44,19 @@ export default async function ErhvervFirmaerSide() {
                   <p className="flex flex-wrap items-center gap-2 font-semibold text-tekst">
                     <span className="break-words">{f.firmanavn}</span>
                     <span
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      className={`rounded-none px-2.5 py-0.5 text-xs font-semibold ${
                         f.abonnement_status === "aktiv" ? "bg-succes-bg text-succes-tekst" : "bg-advarsel-bg text-advarsel-tekst"
                       }`}
                     >
                       {ABONNEMENT_STATUS_NAVN[f.abonnement_status] ?? f.abonnement_status}
                     </span>
                     {f.afventende_opgradering && (
-                      <span className="rounded-full bg-info-bg px-2.5 py-0.5 text-xs font-semibold text-info-tekst">
+                      <span className="rounded-none bg-info-bg px-2.5 py-0.5 text-xs font-semibold text-info-tekst">
                         {A.firmaer.abonnementAfventerBetaling}
                       </span>
                     )}
                     {!f.har_logget_ind && (
-                      <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-tekst">
+                      <span className="rounded-none bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-tekst">
                         {X.ikkeLoggetInd}
                       </span>
                     )}

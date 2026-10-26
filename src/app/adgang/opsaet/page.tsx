@@ -16,7 +16,7 @@ export default async function AdminOpsaet() {
   if (status.aktiv) redirect("/adgang/kode");
   if (!status.tilmelding_aaben) {
     return (
-      <div className="rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8">
+      <div className="rounded-none border border-kant bg-white p-5 shadow-kort sm:p-8">
         <h1 className="text-[26px] leading-tight sm:text-[30px]">Tilmeldingen er lukket</h1>
         <LukketBesked />
         <div className="mt-4 text-center">

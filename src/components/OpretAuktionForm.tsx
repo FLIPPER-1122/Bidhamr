@@ -485,7 +485,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           Sådan ser din auktion ud. Tjek, at alt er rigtigt – når der er budt, kan den ikke ændres.
         </div>
 
-        <article className="overflow-hidden rounded-[14px] border border-kant bg-white">
+        <article className="overflow-hidden rounded-none border border-kant bg-white">
           {forsideUrl && (
             <div className="aspect-[4/3] bg-skelet">
               {/* eslint-disable-next-line @next/next/no-img-element -- lokal blob-URL */}
@@ -510,10 +510,10 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
             <div>
               <h2 className="break-words text-xl font-semibold text-tekst">{titel.trim()}</h2>
               <div className="mt-2 flex flex-wrap gap-2">
-                <span className="rounded-full bg-groen-lys px-3 py-1.5 text-[13px] font-medium text-groen-mork">
+                <span className="rounded-none bg-groen-lys px-3 py-1.5 text-[13px] font-medium text-groen-mork">
                   {standNavn(stand)}
                 </span>
-                <span className="rounded-full bg-groen-lys px-3 py-1.5 text-[13px] font-medium text-groen-mork">
+                <span className="rounded-none bg-groen-lys px-3 py-1.5 text-[13px] font-medium text-groen-mork">
                   {kategori}
                 </span>
               </div>
@@ -808,7 +808,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
             {VARIGHEDER.map((v) => (
               <label
                 key={v.dage}
-                className={`inline-flex min-h-11 cursor-pointer items-center rounded-full border px-4 text-sm font-medium transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-groen ${
+                className={`inline-flex min-h-11 cursor-pointer items-center rounded-none border px-4 text-sm font-medium transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-groen ${
                   varighed === v.dage ? "border-groen bg-groen text-white" : "border-kant-staerk text-tekst hover:bg-groen-lys"
                 }`}
               >
@@ -894,7 +894,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
       </Sektion>
       )}
 
-      <div className="rounded-[14px] border border-kant bg-white p-4 sm:p-6">
+      <div className="rounded-none border border-kant bg-white p-4 sm:p-6">
         <Afkrydsning
           id={FELT_ID.bekraeft}
           checked={bekraeftet}

@@ -160,7 +160,7 @@ export function AnmeldelseGruppeKort({
   return (
     <li
       aria-labelledby={titelId}
-      className={`rounded-[14px] border bg-white p-4 sm:p-5 ${g.videresendt ? "border-purple-300" : "border-kant"}`}
+      className={`rounded-none border bg-white p-4 sm:p-5 ${g.videresendt ? "border-purple-300" : "border-kant"}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
@@ -388,7 +388,7 @@ export function KlageKort({
   const ramt = afg ? afg.bruger_id : (anm?.anmeldt_bruger_id ?? null);
 
   return (
-    <Rod aria-labelledby={titelId} className="rounded-[14px] border border-kant bg-white p-4 sm:p-5">
+    <Rod aria-labelledby={titelId} className="rounded-none border border-kant bg-white p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 id={titelId} className="text-[15px] font-semibold text-neutral-900">

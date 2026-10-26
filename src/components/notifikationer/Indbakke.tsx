@@ -65,7 +65,7 @@ export default function Indbakke({
 
   if (liste.length === 0) {
     return (
-      <div className="mt-6 flex flex-col items-center rounded-[14px] border border-kant bg-white px-4 py-12 text-center">
+      <div className="mt-6 flex flex-col items-center rounded-none border border-kant bg-white px-4 py-12 text-center">
         <span className="grid h-14 w-14 place-items-center rounded-full bg-groen-lys text-groen-mork" aria-hidden="true">
           <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={1.75}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M10 5a2 2 0 1 1 4 0 7 7 0 0 1 4 6v3a4 4 0 0 0 2 3H4a4 4 0 0 0 2-3v-3a7 7 0 0 1 4-6M9 17v1a3 3 0 0 0 6 0v-1" />
@@ -103,7 +103,7 @@ export default function Indbakke({
         </p>
       )}
 
-      <ul className="mt-4 flex flex-col gap-1 rounded-[14px] border border-kant bg-white p-2">
+      <ul className="mt-4 flex flex-col gap-1 rounded-none border border-kant bg-white p-2">
         {liste.map((n) => (
           <li key={n.id}>
             <NotifikationPunkt n={n} vedLaest={vedLaest} />

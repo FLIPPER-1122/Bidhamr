@@ -73,7 +73,7 @@ export default function AnmeldKnap({
             aria-modal="true"
             aria-labelledby={titelId}
             tabIndex={-1}
-            className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[18px] bg-white p-5 shadow-stor outline-none sm:rounded-[14px] sm:p-6"
+            className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-none bg-white p-5 shadow-stor outline-none sm:rounded-none sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id={titelId} className="text-[20px] leading-tight">

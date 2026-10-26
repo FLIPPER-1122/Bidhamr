@@ -137,7 +137,7 @@ function HandelKort({
               ? sagLink(handel.id)
               : `/mine-handler/${handel.id}`
       }
-      className="flex gap-3 rounded-[14px] border border-kant bg-white p-4 shadow-kort transition-[box-shadow,border-color] duration-200 ease-out hover:border-kant-staerk hover:shadow-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:gap-4"
+      className="flex gap-3 rounded-none border border-kant bg-white p-4 shadow-kort transition-[box-shadow,border-color] duration-200 ease-out hover:border-kant-staerk hover:shadow-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:gap-4"
     >
       <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-groen-lys">
         {billede ? (
@@ -172,7 +172,7 @@ function HandelKort({
           <HandelStatusBadge status={handel.status} />
           {sag && (
             <span
-              className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${SAG_MAERKE[sag.status].stil}`}
+              className={`inline-block rounded-none border px-2.5 py-0.5 text-xs font-semibold ${SAG_MAERKE[sag.status].stil}`}
             >
               {SAG_MAERKE[sag.status].tekst}
             </span>
@@ -296,7 +296,7 @@ export default async function MineHandlerListe({
   if (aktiveSvar.error || afsluttedeSvar.error) {
     console.error("Mine handler kunne ikke hentes:", (aktiveSvar.error ?? afsluttedeSvar.error)?.message);
     return (
-      <div role="alert" className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 text-fejl-tekst">
+      <div role="alert" className="rounded-none border border-fejl-kant bg-fejl-bg p-5 text-fejl-tekst">
         <p className="font-semibold">Dine handler kunne ikke hentes lige nu.</p>
         <p className="mt-1 text-sm">Prøv at genindlæse siden om lidt.</p>
       </div>
@@ -336,7 +336,7 @@ export default async function MineHandlerListe({
               <Link
                 key={t.id}
                 href={`/andenchance/${t.id}`}
-                className="flex flex-col gap-3 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst transition-shadow hover:shadow-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 rounded-none border border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst transition-shadow hover:shadow-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen sm:flex-row sm:items-center sm:justify-between"
               >
                 <span className="min-w-0">
                   <span className="block truncate font-semibold">{t.titel}</span>
@@ -365,7 +365,7 @@ export default async function MineHandlerListe({
               Aktive handler ({antalAktive})
             </h2>
             {antalAktive === 0 ? (
-              <p className="mt-3 rounded-[14px] border border-kant bg-white p-6 text-center text-sm text-tekst-svag">
+              <p className="mt-3 rounded-none border border-kant bg-white p-6 text-center text-sm text-tekst-svag">
                 Ingen aktive handler lige nu.
               </p>
             ) : (
@@ -430,12 +430,12 @@ export function MineHandlerSkelet() {
       <div className="h-6 w-48 animate-pulse rounded bg-skelet" />
       <ul className="mt-4 space-y-2">
         {Array.from({ length: 4 }, (_, i) => (
-          <li key={i} className="flex gap-3 rounded-[14px] border border-kant bg-white p-4 sm:gap-4">
+          <li key={i} className="flex gap-3 rounded-none border border-kant bg-white p-4 sm:gap-4">
             <div className="h-16 w-16 shrink-0 animate-pulse rounded-lg bg-skelet" />
             <div className="min-w-0 flex-1 space-y-2">
               <div className="h-4 w-3/5 animate-pulse rounded bg-skelet" />
               <div className="h-3 w-2/5 animate-pulse rounded bg-skelet" />
-              <div className="h-5 w-28 animate-pulse rounded-full bg-skelet" />
+              <div className="h-5 w-28 animate-pulse rounded-none bg-skelet" />
             </div>
           </li>
         ))}

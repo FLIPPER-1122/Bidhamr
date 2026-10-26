@@ -92,7 +92,7 @@ export default function LoginForm({
   return (
     <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
       <div className="w-full max-w-sm">
-        <div className="rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8">
+        <div className="rounded-none border border-kant bg-white p-5 shadow-kort sm:p-8">
           <h1 className="text-[26px] leading-tight sm:text-[32px]">Log ind</h1>
           <p className="mt-1 text-sm text-tekst-svag">
             {velkommenFirma ? ERHVERV_LOGIN.undertitelVelkommen : "Velkommen tilbage til BidHamr."}

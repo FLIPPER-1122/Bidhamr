@@ -43,7 +43,7 @@ export default async function FirmaSalgSide() {
             {salg.map((s) => {
               const st = salgStatus(s);
               return (
-                <li key={s.trade_id} className="rounded-[14px] border-2 border-kant p-4">
+                <li key={s.trade_id} className="rounded-none border-2 border-kant p-4">
                   <div className="flex gap-4">
                     <VareBillede url={s.billede} />
                     <div className="min-w-0 flex-1">

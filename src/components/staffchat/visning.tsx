@@ -35,7 +35,7 @@ export function forkort(tekst: string, n = 90): string {
 export function BidhamrMaerke({ lille = false }: { lille?: boolean }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full bg-groen font-semibold text-white ${
+      className={`inline-flex items-center gap-1 rounded-none bg-groen font-semibold text-white ${
         lille ? "px-2 py-0.5 text-[12px]" : "px-2.5 py-1 text-[13px]"
       }`}
     >
@@ -57,7 +57,7 @@ export function BidhamrMaerke({ lille = false }: { lille?: boolean }) {
 
 export function AfsluttetMaerke() {
   return (
-    <span className="inline-flex items-center rounded-full border border-kant-staerk bg-white px-2 py-0.5 text-[12px] font-semibold text-tekst-daempet">
+    <span className="inline-flex items-center rounded-none border border-kant-staerk bg-white px-2 py-0.5 text-[12px] font-semibold text-tekst-daempet">
       Afsluttet
     </span>
   );

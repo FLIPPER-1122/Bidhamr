@@ -12,7 +12,7 @@ export default function AdminFejl({
   detalje?: string | null;
 }) {
   return (
-    <div role="alert" className="rounded-[14px] border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst sm:px-5">
+    <div role="alert" className="rounded-none border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst sm:px-5">
       {children ?? (
         <p>
           <span className="font-semibold">{hvad ?? "Siden"} kunne ikke hentes.</span> Prøv at genindlæse siden.

@@ -146,8 +146,8 @@ export default function ComingSoonPage() {
           id="top"
           className="mx-auto max-w-[1280px] px-4 pt-6 sm:px-6 lg:px-8"
         >
-          <div className="overflow-hidden rounded-[18px] bg-groen p-6 text-white sm:p-10 lg:p-14">
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-[13px] font-semibold">
+          <div className="overflow-hidden rounded-none bg-groen p-6 text-white sm:p-10 lg:p-14">
+            <span className="inline-flex items-center gap-2 rounded-none border border-white/25 bg-white/15 px-3 py-1.5 text-[13px] font-semibold">
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z" />
               </svg>
@@ -190,7 +190,7 @@ export default function ComingSoonPage() {
                 (punkt) => (
                   <li
                     key={punkt}
-                    className="rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-[13px] font-medium"
+                    className="rounded-none border border-white/25 bg-white/15 px-3 py-1.5 text-[13px] font-medium"
                   >
                     {punkt}
                   </li>
@@ -202,7 +202,7 @@ export default function ComingSoonPage() {
 
         {/* Tryghedsstribe */}
         <section className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-          <div className="grid gap-px overflow-hidden rounded-[14px] bg-groen-lys sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-px overflow-hidden rounded-none bg-groen-lys sm:grid-cols-2 lg:grid-cols-4">
             {TRYGHED.map((t) => (
               <div key={t.titel} className="flex items-start gap-3 p-5">
                 <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-white">
@@ -237,7 +237,7 @@ export default function ComingSoonPage() {
             {TRIN.map((trin) => (
               <li
                 key={trin.num}
-                className="rounded-[14px] border border-kant bg-white p-6 shadow-kort"
+                className="rounded-none border border-kant bg-white p-6 shadow-kort"
               >
                 <span className="grid h-11 w-11 place-items-center rounded-lg bg-groen-lys">
                   <svg viewBox="0 0 24 24" className="h-6 w-6 text-groen-mork" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden>
@@ -284,7 +284,7 @@ export default function ComingSoonPage() {
               ].map((k) => (
                 <article
                   key={k.titel}
-                  className="rounded-[14px] bg-white p-6 shadow-kort"
+                  className="rounded-none bg-white p-6 shadow-kort"
                 >
                   <h3 className="text-[17px] font-semibold lg:text-lg">
                     {k.titel}
@@ -303,7 +303,7 @@ export default function ComingSoonPage() {
           id="venteliste"
           className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8 lg:py-16"
         >
-          <div className="flex flex-col items-start gap-6 rounded-[18px] bg-groen p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-10">
+          <div className="flex flex-col items-start gap-6 rounded-none bg-groen p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-10">
             <h2 className="max-w-[30ch] text-xl font-semibold text-white lg:text-[22px]">
               Vær blandt de første, der byder på BidHamr
             </h2>

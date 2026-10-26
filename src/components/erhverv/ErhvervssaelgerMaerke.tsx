@@ -6,7 +6,7 @@ import { ERHVERVSSAELGER } from "@/lib/tekster/erhverv";
 // auktionen. Uden (fx inde i et auktionskort, som selv er et link) er det
 // bare et mærke. Altid med tekst - ikke kun et ikon.
 const MAERKE =
-  "inline-flex items-center gap-1.5 rounded-full border border-groen bg-white font-semibold text-groen-mork";
+  "inline-flex items-center gap-1.5 rounded-none border border-groen bg-white font-semibold text-groen-mork";
 
 function Ikon() {
   return (

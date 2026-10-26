@@ -36,7 +36,7 @@ export default function AdminBadge({
 }) {
   return (
     <span
-      className={`inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold ${TONE[tone]} ${className}`}
+      className={`inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-none border px-2.5 py-0.5 text-xs font-semibold ${TONE[tone]} ${className}`}
     >
       {prik && <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${PRIK[tone]}`} />}
       <span className="truncate">{children}</span>

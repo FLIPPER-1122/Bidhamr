@@ -99,7 +99,7 @@ export default function RapporterDialog({
             role="dialog"
             aria-modal="true"
             aria-labelledby={`${id}-titel`}
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-[14px] sm:p-6"
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-none sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             {sendt ? (

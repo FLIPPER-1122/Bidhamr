@@ -157,7 +157,7 @@ export default async function AnmeldelseSide({
         Din anmeldelse
       </h1>
 
-      <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="status-titel">
+      <section className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6" aria-labelledby="status-titel">
         <h2 id="status-titel" className="text-[20px] leading-tight font-semibold text-tekst">
           Status
         </h2>
@@ -172,7 +172,7 @@ export default async function AnmeldelseSide({
         )}
       </section>
 
-      <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="detaljer-titel">
+      <section className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6" aria-labelledby="detaljer-titel">
         <h2 id="detaljer-titel" className="sr-only">
           Detaljer
         </h2>
@@ -194,7 +194,7 @@ export default async function AnmeldelseSide({
       </section>
 
       {(k || kanKlage) && (
-        <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="klage-titel">
+        <section className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6" aria-labelledby="klage-titel">
           <h2 id="klage-titel" className="text-[20px] leading-tight font-semibold text-tekst">
             {k ? "Din klage" : "Er du uenig i vores afgørelse?"}
           </h2>

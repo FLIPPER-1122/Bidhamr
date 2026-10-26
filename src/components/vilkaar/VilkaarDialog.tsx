@@ -228,10 +228,10 @@ function Vindue({
         }
       }}
       onKeyDown={onKeyDown}
-      className="m-auto max-h-[calc(100dvh-24px)] w-[calc(100%-24px)] max-w-[520px] overflow-y-auto rounded-[18px] border-0 bg-white p-5 text-tekst shadow-stor backdrop:bg-black/55 sm:p-7"
+      className="m-auto max-h-[calc(100dvh-24px)] w-[calc(100%-24px)] max-w-[520px] overflow-y-auto rounded-none border-0 bg-white p-5 text-tekst shadow-stor backdrop:bg-black/55 sm:p-7"
     >
       {VILKAAR_ER_UDKAST && (
-        <p className="mb-3 inline-flex items-center rounded-full border border-advarsel-kant bg-advarsel-bg px-2.5 py-0.5 text-xs font-semibold tracking-wide text-advarsel-tekst uppercase">
+        <p className="mb-3 inline-flex items-center rounded-none border border-advarsel-kant bg-advarsel-bg px-2.5 py-0.5 text-xs font-semibold tracking-wide text-advarsel-tekst uppercase">
           {T.udkast}
           <span className="sr-only">: {T.udkastForklaring}</span>
         </p>

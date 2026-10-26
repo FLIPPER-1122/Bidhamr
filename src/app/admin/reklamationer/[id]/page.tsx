@@ -37,7 +37,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function Kort({ titel, hoejre, children }: { titel: string; hoejre?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+    <section className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-neutral-900">{titel}</h2>
         {hoejre}
@@ -81,7 +81,7 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
     return (
       <AdminSide detalje>
         <AdminSideHoved tilbage={{ href: "/admin/reklamationer", label: "Reklamationer" }} titel="Reklamation" />
-        <p role="note" className="rounded-[14px] border border-orange-300 bg-orange-lys px-4 py-3 text-sm text-advarsel-tekst">
+        <p role="note" className="rounded-none border border-orange-300 bg-orange-lys px-4 py-3 text-sm text-advarsel-tekst">
           Du er inhabil: du er part i handlen eller har handlet med en af parterne. Derfor kan du ikke se
           reklamationen. Lad en kollega tage den.
         </p>
@@ -170,7 +170,7 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
       />
 
       {aendret && (
-        <p role="note" className="rounded-[14px] border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
+        <p role="note" className="rounded-none border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
           Sagen er ændret {reklamationTid(r.sag_aendret_kl)}, efter skaden blev anmeldt. &quot;Godkendt&quot; og
           udbetalingen er spærret, til nogen har kvitteret. Tjek sagen: kvittér, hvis reklamationen kan fortsætte –
           ellers ret status eller annullér.
@@ -178,13 +178,13 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
       )}
 
       {r.status === "afventer_bidhamr" && (
-        <p role="note" className="rounded-[14px] border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
+        <p role="note" className="rounded-none border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
           {p.anmeldTekst}
         </p>
       )}
 
       {r.status === "godkendt" && (
-        <p role="note" className="rounded-[14px] border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
+        <p role="note" className="rounded-none border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
           {erChef
             ? `Når erstatningen på ${kroner(r.godkendt_beloeb_oere)} er modtaget fra ${p.transportoerNavn}, så tryk "Udbetal til sælger".`
             : `Venter på, at chefen udbetaler ${kroner(r.godkendt_beloeb_oere)}, når erstatningen er modtaget fra ${p.transportoerNavn}.`}
@@ -192,7 +192,7 @@ export default async function AdminReklamation({ params }: { params: Promise<{ i
         </p>
       )}
 
-      <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+      <section className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
         <ReklamationStaffHandlinger
           reklamationId={r.id}
           sagId={r.sag_id}

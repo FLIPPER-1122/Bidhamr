@@ -99,7 +99,7 @@ export default async function BeskederPage() {
               Beskederne fra BidHamr kunne ikke hentes. Prøv igen om lidt.
             </p>
           ) : staff.samtaler.length === 0 ? (
-            <p className="mt-3 rounded-[14px] border border-kant p-5 text-sm text-tekst-daempet">
+            <p className="mt-3 rounded-none border border-kant p-5 text-sm text-tekst-daempet">
               Du har ingen beskeder fra BidHamr.
             </p>
           ) : (
@@ -110,7 +110,7 @@ export default async function BeskederPage() {
                   <li key={s.id}>
                     <Link
                       href={`/beskeder/bidhamr/${s.id}`}
-                      className={`flex gap-3 rounded-[14px] border p-4 transition-colors hover:border-kant-staerk focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+                      className={`flex gap-3 rounded-none border p-4 transition-colors hover:border-kant-staerk focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
                         ulaest ? "border-succes-kant bg-groen-lys" : "border-kant bg-white"
                       }`}
                     >
@@ -167,7 +167,7 @@ export default async function BeskederPage() {
               Dine handler kunne ikke hentes. Prøv igen om lidt.
             </p>
           ) : sorteret.length === 0 ? (
-            <p className="mt-3 rounded-[14px] border border-kant p-5 text-sm text-tekst-daempet">
+            <p className="mt-3 rounded-none border border-kant p-5 text-sm text-tekst-daempet">
               Du har ingen handler endnu. Når du vinder eller sælger noget, kan du skrive med den anden part her.
             </p>
           ) : (
@@ -185,7 +185,7 @@ export default async function BeskederPage() {
                   <li key={h.id}>
                     <Link
                       href={`/mine-handler/${h.id}`}
-                      className="block rounded-[14px] border border-kant bg-white p-4 transition-colors hover:border-kant-staerk focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+                      className="block rounded-none border border-kant bg-white p-4 transition-colors hover:border-kant-staerk focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
                     >
                       <span className="flex items-baseline justify-between gap-3">
                         <span className="min-w-0 truncate text-[15px] font-medium text-tekst">

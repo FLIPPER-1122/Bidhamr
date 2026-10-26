@@ -60,7 +60,7 @@ function logNavn(h: string) {
 
 function Kort({ titel, children }: { titel: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+    <section className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
       <h2 className="mb-3 text-base font-semibold text-neutral-900">{titel}</h2>
       {children}
     </section>
@@ -220,12 +220,12 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
       </div>
 
       {/* Overblik og handlinger */}
-      <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+      <section className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-2">
           <SagStatusBadge status={sag.status} />
           {sag.beskyttelse && <BeskyttelseBadge />}
           {sag.genaabnetAntal > 0 && (
-            <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">
+            <span className="rounded-none bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">
               Genåbnet {sag.genaabnetAntal} {sag.genaabnetAntal === 1 ? "gang" : "gange"}
             </span>
           )}

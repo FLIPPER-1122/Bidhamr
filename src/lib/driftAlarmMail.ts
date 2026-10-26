@@ -227,8 +227,8 @@ const FARVE = {
 function lilleKnap(tekst: string, url: string): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:12px 0 0 0;">
                 <tr>
-                  <td bgcolor="${FARVE.groen}" style="background-color:${FARVE.groen};border-radius:8px;">
-                    <a href="${escapeHtml(url)}" target="_blank" style="display:inline-block;padding:10px 16px;font-family:${SANS};font-size:14px;font-weight:600;line-height:18px;color:#ffffff;text-decoration:none;border-radius:8px;">${escapeHtml(tekst)}</a>
+                  <td bgcolor="${FARVE.groen}" style="background-color:${FARVE.groen};border-radius:0;">
+                    <a href="${escapeHtml(url)}" target="_blank" style="display:inline-block;padding:10px 16px;font-family:${SANS};font-size:14px;font-weight:600;line-height:18px;color:#ffffff;text-decoration:none;border-radius:0;">${escapeHtml(tekst)}</a>
                   </td>
                 </tr>
               </table>`;
@@ -250,7 +250,7 @@ function blokHtml(b: VistBlok, nu: Date): string {
   // table-layout:fixed + break-all: lange id'er må ikke gøre mailen bredere end mobilen.
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px 0;table-layout:fixed;">
             <tr>
-              <td class="bh-blok-${b.type.alvor}" style="background-color:${f.bg};border:1px solid ${f.kant};border-left:4px solid ${f.tekst};border-radius:10px;padding:16px 18px;">
+              <td class="bh-blok-${b.type.alvor}" style="background-color:${f.bg};border:1px solid ${f.kant};border-left:4px solid ${f.tekst};border-radius:0;padding:16px 18px;">
               <p class="bh-blok-titel" style="margin:0 0 2px 0;font-family:${SANS};font-size:17px;font-weight:700;line-height:1.35;color:${FARVE.tekst};">${escapeHtml(b.type.titel)}</p>
               <p class="bh-blok-meta-${b.type.alvor}" style="margin:0 0 10px 0;font-family:${SANS};font-size:14px;font-weight:600;line-height:1.4;color:${f.tekst};">${escapeHtml(meta)}</p>
               ${p(`<strong>Det betyder:</strong> ${escapeHtml(b.type.betyder)}`)}

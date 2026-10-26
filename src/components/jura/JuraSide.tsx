@@ -208,7 +208,7 @@ export default async function JuraSide({
       {VILKAAR_ER_UDKAST && (
         <div
           role="note"
-          className="mb-6 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst sm:p-5"
+          className="mb-6 rounded-none border border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst sm:p-5"
         >
           <p className="text-[15px] font-semibold">UDKAST – skal godkendes af advokat</p>
           <p className="mt-1 text-sm leading-relaxed">
@@ -226,7 +226,7 @@ export default async function JuraSide({
         <p className="mt-4 text-base leading-relaxed text-tekst-daempet">{intro}</p>
       </header>
 
-      <nav aria-labelledby="indhold-overskrift" className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+      <nav aria-labelledby="indhold-overskrift" className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6">
         <h2 id="indhold-overskrift" className="font-sans text-[15px] font-semibold text-tekst">
           Indhold
         </h2>
@@ -250,7 +250,7 @@ export default async function JuraSide({
             key={a.id}
             id={a.id}
             aria-labelledby={`${a.id}-overskrift`}
-            className="scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6"
+            className="scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6"
           >
             <h2 id={`${a.id}-overskrift`} className="text-[20px] text-groen-mork sm:text-[22px]">
               <a href={`#${a.id}`} className="hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
@@ -264,7 +264,7 @@ export default async function JuraSide({
         ))}
       </div>
 
-      <nav aria-label="Se også" className="mt-8 rounded-[14px] bg-groen-lys p-5 text-sm text-groen-mork">
+      <nav aria-label="Se også" className="mt-8 rounded-none bg-groen-lys p-5 text-sm text-groen-mork">
         <p className="font-semibold">Se også</p>
         <ul className="mt-2 flex flex-wrap gap-x-6 gap-y-1">
           {krydslinks.map((l) => (

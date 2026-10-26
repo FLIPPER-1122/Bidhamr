@@ -164,7 +164,7 @@ export default function OpretSagForm({
   }
 
   return (
-    <section aria-labelledby={`${id}-titel`} className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+    <section aria-labelledby={`${id}-titel`} className="rounded-none border border-kant bg-white p-5 sm:p-6">
       {!aaben ? (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">

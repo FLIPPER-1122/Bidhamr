@@ -41,7 +41,7 @@ export function kvitteringOverskrift(k: Kvittering) {
 // Kort udgave til handelssiden med link til den fulde, udskrivbare kvittering.
 export function KvitteringBoks({ k }: { k: Kvittering }) {
   return (
-    <section className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+    <section className="rounded-none border border-kant bg-white p-5 sm:p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-[17px] leading-snug lg:text-lg">{kvitteringOverskrift(k)}</h2>
         <Link
@@ -63,7 +63,7 @@ export function KvitteringBoks({ k }: { k: Kvittering }) {
 export function KvitteringFuld({ k }: { k: Kvittering }) {
   const erKoeber = k.rolle === "koeber";
   return (
-    <article data-kvittering-udskrift className="rounded-[14px] border border-kant bg-white p-5 sm:p-8 print:border-0 print:p-0">
+    <article data-kvittering-udskrift className="rounded-none border border-kant bg-white p-5 sm:p-8 print:border-0 print:p-0">
       <Image src="/brand/bidhamr-logo.svg" alt="BidHamr" width={230} height={60} unoptimized className="h-8 w-auto" />
       <h1 className="mt-4 text-[26px] leading-tight sm:text-[32px]">{kvitteringOverskrift(k)}</h1>
       <p className="mt-1 text-sm text-tekst-daempet">Kvittering/handelsbekræftelse – ikke en faktura</p>

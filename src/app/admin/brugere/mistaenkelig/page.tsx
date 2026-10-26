@@ -97,7 +97,7 @@ export default async function AdminMistaenkelig() {
           <Link
             key={r.bruger_id}
             href={`/admin/brugere/${r.bruger_id}`}
-            className="block rounded-[14px] border border-admin-kant bg-white p-4 transition-shadow hover:shadow-md"
+            className="block rounded-none border border-admin-kant bg-white p-4 transition-shadow hover:shadow-md"
           >
             <div className="flex flex-wrap items-center gap-2">
               <p className="min-w-0 flex-1 truncate font-semibold text-tekst">
@@ -106,11 +106,11 @@ export default async function AdminMistaenkelig() {
               </p>
               {r.rolle && r.rolle !== "bruger" && <RolleBadge rolle={r.rolle} />}
               {r.suspenderet_aktiv && (
-                <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-800">
+                <span className="rounded-none bg-red-100 px-2.5 py-1 text-xs font-medium text-red-800">
                   Suspenderet
                 </span>
               )}
-              <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-800">
+              <span className="rounded-none bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-800">
                 {r.antal_regler} {r.antal_regler === 1 ? "regel" : "regler"}
               </span>
             </div>
@@ -131,7 +131,7 @@ export default async function AdminMistaenkelig() {
           </Link>
         ))}
         {!error && raekker.length === 0 && (
-          <div className="rounded-[14px] border border-admin-kant bg-white p-10 text-center text-tekst-svag">
+          <div className="rounded-none border border-admin-kant bg-white p-10 text-center text-tekst-svag">
             Ingen brugere rammer reglerne lige nu.
           </div>
         )}
@@ -178,7 +178,7 @@ export default async function AdminMistaenkelig() {
         </section>
       )}
 
-      <details className="rounded-[14px] border border-admin-kant bg-white p-4 text-sm text-tekst-daempet">
+      <details className="rounded-none border border-admin-kant bg-white p-4 text-sm text-tekst-daempet">
         <summary className="cursor-pointer font-medium text-tekst">Reglerne</summary>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>Mindst 2 ubetalte vinderauktioner som køber (sidste 90 dage, afviste tæller ikke)</li>

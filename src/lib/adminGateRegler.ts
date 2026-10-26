@@ -6,7 +6,7 @@ import type { HovedLukning } from "@/lib/adminVaert";
 
 export type AdminRute = "rod" | "robots" | "admin" | "adgang" | "next" | "ikon" | "ukendt";
 
-const IKONER = new Set(["/favicon.ico", "/icon.svg", "/apple-icon.png"]);
+const IKONER = new Set(["/favicon.ico", "/icon.svg", "/icon1.png", "/apple-icon.png"]);
 
 export function erAdminSti(pathname: string): boolean {
   return pathname === "/admin" || pathname.startsWith("/admin/");

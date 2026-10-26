@@ -206,7 +206,7 @@ export default function HandelChat({
             // Stoppet af spamfilteret - modtageren har ikke set den.
             return (
               <div key={b.id} className="flex flex-col items-end gap-1">
-                <div className="max-w-[85%] rounded-[14px] border border-dashed border-kant-staerk bg-white px-4 py-2.5 text-sm text-tekst-svag sm:max-w-[75%]">
+                <div className="max-w-[85%] rounded-none border border-dashed border-kant-staerk bg-white px-4 py-2.5 text-sm text-tekst-svag sm:max-w-[75%]">
                   <p className="whitespace-pre-wrap break-words line-through">{b.content}</p>
                 </div>
                 <p className="max-w-[85%] text-right text-[12px] text-fejl-tekst sm:max-w-[75%]">
@@ -221,7 +221,7 @@ export default function HandelChat({
               className={`flex flex-col ${erMig ? "items-end" : "items-start"}`}
             >
               <div
-                className={`max-w-[75%] rounded-[14px] px-4 py-2.5 text-sm ${
+                className={`max-w-[75%] rounded-none px-4 py-2.5 text-sm ${
                   erMig
                     ? "bg-groen text-white"
                     : "bg-groen-lys text-tekst"

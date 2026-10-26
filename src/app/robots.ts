@@ -24,6 +24,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
           "/brand/",
           "/opengraph-image.jpg",
           "/icon.svg",
+          "/icon1.png",
           "/apple-icon.png",
           "/favicon.ico",
         ],

@@ -119,7 +119,7 @@ export default async function ErhvervDsaKlageSide({ params }: { params: Promise<
             afgoerAction={erhvervDsaKlageAfgoer}
             brugerHref={brugerHref}
           />
-          <section className="rounded-[14px] border border-kant bg-white p-4 text-sm sm:p-5">
+          <section className="rounded-none border border-kant bg-white p-4 text-sm sm:p-5">
             <p className="flex flex-wrap items-center gap-2">
               <Pille farve={k.udfald === "medhold" ? "groen" : "neutral"}>
                 {k.udfald === "medhold" ? T.medhold : T.fastholdt}

@@ -95,7 +95,7 @@ function infoboks(raekker: InfoRaekke[]) {
                 </tr>`;
     })
     .join("");
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bh-info" style="margin:4px 0 24px 0;background-color:${FARVE.groenLys};border-radius:10px;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bh-info" style="margin:4px 0 24px 0;background-color:${FARVE.groenLys};border-radius:0;">
             <tr>
               <td style="padding:6px 20px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -117,13 +117,13 @@ function knapHtml(tekst: string, url: string) {
             <tr>
               <td align="left">
                 <!--[if mso]>
-                <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${u}" style="height:48px;v-text-anchor:middle;width:${vmlBredde}px;" arcsize="21%" stroke="f" fillcolor="${FARVE.orangeKnap}">
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${u}" style="height:48px;v-text-anchor:middle;width:${vmlBredde}px;" stroke="f" fillcolor="${FARVE.orangeKnap}">
                   <w:anchorlock/>
                   <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;">${t}</center>
-                </v:roundrect>
+                </v:rect>
                 <![endif]-->
                 <!--[if !mso]><!-- -->
-                <a href="${u}" target="_blank" class="bh-knap" style="display:inline-block;background-color:${FARVE.orangeKnap};color:#ffffff;font-family:${SANS};font-size:15px;font-weight:600;line-height:20px;text-align:center;text-decoration:none;padding:14px 28px;border-radius:10px;mso-hide:all;">${t}</a>
+                <a href="${u}" target="_blank" class="bh-knap" style="display:inline-block;background-color:${FARVE.orangeKnap};color:#ffffff;font-family:${SANS};font-size:15px;font-weight:600;line-height:20px;text-align:center;text-decoration:none;padding:14px 28px;border-radius:0;mso-hide:all;">${t}</a>
                 <!--<![endif]-->
               </td>
             </tr>
@@ -263,12 +263,12 @@ export function mailLayout(input: MailLayoutInput): string {
               </td>
             </tr>
             <tr>
-              <td class="bh-kort" style="background-color:${FARVE.flade};border-radius:14px;">
+              <td class="bh-kort" style="background-color:${FARVE.flade};border-radius:0;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
                     <td class="bh-kort-indhold" style="padding:36px 40px 32px 40px;">
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;">
-            <tr><td width="32" height="4" style="width:32px;height:4px;font-size:0;line-height:0;background-color:${FARVE.orangeDekor};border-radius:2px;">&nbsp;</td></tr>
+            <tr><td width="32" height="4" style="width:32px;height:4px;font-size:0;line-height:0;background-color:${FARVE.orangeDekor};border-radius:0;">&nbsp;</td></tr>
           </table>
           <h1 class="bh-h1" style="margin:0 0 16px 0;font-family:${SANS};font-size:26px;font-weight:700;line-height:1.2;letter-spacing:-0.4px;color:${FARVE.tekst};">${input.overskriftHtml}</h1>
           ${afsnit}

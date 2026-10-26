@@ -553,11 +553,11 @@ export default function BidPanel({
   const linje = "flex items-baseline justify-between gap-3";
 
   return (
-    <div ref={panelRef} className="scroll-mt-4 rounded-[14px] border border-kant bg-white p-4 sm:p-5">
+    <div ref={panelRef} className="scroll-mt-4 rounded-none border border-kant bg-white p-4 sm:p-5">
       {/* Afslutning + countdown. En annulleret auktion slutter ikke - kun
           status vises (længere nede). */}
       {auktionStatus === "annulleret" ? null : pauset ? (
-        <p className="inline-flex items-center gap-1.5 rounded-full bg-advarsel-bg px-3 py-1 text-[13px] font-semibold text-advarsel-tekst tabular-nums">
+        <p className="inline-flex items-center gap-1.5 rounded-none bg-advarsel-bg px-3 py-1 text-[13px] font-semibold text-advarsel-tekst tabular-nums">
           <Ikon navn="ur" className="h-4 w-4" strøg={2} />
           {pauseTekst(pauseResterende)}
         </p>
@@ -571,7 +571,7 @@ export default function BidPanel({
           })}
         </p>
         <p
-          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[13px] font-semibold tabular-nums ${
+          className={`inline-flex items-center gap-1.5 rounded-none px-3 py-1 text-[13px] font-semibold tabular-nums ${
             slutterSnart && auktionStatus === "aktiv" ? "bg-orange-knap text-white" : "bg-groen-lys text-groen-mork"
           }`}
         >

@@ -77,7 +77,7 @@ export default function SkatteoplysningerForm(p: Props) {
   const beskrevet = (felt: string, hjaelp?: string) =>
     [hjaelp, fejl?.felt === felt ? "dac7-fejl" : null].filter(Boolean).join(" ") || undefined;
   const afkryds = "flex min-h-11 cursor-pointer items-start gap-3 py-2.5 text-sm";
-  const boks = "mt-0.5 h-5 w-5 shrink-0 rounded-[6px] accent-groen";
+  const boks = "mt-0.5 h-5 w-5 shrink-0 rounded-none accent-groen";
 
   return (
     <form onSubmit={indsend} method="post" className="space-y-4" noValidate>

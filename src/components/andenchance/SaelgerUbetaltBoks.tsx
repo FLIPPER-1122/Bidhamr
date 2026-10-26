@@ -50,7 +50,7 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
   const afsluttet = Boolean(status.nyHandelId || status.genopsatAuktionId);
 
   return (
-    <section className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+    <section className="rounded-none border border-kant bg-white p-5 sm:p-6">
       {status.aarsag === "admin_annulleret" ? (
         <>
           <h2 className="text-[20px] leading-tight lg:text-[22px]">Handlen er annulleret</h2>
@@ -163,7 +163,7 @@ export default function SaelgerUbetaltBoks({ tradeId, auktionId, status, standar
                   Byder {status.tilbud.length - i} · {kroner(t.budOere)}
                   <span className="block text-xs text-tekst-svag">Sendt {dato(t.oprettet)}</span>
                 </span>
-                <span className="rounded-full bg-kant px-2.5 py-0.5 text-xs font-medium text-tekst-daempet">
+                <span className="rounded-none bg-kant px-2.5 py-0.5 text-xs font-medium text-tekst-daempet">
                   {STATUS_TEKST[t.status] ?? t.status}
                 </span>
               </li>

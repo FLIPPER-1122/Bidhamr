@@ -221,7 +221,7 @@ export function Dac7SendtForm({ aar, eksporter }: { aar: number; eksporter: Dac7
           type="checkbox"
           checked={sikker}
           onChange={(e) => setSikker(e.target.checked)}
-          className="mt-0.5 h-5 w-5 shrink-0 rounded-[6px] accent-groen"
+          className="mt-0.5 h-5 w-5 shrink-0 rounded-none accent-groen"
         />
         Filen er uploadet og godkendt i TastSelv Erhverv. Sælgerne får nu besked og en kopi under Min konto. Kan ikke
         fortrydes.

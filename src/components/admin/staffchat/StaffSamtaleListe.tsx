@@ -35,17 +35,17 @@ export default function StaffSamtaleListe({
             >
               <div className="flex flex-wrap items-center gap-2">
                 {s.venter_paa_svar && (
-                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+                  <span className="rounded-none bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
                     Venter på svar
                   </span>
                 )}
                 {s.lukket_kl ? (
-                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600">
+                  <span className="rounded-none bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600">
                     Afsluttet
                   </span>
                 ) : (
                   !s.venter_paa_svar && (
-                    <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                    <span className="rounded-none bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
                       Åben
                     </span>
                   )

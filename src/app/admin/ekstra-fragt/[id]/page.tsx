@@ -83,7 +83,7 @@ const KOLONNER =
 
 function Kort({ titel, children }: { titel: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+    <section className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
       <h2 className="mb-3 text-base font-semibold text-tekst">{titel}</h2>
       {children}
     </section>
@@ -194,13 +194,13 @@ export default async function AdminEkstraFragtRegning({ params }: { params: Prom
       />
 
       {r.kraever_opmaerksomhed && r.opmaerksomhed_tekst && (
-        <p role="note" className="rounded-[14px] border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
+        <p role="note" className="rounded-none border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
           {r.opmaerksomhed_tekst}
         </p>
       )}
 
       {r.status === "indsigelse" && r.indsigelse_tekst && (
-        <section className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-4 text-fejl-tekst sm:p-5">
+        <section className="rounded-none border border-fejl-kant bg-fejl-bg p-4 text-fejl-tekst sm:p-5">
           <h2 className="text-base font-semibold">Sælgerens indsigelse ({ekstraFragtTid(r.indsigelse_kl)})</h2>
           <p className="mt-1 whitespace-pre-wrap break-words text-sm">{r.indsigelse_tekst}</p>
         </section>
@@ -208,7 +208,7 @@ export default async function AdminEkstraFragtRegning({ params }: { params: Prom
 
       {r.bankindsigelse_id && (
         <section
-          className={`rounded-[14px] border p-4 sm:p-5 ${
+          className={`rounded-none border p-4 sm:p-5 ${
             afsluttet
               ? "border-admin-kant bg-white text-tekst"
               : r.bankindsigelse_tabt_kl
@@ -254,7 +254,7 @@ export default async function AdminEkstraFragtRegning({ params }: { params: Prom
       )}
 
       {r.genaabnet_kl && r.genaabn_begrundelse && (
-        <p role="note" className="rounded-[14px] border border-admin-kant bg-white px-4 py-3 text-sm text-tekst">
+        <p role="note" className="rounded-none border border-admin-kant bg-white px-4 py-3 text-sm text-tekst">
           <span className="font-semibold">
             Genåbnet {ekstraFragtTid(r.genaabnet_kl)} af {hvem(r.genaabnet_af)} (betalingsrunde {r.runde + 1}):
           </span>{" "}
@@ -262,7 +262,7 @@ export default async function AdminEkstraFragtRegning({ params }: { params: Prom
         </p>
       )}
 
-      <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+      <section className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
         <EkstraFragtStaffHandlinger regningId={r.id} status={r.status} inhabil={inhabil} bankindsigelseTabt={tabt} bankindsigelseAfsluttet={afsluttet} />
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-admin-kant pt-4 text-sm">
           <Link href={`/admin/handler/${r.trade_id}`} className="inline-flex min-h-11 items-center font-semibold text-groen hover:underline sm:min-h-0">

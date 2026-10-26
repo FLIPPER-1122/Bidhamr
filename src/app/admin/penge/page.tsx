@@ -247,10 +247,10 @@ function Pengestroem({ t }: { t: PengeTal }) {
       <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-neutral-500">Indsigelser</p>
       <Linje label="Indsigelser i alt" antal={ind.antal} vaerdi={kr(ind.beloeb)} />
       <div className="flex flex-wrap gap-2 py-1 text-xs">
-        <span className="rounded-full bg-orange-100 px-2 py-0.5 text-orange-800">Åbne: {ind.aabne}</span>
-        <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-800">Vundet: {ind.vundet}</span>
-        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-neutral-700">Lukket: {ind.lukket}</span>
-        <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-800">
+        <span className="rounded-none bg-orange-100 px-2 py-0.5 text-orange-800">Åbne: {ind.aabne}</span>
+        <span className="rounded-none bg-green-100 px-2 py-0.5 text-green-800">Vundet: {ind.vundet}</span>
+        <span className="rounded-none bg-neutral-100 px-2 py-0.5 text-neutral-700">Lukket: {ind.lukket}</span>
+        <span className="rounded-none bg-red-100 px-2 py-0.5 text-red-800">
           Tabt: {ind.tabt_foer_udbetaling.antal + ind.tabt_efter_udbetaling.antal}
         </span>
       </div>
@@ -467,7 +467,7 @@ function Holdes({ h, nu }: { h: PengeHoldes; nu: number }) {
       {h.efter_grund.length > 0 && (
         <div className="mt-4 flex flex-wrap gap-2">
           {h.efter_grund.map((g) => (
-            <span key={g.grund} className="rounded-full bg-neutral-100 px-3 py-1 text-xs text-neutral-700">
+            <span key={g.grund} className="rounded-none bg-neutral-100 px-3 py-1 text-xs text-neutral-700">
               {GRUND[g.grund] ?? g.grund}: {g.antal} · {kr(g.beloeb)}
             </span>
           ))}
@@ -502,27 +502,27 @@ function Holdes({ h, nu }: { h: PengeHoldes; nu: number }) {
                   </p>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      className={`rounded-none px-2 py-0.5 text-xs font-medium ${
                         venter ? "bg-orange-100 text-orange-800" : "bg-neutral-100 text-neutral-700"
                       }`}
                     >
                       {GRUND[r.grund] ?? r.grund}
                     </span>
                     {forfalden && (
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                      <span className="rounded-none bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
                         Forfalden
                       </span>
                     )}
                     {r.kraever_opmaerksomhed && (
                       <Link
                         href="/admin/betalinger"
-                        className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 hover:underline"
+                        className="rounded-none bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 hover:underline"
                       >
                         Kræver handling
                       </Link>
                     )}
                     {r.penge_fejl && (
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                      <span className="rounded-none bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
                         Fejl: {r.penge_fejl}
                       </span>
                     )}
@@ -606,7 +606,7 @@ export default async function AdminPenge({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {o.testnoegle && (
-            <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+            <span className="rounded-none bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
               Stripe testmiljø
             </span>
           )}

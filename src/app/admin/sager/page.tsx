@@ -123,7 +123,7 @@ export default async function AdminSager({
           link={fane !== "afgjorte" ? { href: href("afgjorte"), label: "Se afgjorte sager" } : undefined}
         />
       ) : (
-        <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+        <ul className="overflow-hidden rounded-none border border-admin-kant bg-white">
           {sager.map((s) => (
             <li key={s.id} className="flex flex-col border-t border-admin-kant first:border-t-0 sm:flex-row sm:items-center">
               <Link

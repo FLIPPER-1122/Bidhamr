@@ -11,5 +11,5 @@ const MAERKE: Partial<Record<SaelgerReklamation["status"], { tekst: string; cls:
 export default function ReklamationMaerke({ status }: { status: SaelgerReklamation["status"] }) {
   const m = MAERKE[status];
   if (!m) return null;
-  return <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${m.cls}`}>{m.tekst}</span>;
+  return <span className={`inline-block rounded-none border px-2.5 py-0.5 text-xs font-semibold ${m.cls}`}>{m.tekst}</span>;
 }

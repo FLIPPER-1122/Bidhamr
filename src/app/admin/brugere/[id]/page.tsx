@@ -42,9 +42,9 @@ type Fane = (typeof FANER)[number]["id"];
 const stars = (n: number) => "★".repeat(n) + "☆".repeat(5 - n);
 
 const statusBadge = (status: string) => {
-  if (status === "aktiv") return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Aktiv</span>;
-  if (status === "afsluttet") return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600">Afsluttet</span>;
-  return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Annulleret</span>;
+  if (status === "aktiv") return <span className="px-2 py-0.5 rounded-none text-xs font-medium bg-green-100 text-green-700">Aktiv</span>;
+  if (status === "afsluttet") return <span className="px-2 py-0.5 rounded-none text-xs font-medium bg-neutral-100 text-neutral-600">Afsluttet</span>;
+  return <span className="px-2 py-0.5 rounded-none text-xs font-medium bg-red-100 text-red-700">Annulleret</span>;
 };
 
 export default async function AdminBrugerDetalje({
@@ -136,7 +136,7 @@ export default async function AdminBrugerDetalje({
                 <RolleBadge rolle={user.rolle} />
               )}
               {kontoLukketKl ? (
-                <span className="rounded-full bg-neutral-900 px-2.5 py-1 text-xs font-medium text-white">
+                <span className="rounded-none bg-neutral-900 px-2.5 py-1 text-xs font-medium text-white">
                   Lukket
                 </span>
               ) : (
@@ -286,7 +286,7 @@ export default async function AdminBrugerDetalje({
       {lukningForslag && (
         <section aria-labelledby="lukning-titel" className="space-y-2">
           <h2 id="lukning-titel" className="flex items-center gap-2 text-sm font-semibold text-red-700">
-            <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">!</span>
+            <span className="rounded-none bg-red-600 px-2 py-0.5 text-xs font-bold text-white">!</span>
             3 advarsler – skal kontoen lukkes?
           </h2>
           <KontoLukningKort
@@ -622,7 +622,7 @@ async function AuktionerFane({
         </thead>
         <tbody className="block space-y-3 lg:table-row-group lg:space-y-0 divide-y divide-neutral-100">
           {(auctions ?? []).map((a) => (
-            <tr key={a.id} className="block rounded-[14px] border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50">
+            <tr key={a.id} className="block rounded-none border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50">
               <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-700">{a.titel}</td>
               <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">{statusBadge(a.status)}</td>
               <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-600">
@@ -697,7 +697,7 @@ async function BudFane({ userId, supabase }: { userId: string; supabase: Admin }
         </thead>
         <tbody className="block space-y-3 lg:table-row-group lg:space-y-0 divide-y divide-neutral-100">
           {(bud ?? []).map((b) => (
-            <tr key={b.id} className="block rounded-[14px] border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50">
+            <tr key={b.id} className="block rounded-none border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50">
               <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-neutral-700">
                 {titelMap[b.auktion_id] ?? b.auktion_id}
               </td>
@@ -759,7 +759,7 @@ async function AnmeldelserFane({
               <span className="text-sm text-amber-500">
                 {stars(r.stjerner ?? 0)}
                 {r.skjult && (
-                  <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
+                  <span className="ml-2 rounded-none bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
                     Skjult
                   </span>
                 )}

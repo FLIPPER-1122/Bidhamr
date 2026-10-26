@@ -218,7 +218,7 @@ export default function FragtlabelBoks({
   // ------------------------------------------------------------ labelen findes
   if (forsendelse && forsendelse.status !== "opretter" && forsendelse.status !== "annulleres") {
     return (
-      <section aria-labelledby={`${id}-titel`} className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+      <section aria-labelledby={`${id}-titel`} className="rounded-none border border-kant bg-white p-5 sm:p-6">
         <h2 id={`${id}-titel`} className="text-[17px] leading-snug lg:text-lg">
           Din fragtlabel er klar
         </h2>
@@ -337,7 +337,7 @@ export default function FragtlabelBoks({
   if (forsendelse) {
     const annulleres = forsendelse.status === "annulleres";
     return (
-      <section aria-labelledby={`${id}-titel`} className="rounded-[14px] border border-info-kant bg-info-bg p-5 text-info-tekst sm:p-6">
+      <section aria-labelledby={`${id}-titel`} className="rounded-none border border-info-kant bg-info-bg p-5 text-info-tekst sm:p-6">
         <h2 id={`${id}-titel`} className="text-[17px] leading-snug lg:text-lg">
           {annulleres ? "Labelen er ved at blive annulleret" : "Labelen er ved at blive lavet"}
         </h2>
@@ -371,7 +371,7 @@ export default function FragtlabelBoks({
 
   // ------------------------------------------------------------ ingen label endnu
   return (
-    <section aria-labelledby={`${id}-titel`} className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+    <section aria-labelledby={`${id}-titel`} className="rounded-none border border-kant bg-white p-5 sm:p-6">
       <h2 id={`${id}-titel`} className="text-[17px] leading-snug lg:text-lg">
         Lav fragtlabel
       </h2>

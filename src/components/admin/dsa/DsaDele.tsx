@@ -27,20 +27,20 @@ export function Frist({ iso }: { iso: string }) {
   if (timer < 0) {
     const t = Math.ceil(-timer);
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-fejl-fyldt px-2.5 py-1 text-xs font-bold text-white">
+      <span className="inline-flex items-center gap-1 rounded-none bg-fejl-fyldt px-2.5 py-1 text-xs font-bold text-white">
         Over fristen · {t >= 48 ? `${Math.floor(t / 24)} dage` : `${t} t`}
       </span>
     );
   }
   if (timer < 24) {
     return (
-      <span className="rounded-full border border-advarsel-kant bg-advarsel-bg px-2.5 py-1 text-xs font-semibold text-advarsel-tekst">
+      <span className="rounded-none border border-advarsel-kant bg-advarsel-bg px-2.5 py-1 text-xs font-semibold text-advarsel-tekst">
         Frist om {Math.max(1, Math.floor(timer))} t
       </span>
     );
   }
   return (
-    <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">Frist {tid(iso)}</span>
+    <span className="rounded-none bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">Frist {tid(iso)}</span>
   );
 }
 
@@ -54,7 +54,7 @@ const PILLE: Record<PilleFarve, string> = {
 };
 
 export function Pille({ children, farve = "neutral" }: { children: React.ReactNode; farve?: PilleFarve }) {
-  return <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${PILLE[farve]}`}>{children}</span>;
+  return <span className={`inline-block rounded-none px-2 py-0.5 text-xs font-medium ${PILLE[farve]}`}>{children}</span>;
 }
 
 // Rolle-mærke foran et navn: "Ejer", "Anmelder", "Klager".

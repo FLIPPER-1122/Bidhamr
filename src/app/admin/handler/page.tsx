@@ -395,7 +395,7 @@ async function HandlerIndhold({
             const lille =
               "inline-flex min-h-10 items-center whitespace-nowrap rounded-lg border border-kant-staerk bg-white px-3 text-[13px] font-medium text-tekst transition-colors hover:bg-admin-bg lg:min-h-8";
             return (
-              <li key={f.id} className="rounded-[14px] border border-advarsel-kant bg-white p-4">
+              <li key={f.id} className="rounded-none border border-advarsel-kant bg-white p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <Link href={handelSti} className="font-semibold text-tekst hover:text-groen hover:underline">
@@ -618,7 +618,7 @@ function HandlerSkelet() {
       <div className="h-11 animate-pulse rounded-lg bg-skelet/60" />
       <div className="h-11 animate-pulse rounded-lg bg-skelet/50" />
       {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="h-24 animate-pulse rounded-[14px] bg-skelet/40" />
+        <div key={i} className="h-24 animate-pulse rounded-none bg-skelet/40" />
       ))}
     </div>
   );

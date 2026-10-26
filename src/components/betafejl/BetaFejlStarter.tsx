@@ -90,7 +90,7 @@ export default function BetaFejlStarter({ brugerId }: { brugerId: string }) {
       ) : (
         !aaben && (
           <div
-            className="fixed right-3 z-30 flex items-center overflow-hidden rounded-full bg-groen text-white shadow-[var(--shadow-flyder)] bottom-[calc(var(--samtykke-hoejde,0px)+env(safe-area-inset-bottom,0px)+88px)] lg:right-6 lg:bottom-[calc(var(--samtykke-hoejde,0px)+24px)] print:hidden"
+            className="fixed right-3 z-30 flex items-center overflow-hidden rounded-none bg-groen text-white shadow-[var(--shadow-flyder)] bottom-[calc(var(--samtykke-hoejde,0px)+env(safe-area-inset-bottom,0px)+88px)] lg:right-6 lg:bottom-[calc(var(--samtykke-hoejde,0px)+24px)] print:hidden"
           >
             <button
               ref={knapRef}

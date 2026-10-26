@@ -27,7 +27,7 @@ export default async function SletKontoSide() {
       </Link>
       <h1 className="mt-2 text-[26px] leading-tight sm:text-[32px]">Slet konto</h1>
 
-      <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+      <section className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6">
         <h2 className="text-[20px] leading-tight lg:text-[22px]">Det sker, når du sletter din konto</h2>
         <ul className="mt-3 list-disc space-y-1.5 pl-5 text-[15px] text-tekst">
           <li>Dit navn, din e-mail, dit telefonnummer, din adresse og dit profilbillede fjernes.</li>
@@ -54,7 +54,7 @@ export default async function SletKontoSide() {
           Vi kunne ikke tjekke din konto lige nu. Prøv igen om lidt.
         </p>
       ) : status.kan_slettes ? (
-        <section className="mt-6 rounded-[14px] border border-fejl-kant bg-white p-5 sm:p-6">
+        <section className="mt-6 rounded-none border border-fejl-kant bg-white p-5 sm:p-6">
           <h2 className="text-[20px] leading-tight lg:text-[22px]">Bekræft sletning</h2>
           {(status.aktive_auktioner_uden_bud ?? 0) > 0 && (
             <p className="mt-2 rounded-xl border border-advarsel-kant bg-advarsel-bg p-4 text-sm text-advarsel-tekst">
@@ -67,7 +67,7 @@ export default async function SletKontoSide() {
           </div>
         </section>
       ) : (
-        <section className="mt-6 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-5 sm:p-6">
+        <section className="mt-6 rounded-none border border-advarsel-kant bg-advarsel-bg p-5 sm:p-6">
           <h2 className="text-[20px] leading-tight text-advarsel-tekst lg:text-[22px]">
             Din konto kan ikke slettes endnu
           </h2>

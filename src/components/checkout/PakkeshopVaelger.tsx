@@ -184,7 +184,7 @@ export default function PakkeshopVaelger({
         aria-labelledby={`${id}-titel`}
         onKeyDown={onKeyDown}
         onClick={(e) => e.stopPropagation()}
-        className="flex h-full w-full flex-col overflow-hidden bg-white shadow-[0_10px_40px_rgba(0,0,0,.13)] lg:h-[min(760px,90vh)] lg:max-w-[1120px] lg:rounded-[18px]"
+        className="flex h-full w-full flex-col overflow-hidden bg-white shadow-[0_10px_40px_rgba(0,0,0,.13)] lg:h-[min(760px,90vh)] lg:max-w-[1120px] lg:rounded-none"
       >
         {/* Hoved: titel, luk og søgning */}
         <div className="border-b border-kant px-4 pt-4 pb-3 sm:px-6">

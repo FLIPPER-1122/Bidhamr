@@ -206,7 +206,7 @@ export default function BetaFejlFormular({ brugerId, onLuk }: { brugerId: string
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${id}-titel`}
-        className="relative flex max-h-[92svh] w-full flex-col overflow-hidden rounded-t-[18px] bg-white shadow-[var(--shadow-stor)] sm:max-h-[min(720px,calc(100svh-48px))] sm:w-[420px] sm:rounded-[18px]"
+        className="relative flex max-h-[92svh] w-full flex-col overflow-hidden rounded-t-none bg-white shadow-[var(--shadow-stor)] sm:max-h-[min(720px,calc(100svh-48px))] sm:w-[420px] sm:rounded-none"
       >
         <div className="flex items-start justify-between gap-3 border-b border-kant px-5 pt-4 pb-3">
           <div>

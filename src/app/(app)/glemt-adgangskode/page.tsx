@@ -34,7 +34,7 @@ export default function GlemtAdgangskodePage() {
   if (sendt) {
     return (
       <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
-        <div className="w-full max-w-sm rounded-[14px] border border-kant bg-white p-5 text-center shadow-kort sm:p-8">
+        <div className="w-full max-w-sm rounded-none border border-kant bg-white p-5 text-center shadow-kort sm:p-8">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-succes-bg">
             <svg viewBox="0 0 24 24" className="h-6 w-6 text-succes-tekst" fill="none" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -60,7 +60,7 @@ export default function GlemtAdgangskodePage() {
   return (
     <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
       <div className="w-full max-w-sm">
-        <div className="rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8">
+        <div className="rounded-none border border-kant bg-white p-5 shadow-kort sm:p-8">
           <h1 className="text-[26px] leading-tight sm:text-[32px]">
             Glemt adgangskode
           </h1>

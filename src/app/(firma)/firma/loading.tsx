@@ -8,7 +8,7 @@ export default function Loading() {
       <div className={`h-10 w-64 max-w-full ${blok}`} />
       <div className={`h-5 w-80 max-w-full ${blok}`} />
       {Array.from({ length: 2 }, (_, i) => (
-        <div key={i} className="h-56 animate-pulse rounded-[18px] border border-kant bg-white" />
+        <div key={i} className="h-56 animate-pulse rounded-none border border-kant bg-white" />
       ))}
     </div>
   );

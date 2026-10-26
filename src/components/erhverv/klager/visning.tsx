@@ -42,7 +42,7 @@ export function KlageStatusMaerke({
   const noegle = status === "afsluttet" && afgoerelse ? afgoerelse : status;
   const navn = status === "afsluttet" && afgoerelse ? KLAGE_AFGOERELSE_NAVN[afgoerelse] : KLAGE_STATUS_NAVN[status];
   return (
-    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${KLASSE[noegle] ?? "bg-neutral-100"}`}>
+    <span className={`inline-flex rounded-none px-2.5 py-0.5 text-xs font-semibold ${KLASSE[noegle] ?? "bg-neutral-100"}`}>
       {navn}
     </span>
   );

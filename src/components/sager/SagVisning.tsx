@@ -312,7 +312,7 @@ function SenesteBesked({ samtale }: { samtale: SagSamtale }) {
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-tekst">Besked fra BidHamr</span>
         {samtale.ulaest && (
-          <span className="rounded-full bg-orange-knap px-2 py-0.5 text-[11px] font-semibold text-white">Ny</span>
+          <span className="rounded-none bg-orange-knap px-2 py-0.5 text-[11px] font-semibold text-white">Ny</span>
         )}
       </div>
       {b ? (
@@ -350,7 +350,7 @@ export default function SagVisning({
     <section
       id="sag"
       aria-labelledby="sag-titel"
-      className="scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6"
+      className="scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="sag-titel" className="text-xl font-semibold text-tekst">

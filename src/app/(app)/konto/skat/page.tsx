@@ -63,7 +63,7 @@ export default async function SkatSide() {
       {status.anmodning && (
         <section
           role="alert"
-          className={`mt-6 rounded-[14px] border p-5 sm:p-6 ${
+          className={`mt-6 rounded-none border p-5 sm:p-6 ${
             status.anmodning.spaerret
               ? "border-fejl-kant bg-fejl-bg text-fejl-tekst"
               : "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst"

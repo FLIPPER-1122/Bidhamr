@@ -494,7 +494,7 @@ export default function CheckoutSide({
         <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8">
           <div className="min-w-0 space-y-6">
             {/* Varen */}
-            <section aria-label="Varen" className="rounded-[14px] border border-kant bg-white p-4 sm:p-5">
+            <section aria-label="Varen" className="rounded-none border border-kant bg-white p-4 sm:p-5">
               <div className="flex items-center gap-4">
                 <div className="relative grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-lg bg-skelet">
                   {vare.billede ? (
@@ -528,7 +528,7 @@ export default function CheckoutSide({
             </section>
 
             {/* Levering */}
-            <section aria-labelledby={`${id}-levering`} className="rounded-[14px] border border-kant bg-white p-4 sm:p-6">
+            <section aria-labelledby={`${id}-levering`} className="rounded-none border border-kant bg-white p-4 sm:p-6">
               <h2 id={`${id}-levering`} ref={leveringRef} tabIndex={-1} className="text-[20px] leading-tight outline-none lg:text-[22px]">
                 Levering
               </h2>
@@ -785,7 +785,7 @@ export default function CheckoutSide({
                         type="checkbox"
                         checked={gemForslag}
                         onChange={(e) => setGemForslag(e.target.checked)}
-                        className="h-5 w-5 shrink-0 rounded-[6px] accent-groen"
+                        className="h-5 w-5 shrink-0 rounded-none accent-groen"
                       />
                       Husk mine oplysninger og min pakkeshop til næste køb
                     </label>
@@ -807,7 +807,7 @@ export default function CheckoutSide({
             </section>
 
             {/* Betaling */}
-            <section aria-labelledby={`${id}-betaling`} className="rounded-[14px] border border-kant bg-white p-4 sm:p-6">
+            <section aria-labelledby={`${id}-betaling`} className="rounded-none border border-kant bg-white p-4 sm:p-6">
               <h2 id={`${id}-betaling`} ref={betalingRef} tabIndex={-1} className="scroll-mt-6 text-[20px] leading-tight outline-none lg:text-[22px]">
                 Betaling
               </h2>
@@ -877,7 +877,7 @@ export default function CheckoutSide({
 
           {/* Prisoversigt */}
           <aside aria-labelledby={`${id}-pris`} className="lg:sticky lg:top-6">
-            <div className="rounded-[14px] border border-kant bg-white p-4 sm:p-6">
+            <div className="rounded-none border border-kant bg-white p-4 sm:p-6">
               <h2 id={`${id}-pris`} className="text-[20px] leading-tight lg:text-[22px]">
                 Prisoversigt
               </h2>

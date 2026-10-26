@@ -75,7 +75,7 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
 
   if (firmaSpaerret) {
     return (
-      <div className="rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-5 text-advarsel-tekst">
+      <div className="rounded-none border border-advarsel-kant bg-advarsel-bg p-5 text-advarsel-tekst">
         <p className="text-[18px] font-semibold">
           {!kvote || !kvote.aktivt_abonnement
             ? FIRMA_OVERSIGT_EKSTRA.kanIkkeOpretteIkkeAktiv
@@ -93,7 +93,7 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
   }
   if (dac7Spaerret) {
     return (
-      <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 text-fejl-tekst">
+      <div className="rounded-none border border-fejl-kant bg-fejl-bg p-5 text-fejl-tekst">
         <p className="font-semibold">{DAC7_FEJL_TEKST}</p>
         <Link href="/konto/skat" className="btn btn-sekundaer mt-4">
           Udfyld skatteoplysninger

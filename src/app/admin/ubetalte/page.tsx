@@ -113,7 +113,7 @@ export default async function AdminUbetalte({
       />
 
       {sager.length === 0 ? (
-        <p className="rounded-[14px] border border-admin-kant bg-white p-8 text-center text-sm text-tekst-svag">
+        <p className="rounded-none border border-admin-kant bg-white p-8 text-center text-sm text-tekst-svag">
           {fane === "afventer" ? "Ingen sager venter." : "Ingen behandlede sager endnu."}
         </p>
       ) : (
@@ -123,7 +123,7 @@ export default async function AdminUbetalte({
             const tidligere = advarselAntal.get(s.buyer_id) ?? 0;
             const beloeb = beloebMap.get(s.trade_id);
             return (
-              <li key={s.id} className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+              <li key={s.id} className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
                 <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                   <div className="min-w-0">
                     <p className="text-xs uppercase text-tekst-svag">Køber</p>
@@ -201,7 +201,7 @@ export default async function AdminUbetalte({
                 ) : (
                   <div className="mt-4 rounded-lg bg-neutral-50 px-3 py-2 text-sm text-tekst">
                     <span
-                      className={`mr-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                      className={`mr-2 inline-block rounded-none px-2 py-0.5 text-xs font-medium ${
                         s.status === "advarsel_givet" ? "bg-red-100 text-fejl-tekst" : "bg-neutral-200 text-tekst"
                       }`}
                     >

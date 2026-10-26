@@ -65,7 +65,7 @@ export function HenvendelseStatusBadge({ status }: { status: string }) {
             ? ADMIN_ERHVERV.henvendelser.status.afvist
             : status;
   return (
-    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_KLASSE[status] ?? "bg-neutral-100"}`}>
+    <span className={`inline-flex rounded-none px-2.5 py-0.5 text-xs font-semibold ${STATUS_KLASSE[status] ?? "bg-neutral-100"}`}>
       {navn}
     </span>
   );

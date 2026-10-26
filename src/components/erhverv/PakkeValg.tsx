@@ -103,7 +103,7 @@ export default function PakkeValg({
           const erAaben = aaben === p.id;
           const afventer = afventerId === p.id;
           return (
-            <li key={p.id} className="rounded-[14px] border-2 border-kant p-5">
+            <li key={p.id} className="rounded-none border-2 border-kant p-5">
               <PakkeInfo pakke={p} />
               {afventer ? (
                 <p className="mt-3 rounded-lg bg-advarsel-bg px-4 py-3 text-[17px] font-semibold text-advarsel-tekst">

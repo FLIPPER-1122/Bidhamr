@@ -51,7 +51,7 @@ export default function ProfileHeader({
   populaerSaelger = false,
 }: ProfileHeaderProps) {
   return (
-    <div className="overflow-hidden rounded-[14px] border border-kant bg-white">
+    <div className="overflow-hidden rounded-none border border-kant bg-white">
       <div className="px-5 pb-6 pt-6 sm:px-8">
         {/* Avatar, navn, oplysninger og knap. Mobil: avatar og navn side om
             side, oplysninger og knap i fuld bredde under. Fra sm: avatar til

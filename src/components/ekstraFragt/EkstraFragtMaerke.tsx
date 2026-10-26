@@ -25,5 +25,5 @@ export default function EkstraFragtMaerke({
       : status === "behandles"
         ? "Ekstra fragt: betaling behandles"
         : "Ekstra fragt: indsigelse";
-  return <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${stil}`}>{tekst}</span>;
+  return <span className={`inline-block rounded-none border px-2.5 py-0.5 text-xs font-semibold ${stil}`}>{tekst}</span>;
 }

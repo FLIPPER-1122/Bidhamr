@@ -46,12 +46,12 @@ function Kolonne({
 }) {
   return (
     <section
-      className={`rounded-[14px] p-5 sm:p-8 ${
+      className={`rounded-none p-5 sm:p-8 ${
         fremhaevet ? "border-2 border-groen bg-white" : "bg-groen-lys"
       }`}
     >
       <span
-        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+        className={`inline-flex items-center gap-1.5 rounded-none px-3 py-1 text-xs font-semibold ${
           fremhaevet ? "bg-groen text-white" : "bg-white text-groen-mork"
         }`}
       >
@@ -80,7 +80,7 @@ export default function BeskyttelsePage() {
 
       <div className="mt-8 flex flex-col gap-5 lg:gap-6">
         {OEVRIGE.map((s) => (
-          <section key={s.overskrift} className="rounded-[14px] border border-kant bg-white p-5 sm:p-8">
+          <section key={s.overskrift} className="rounded-none border border-kant bg-white p-5 sm:p-8">
             <h2 className="text-[20px] leading-tight text-groen-mork lg:text-[22px]">{s.overskrift}</h2>
             {s.tekst && <p className="mt-2 text-sm text-tekst-daempet">{s.tekst}</p>}
             <Punkter punkter={s.punkter} accent="bg-groen" />

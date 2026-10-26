@@ -10,7 +10,7 @@ export default async function FakturaBoks({ tradeId }: { tradeId: string }) {
   const fakturaer = await hentMineFakturaer(supabase, tradeId);
   if (!fakturaer || fakturaer.length === 0) return null;
   return (
-    <section aria-labelledby={`fakturaer-${tradeId}`} className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+    <section aria-labelledby={`fakturaer-${tradeId}`} className="rounded-none border border-kant bg-white p-5 sm:p-6">
       <h2 id={`fakturaer-${tradeId}`} className="text-[17px] leading-snug lg:text-lg">
         {T.boksTitel}
       </h2>

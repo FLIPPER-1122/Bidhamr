@@ -124,7 +124,7 @@ export default function ProfileTabs({
                 return (
                   <div key={auktion.id} className="relative">
                     <span
-                      className={`absolute top-2 left-2 z-10 rounded-full px-2 py-0.5 text-xs font-semibold ${badge.cls}`}
+                      className={`absolute top-2 left-2 z-10 rounded-none px-2 py-0.5 text-xs font-semibold ${badge.cls}`}
                     >
                       {badge.label}
                     </span>
@@ -146,7 +146,7 @@ export default function ProfileTabs({
               knap={{ href: "/auktioner", tekst: "Se alle auktioner" }}
             />
           ) : (
-            <ul className="divide-y divide-kant rounded-[14px] border border-kant bg-white">
+            <ul className="divide-y divide-kant rounded-none border border-kant bg-white">
               {mineBud.map((bud) => (
                 <li key={bud.auktionId} className="relative flex items-center gap-3 px-4 py-3.5 sm:gap-4">
                   <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-skelet">
@@ -187,7 +187,7 @@ export default function ProfileTabs({
                   </div>
 
                   <span
-                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${BUD_STYLE[bud.status]}`}
+                    className={`shrink-0 rounded-none px-2.5 py-1 text-xs font-semibold ${BUD_STYLE[bud.status]}`}
                   >
                     {BUD_LABEL[bud.status]}
                   </span>
@@ -219,7 +219,7 @@ export default function ProfileTabs({
                 erSaelger
                 erLoggetInd
                 mitId={brugerId}
-                kortKlasse="rounded-[14px] border border-kant bg-white p-4 sm:p-5"
+                kortKlasse="rounded-none border border-kant bg-white p-4 sm:p-5"
                 tomTekst="Du har ingen bedømmelser endnu."
               />
             </div>

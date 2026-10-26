@@ -145,7 +145,7 @@ export default async function StatistikSide({
         />
       ) : (
         <>
-          <section aria-labelledby="indtjening" className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <section aria-labelledby="indtjening" className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 id="indtjening" className="text-[20px] leading-tight lg:text-[22px]">Indtjening</h2>
             <p className="mt-1 text-sm text-tekst-daempet">
               Udbetalt eller på vej til dig efter sælgergebyr.
@@ -185,7 +185,7 @@ export default async function StatistikSide({
             )}
           </section>
 
-          <section aria-labelledby="auktioner" className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <section aria-labelledby="auktioner" className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 id="auktioner" className="text-[20px] leading-tight lg:text-[22px]">Dine auktioner</h2>
               <Link href="/opret-auktion" className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:min-h-0">
@@ -232,7 +232,7 @@ export default async function StatistikSide({
                         href={f.id === "alle" ? "/konto/statistik#budt-paa" : `/konto/statistik?vis=${f.id}#budt-paa`}
                         scroll={false}
                         aria-current={valgt ? "page" : undefined}
-                        className={`inline-flex min-h-11 items-center rounded-full px-4 text-[13px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+                        className={`inline-flex min-h-11 items-center rounded-none px-4 text-[13px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
                           valgt ? "bg-groen text-white" : "bg-groen-lys text-groen-mork hover:bg-[#DCEAE4]"
                         }`}
                       >
@@ -244,7 +244,7 @@ export default async function StatistikSide({
               </ul>
             </nav>
             {vist.length === 0 ? (
-              <p className="mt-3 rounded-[14px] border border-kant bg-white px-5 py-8 text-center text-[15px] text-tekst-daempet">
+              <p className="mt-3 rounded-none border border-kant bg-white px-5 py-8 text-center text-[15px] text-tekst-daempet">
                 {filter === "aktive"
                   ? "Du byder ikke på noget lige nu."
                   : filter === "vundet"
@@ -252,7 +252,7 @@ export default async function StatistikSide({
                     : "Ingen auktioner her."}
               </p>
             ) : (
-              <ul className="mt-3 divide-y divide-kant rounded-[14px] border border-kant bg-white">
+              <ul className="mt-3 divide-y divide-kant rounded-none border border-kant bg-white">
                 {vist.map((b) => {
                   const status = STATUS[b.min_status] ?? STATUS.tabt;
                   const koerer = b.min_status === "foerer" || b.min_status === "overbudt";
@@ -267,7 +267,7 @@ export default async function StatistikSide({
                     <li key={b.auktion_id}>
                       <Link
                         href={href}
-                        className="flex items-center gap-3 rounded-[14px] px-4 py-3.5 hover:bg-groen-lys/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen sm:gap-4"
+                        className="flex items-center gap-3 rounded-none px-4 py-3.5 hover:bg-groen-lys/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen sm:gap-4"
                       >
                         <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-skelet">
                           {b.billede && (
@@ -298,7 +298,7 @@ export default async function StatistikSide({
                             )}
                           </span>
                         </span>
-                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${status.klasse}`}>
+                        <span className={`shrink-0 rounded-none border px-2.5 py-1 text-xs font-semibold ${status.klasse}`}>
                           {status.tekst}
                         </span>
                       </Link>

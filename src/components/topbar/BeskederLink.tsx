@@ -18,7 +18,7 @@ export default function BeskederLink({ className }: { className: string }) {
       {antal > 0 && (
         <span
           aria-hidden="true"
-          className="absolute top-1 right-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-fejl-fyldt px-1 text-[11px] leading-none font-semibold text-white ring-2 ring-white"
+          className="absolute top-1 right-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-none bg-fejl-fyldt px-1 text-[11px] leading-none font-semibold text-white ring-2 ring-white"
         >
           {badgeTekst(antal)}
         </span>

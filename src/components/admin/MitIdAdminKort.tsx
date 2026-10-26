@@ -55,17 +55,17 @@ function tid(iso: string) {
 export function MitIdBadge({ verificeretKl, erFirma }: { verificeretKl: string | null; erFirma: boolean }) {
   if (erFirma) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 font-medium text-neutral-600">
+      <span className="inline-flex items-center gap-1 rounded-none bg-neutral-100 px-2 py-0.5 font-medium text-neutral-600">
         MitID: firmakonto (undtaget)
       </span>
     );
   }
   return verificeretKl ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-800">
+    <span className="inline-flex items-center gap-1 rounded-none bg-green-100 px-2 py-0.5 font-medium text-green-800">
       MitID-verificeret {new Date(verificeretKl).toLocaleDateString("da-DK")}
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 font-medium text-yellow-800">
+    <span className="inline-flex items-center gap-1 rounded-none bg-yellow-100 px-2 py-0.5 font-medium text-yellow-800">
       MitID: ikke verificeret
     </span>
   );

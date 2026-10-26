@@ -25,7 +25,7 @@ export default function FakturaListe({
   handelSti?: (tradeId: string) => string;
 }) {
   return (
-    <ul className="divide-y divide-kant rounded-[14px] border border-kant bg-white">
+    <ul className="divide-y divide-kant rounded-none border border-kant bg-white">
       {fakturaer.map((f) => {
         const kredit = f.dokument === "kreditnota";
         return (

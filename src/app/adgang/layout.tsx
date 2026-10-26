@@ -18,7 +18,7 @@ export default async function AdgangLayout({ children }: { children: React.React
       <div className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-3">
           <Image src="/brand/bidhamr-logo.svg" alt="BidHamr" width={160} height={42} unoptimized className="h-8 w-auto" />
-          <span className="rounded-full bg-groen-lys px-2.5 py-1 text-xs font-semibold text-groen-mork">Admin</span>
+          <span className="rounded-none bg-groen-lys px-2.5 py-1 text-xs font-semibold text-groen-mork">Admin</span>
         </div>
         {children}
       </div>

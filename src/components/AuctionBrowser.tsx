@@ -246,7 +246,7 @@ export default function AuctionBrowser({
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-4 rounded-[14px] bg-groen-lys p-4 md:grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.4fr)] lg:gap-x-5">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-4 rounded-none bg-groen-lys p-4 md:grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.4fr)] lg:gap-x-5">
         <div className={`min-w-0 ${kategoriRaekkeVises ? "hidden md:block" : ""}`}>
           <label htmlFor="filter-kategori" className={etiket}>Kategori</label>
           <select
@@ -349,7 +349,7 @@ export default function AuctionBrowser({
               type="button"
               onClick={() => skiftRadius(RADIUS_MAX)}
               aria-pressed={erHeleDanmark}
-              className={`inline-flex h-11 shrink-0 items-center rounded-full px-3.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+              className={`inline-flex h-11 shrink-0 items-center rounded-none px-3.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
                 erHeleDanmark
                   ? "bg-groen text-white"
                   : "border border-kant-staerk bg-white text-tekst-daempet hover:border-groen hover:text-groen"
@@ -377,7 +377,7 @@ export default function AuctionBrowser({
       )}
 
       {!loading && !fejl && auktioner.length === 0 ? (
-        <div className="mt-4 flex flex-col items-center rounded-[14px] border border-kant px-6 py-10 text-center">
+        <div className="mt-4 flex flex-col items-center rounded-none border border-kant px-6 py-10 text-center">
           <span className="grid h-14 w-14 place-items-center rounded-full bg-groen-lys text-groen-mork">
             <Ikon navn="soeg" className="h-6 w-6" />
           </span>

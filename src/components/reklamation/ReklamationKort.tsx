@@ -161,7 +161,7 @@ export default function ReklamationKort({ r }: { r: SaelgerReklamation }) {
     <section
       id="reklamation"
       aria-labelledby="reklamation-titel"
-      className={`scroll-mt-24 rounded-[14px] border-2 p-5 sm:p-6 ${tone}`}
+      className={`scroll-mt-24 rounded-none border-2 p-5 sm:p-6 ${tone}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="reklamation-titel" className="text-[20px] leading-tight lg:text-[22px]">

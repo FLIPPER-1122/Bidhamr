@@ -31,7 +31,7 @@ export default function SoegResultater({ q, traef, erhverv = false }: { q: strin
               <h2 id={`soeg-${type}`} className="text-[13px] font-semibold uppercase tracking-[0.06em] text-tekst-svag">
                 {SOEG_TYPE_NAVN[type]} ({liste.length})
               </h2>
-              <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+              <ul className="overflow-hidden rounded-none border border-admin-kant bg-white">
                 {liste.map((t) => (
                   <li key={`${t.type}-${t.id}`} className="border-t border-admin-kant first:border-t-0">
                     <Link

@@ -31,7 +31,7 @@ export default async function FirmaRegninger() {
         {o.regninger.length === 0 ? (
           <p className={E_TEKST}>{T.regninger.tom}</p>
         ) : (
-          <ul className="divide-y divide-kant rounded-[14px] border border-kant">
+          <ul className="divide-y divide-kant rounded-none border border-kant">
             {o.regninger.map((r) => {
               const ubetalt = r.status === "afventer" || r.status === "mislykket";
               return (

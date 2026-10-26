@@ -17,7 +17,7 @@ const inter = Inter({
 });
 
 // Ikoner og delebillede kommer fra filkonventionerne i src/app:
-// favicon.ico, icon.svg, apple-icon.png og opengraph-image.jpg
+// favicon.ico, icon.svg, icon1.png (192x192), apple-icon.png og opengraph-image.jpg
 // (lavet ud fra public/brand/bidhamr-app-ikon.svg, app-ikon 7B).
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://bidhamr.dk"),

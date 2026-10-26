@@ -182,7 +182,7 @@ export default async function AdminEkstraFragt({
           link={filter !== "alle" ? { href: href("alle"), label: "Se alle regninger" } : undefined}
         />
       ) : (
-        <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+        <ul className="overflow-hidden rounded-none border border-admin-kant bg-white">
           {raekker.map((r) => {
             const spaerrer = r.status === "afventer_betaling" && Date.parse(r.frist) <= nuMs;
             const tabt = r.status === "betalt" && !!r.bankindsigelse_tabt_kl && !r.bankindsigelse_haandteret_kl;

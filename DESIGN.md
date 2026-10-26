@@ -221,14 +221,15 @@ Faste layout-regler:
 
 ## 5. Radier og skygger
 
+**Kantede hjørner overalt (Filip, 26. okt. 2026 – som appens redesign).** Alle radius-tokens i
+`globals.css` er 0, så `rounded`, `rounded-md`, `rounded-lg`, `rounded-xl` osv. giver skarpe hjørner.
+Brug ikke `rounded-[..px]` i ny kode. Ældre klasseeksempler længere nede i dokumentet med runde
+radier gælder ikke længere – hjørnerne er altid 0.
+
 | Klasse | Værdi | Bruges til |
 |---|---|---|
-| `rounded-md` | 8px | små elementer, søgeknappen inde i hero-søgefeltet **[MOCKUP]** |
-| `rounded-lg` | 10px | knapper, ikonflader i tryghedsstribe **[MOCKUP]** |
-| `rounded-xl` | 12px | inputfelter, søgeboks **[MOCKUP]** |
-| `rounded-[14px]` | 14px | **kort og kategori-flader** **[MOCKUP]** |
-| `rounded-[18px]` | 18px | hero-panel og andre store flader **[MOCKUP]** |
-| `rounded-full` | 999px | chips, timer-badge, avatar, rund søgeknap i header **[MOCKUP]** |
+| `rounded-none` / `rounded-*` | 0 | knapper, kort, felter, bokse, modaler, dropdowns, billeder, badges, chips, tabs, toasts |
+| `rounded-full` | 999px | **kun bevidste cirkler**: avatarer, runde ikonknapper, radioknapper, switches, statusprikker, spinnere |
 
 Skygger – brug få og bløde:
 

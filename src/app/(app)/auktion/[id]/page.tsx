@@ -408,7 +408,7 @@ export default async function AuktionPage({
         </p>
       )}
       {kunstAfventer && (
-        <div role="status" className="mb-4 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4">
+        <div role="status" className="mb-4 rounded-none border border-advarsel-kant bg-advarsel-bg p-4">
           <p className="font-semibold text-advarsel-tekst">{KUNST_TEKST.afventerTitel}</p>
           <p className="mt-1 text-sm text-tekst-daempet">
             {erSælger ? KUNST_TEKST.afventerSaelger : KUNST_TEKST.afventerStaff}
@@ -416,7 +416,7 @@ export default async function AuktionPage({
         </div>
       )}
       {skjult && (
-        <div role="status" className="mb-4 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4">
+        <div role="status" className="mb-4 rounded-none border border-advarsel-kant bg-advarsel-bg p-4">
           <p className="font-semibold text-advarsel-tekst">
             {annulleretSkjult
               ? medhold && erSælger
@@ -508,7 +508,7 @@ export default async function AuktionPage({
           </ol>
         </nav>
 
-        <span className="shrink-0 rounded-full bg-groen-lys px-3 py-1 text-xs font-medium text-groen-mork">
+        <span className="shrink-0 rounded-none bg-groen-lys px-3 py-1 text-xs font-medium text-groen-mork">
           Varenr. {varenummer}
         </span>
       </div>
@@ -541,7 +541,7 @@ export default async function AuktionPage({
         {/* Højre spalte: status, bud og praktisk info */}
         <div className="min-w-0 lg:col-span-2 lg:col-start-4 lg:row-span-2 lg:row-start-1">
           {erVinder && (
-            <div className="mb-4 rounded-[14px] border border-succes-kant bg-succes-bg p-4">
+            <div className="mb-4 rounded-none border border-succes-kant bg-succes-bg p-4">
               <p className="font-semibold text-succes-tekst">
                 Du har vundet denne auktion!
               </p>
@@ -561,7 +561,7 @@ export default async function AuktionPage({
           )}
 
           {erSælger && auktionErSlut && vinderBud && (
-            <div className="mb-4 rounded-[14px] border border-succes-kant bg-succes-bg p-4">
+            <div className="mb-4 rounded-none border border-succes-kant bg-succes-bg p-4">
               <p className="font-semibold text-succes-tekst">
                 Din auktion er solgt
               </p>

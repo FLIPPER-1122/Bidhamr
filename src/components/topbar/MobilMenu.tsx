@@ -106,7 +106,7 @@ export default function MobilMenu({
         {loggetInd && antalBeskeder > 0 && (
           <span
             aria-hidden="true"
-            className="absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-fejl-fyldt px-1 text-[11px] leading-none font-semibold text-white ring-2 ring-white"
+            className="absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-none bg-fejl-fyldt px-1 text-[11px] leading-none font-semibold text-white ring-2 ring-white"
           >
             {badgeTekst(antalBeskeder)}
           </span>
@@ -202,7 +202,7 @@ export default function MobilMenu({
                       {antalBeskeder > 0 && (
                         <span
                           aria-hidden="true"
-                          className="flex h-[20px] min-w-[20px] items-center justify-center rounded-full bg-fejl-fyldt px-1.5 text-[12px] leading-none font-semibold text-white"
+                          className="flex h-[20px] min-w-[20px] items-center justify-center rounded-none bg-fejl-fyldt px-1.5 text-[12px] leading-none font-semibold text-white"
                         >
                           {badgeTekst(antalBeskeder)}
                         </span>

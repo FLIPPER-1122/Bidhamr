@@ -237,7 +237,7 @@ export default async function AfgoerelseSide({
         </p>
       )}
 
-      <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="status-titel">
+      <section className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6" aria-labelledby="status-titel">
         <h2 id="status-titel" className="text-[20px] leading-tight font-semibold text-tekst">
           Status
         </h2>
@@ -246,7 +246,7 @@ export default async function AfgoerelseSide({
         </div>
       </section>
 
-      <section className="mt-6 rounded-[14px] border border-kant bg-white px-5 py-2 sm:px-6" aria-label="Begrundelse">
+      <section className="mt-6 rounded-none border border-kant bg-white px-5 py-2 sm:px-6" aria-label="Begrundelse">
         <dl>
           {a.indhold_tekst && <Raekke titel="Det drejer sig om">{a.indhold_tekst}</Raekke>}
           <Raekke titel="Hvorfor">{a.fakta}</Raekke>
@@ -309,7 +309,7 @@ export default async function AfgoerelseSide({
         </dl>
       </section>
 
-      <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="klage-titel">
+      <section className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6" aria-labelledby="klage-titel">
         <h2 id="klage-titel" className="text-[20px] leading-tight font-semibold text-tekst">
           {k ? "Din klage" : "Er du uenig?"}
         </h2>

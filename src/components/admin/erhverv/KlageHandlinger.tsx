@@ -72,7 +72,7 @@ export default function KlageHandlinger({ id, status }: { id: string; status: Kl
               role="radio"
               aria-checked={noteType === t}
               onClick={() => setNoteType(t)}
-              className={`inline-flex min-h-11 items-center rounded-full border px-4 text-sm font-medium ${
+              className={`inline-flex min-h-11 items-center rounded-none border px-4 text-sm font-medium ${
                 noteType === t ? "border-groen bg-groen text-white" : "border-neutral-300 bg-white text-neutral-700"
               }`}
             >

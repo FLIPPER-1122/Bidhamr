@@ -108,7 +108,7 @@ export default function KontoUdbetaling({
       </p>
       {fejl && <FejlBoks tekst={fejl} />}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className={`rounded-full border px-3 py-1 text-sm font-medium ${status.stil}`}>
+        <span className={`rounded-none border px-3 py-1 text-sm font-medium ${status.stil}`}>
           {status.tekst}
         </span>
         {visFortsaet && (

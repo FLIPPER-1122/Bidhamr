@@ -171,7 +171,7 @@ export default async function KontoSide({
         <section
           id="mitid"
           aria-labelledby="mitid-kort-titel"
-          className="mt-6 scroll-mt-24 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-5 text-advarsel-tekst sm:p-6"
+          className="mt-6 scroll-mt-24 rounded-none border border-advarsel-kant bg-advarsel-bg p-5 text-advarsel-tekst sm:p-6"
         >
           <div className="flex items-start gap-3">
             <MitIDIkon />
@@ -199,7 +199,7 @@ export default async function KontoSide({
       {dac7Anmodning && (
         <section
           id="skat"
-          className={`mt-6 scroll-mt-24 rounded-[14px] border p-5 sm:p-6 ${
+          className={`mt-6 scroll-mt-24 rounded-none border p-5 sm:p-6 ${
             dac7Anmodning.spaerret
               ? "border-fejl-kant bg-fejl-bg text-fejl-tekst"
               : "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst"
@@ -220,7 +220,7 @@ export default async function KontoSide({
       {advarsler.length > 0 && (
         <section
           id="advarsler"
-          className="mt-6 scroll-mt-24 rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-5 sm:p-6"
+          className="mt-6 scroll-mt-24 rounded-none border border-advarsel-kant bg-advarsel-bg p-5 sm:p-6"
         >
           <h2 className="text-[20px] leading-tight text-advarsel-tekst lg:text-[22px]">
             Advarsler ({advarsler.length})
@@ -246,7 +246,7 @@ export default async function KontoSide({
       {paamindelser.length > 0 && (
         <section
           id="paamindelser"
-          className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6"
+          className="mt-6 scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6"
         >
           <h2 className="text-[20px] leading-tight lg:text-[22px]">
             Påmindelser ({paamindelser.length})
@@ -275,7 +275,7 @@ export default async function KontoSide({
             <li key={o.href}>
               <Link
                 href={o.href}
-                className="flex h-full min-h-11 items-start gap-3 rounded-[14px] border border-kant bg-white p-4 hover:border-kant-staerk hover:shadow-[0_8px_24px_rgba(0,0,0,.10)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+                className="flex h-full min-h-11 items-start gap-3 rounded-none border border-kant bg-white p-4 hover:border-kant-staerk hover:shadow-[0_8px_24px_rgba(0,0,0,.10)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
               >
                 <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-groen-lys text-groen-mork">
                   <Ikon navn={o.ikon} className="h-[18px] w-[18px]" />
@@ -290,7 +290,7 @@ export default async function KontoSide({
         </ul>
       </nav>
       {mineLod && (
-        <section id="lodtraekning" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+        <section id="lodtraekning" className="mt-6 scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6">
           <div className="flex items-start gap-3">
             <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-groen-lys text-groen-mork">
               <Ikon navn="gave" className="h-[18px] w-[18px]" />
@@ -328,7 +328,7 @@ export default async function KontoSide({
 
       {/* Ikke verificeret: kortet står øverst på siden (se ovenfor). */}
       {mitidData && (
-        <section id="mitid" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+        <section id="mitid" className="mt-6 scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6">
           <h2 className="text-[20px] leading-tight lg:text-[22px]">{MITID.kontoTitel}</h2>
           <div className="mt-2 space-y-2 text-sm text-tekst-daempet">
             <MitIDMaerke />
@@ -351,7 +351,7 @@ export default async function KontoSide({
         </p>
       ) : (
         <>
-          <section id="betaling" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <section id="betaling" className="mt-6 scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[20px] leading-tight lg:text-[22px]">Betaling</h2>
             <div className="mt-3">
               <KontoBetaling
@@ -363,7 +363,7 @@ export default async function KontoSide({
             </div>
           </section>
 
-          <section id="udbetaling" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <section id="udbetaling" className="mt-6 scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[20px] leading-tight lg:text-[22px]">Udbetaling</h2>
             <div className="mt-3">
               <KontoUdbetaling
@@ -377,7 +377,7 @@ export default async function KontoSide({
       )}
 
       {point && (
-        <section id="boost" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+        <section id="boost" className="mt-6 scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6">
           <h2 className="text-[20px] leading-tight lg:text-[22px]">{BOOST_TEKST.sideTitel}</h2>
           <p className="mt-1 text-sm text-tekst-daempet">
             {BOOST_TEKST.saldoLabel}: <span className="font-semibold text-tekst">{BOOST_TEKST.saldo(point.saldo)}</span>
@@ -395,7 +395,7 @@ export default async function KontoSide({
         </section>
       )}
 
-      <section id="notifikationer" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+      <section id="notifikationer" className="mt-6 scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6">
         <h2 className="text-[20px] leading-tight lg:text-[22px]">Notifikationer</h2>
         <p className="mt-1 text-sm text-tekst-daempet">
           Vælg, hvilke beskeder du vil have i klokken, på mail og i appen.
@@ -405,7 +405,7 @@ export default async function KontoSide({
         </Link>
       </section>
 
-      <section id="afgoerelser" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+      <section id="afgoerelser" className="mt-6 scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6">
         <h2 className="text-[20px] leading-tight lg:text-[22px]">Afgørelser og anmeldelser</h2>
         <p className="mt-1 text-sm text-tekst-daempet">
           Se, hvis BidHamr har fjernet eller begrænset noget af dit indhold, og klag, hvis du er uenig. Her kan du også
@@ -416,7 +416,7 @@ export default async function KontoSide({
         </Link>
       </section>
 
-      <section id="blokerede" className="mt-6 scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+      <section id="blokerede" className="mt-6 scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6">
         <h2 className="text-[20px] leading-tight lg:text-[22px]">Blokerede brugere</h2>
         <p className="mt-1 text-sm text-tekst-daempet">
           Blokerede brugere kan ikke byde på dine auktioner, skrive til dig eller stille dig spørgsmål.

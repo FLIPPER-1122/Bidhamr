@@ -97,7 +97,7 @@ function AfsnitBoks({ afsnit, ekstra }: { afsnit: Afsnit; ekstra?: ReactNode }) 
     <section
       id={afsnit.id}
       aria-labelledby={`${afsnit.id}-overskrift`}
-      className="scroll-mt-24 rounded-[14px] border border-kant bg-white p-6"
+      className="scroll-mt-24 rounded-none border border-kant bg-white p-6"
     >
       <h2 id={`${afsnit.id}-overskrift`} className="text-[20px] text-groen-mork sm:text-[22px]">
         {afsnit.overskrift}

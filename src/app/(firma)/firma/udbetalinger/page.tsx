@@ -41,7 +41,7 @@ export default async function FirmaUdbetalinger() {
         {salg.length === 0 ? (
           <p className={E_TEKST}>{U.tom}</p>
         ) : (
-          <ul className="divide-y divide-kant rounded-[14px] border border-kant">
+          <ul className="divide-y divide-kant rounded-none border border-kant">
             {salg.map((s) => {
               const st = status(s);
               return (

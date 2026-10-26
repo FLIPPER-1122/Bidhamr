@@ -47,7 +47,7 @@ export default function KraeverHandling({
       <h2 id="kraever-handling" className="text-[13px] font-semibold uppercase tracking-[0.06em] text-tekst-svag">
         Kræver handling
       </h2>
-      <div className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+      <div className="overflow-hidden rounded-none border border-admin-kant bg-white">
         {liste.length === 0 ? (
           <p role="status" className="bg-succes-bg px-5 py-6 text-center text-sm text-succes-tekst">
             <span aria-hidden="true">✓ </span>Der er intet, der venter på dig.{" "}
@@ -71,7 +71,7 @@ export default function KraeverHandling({
                 {/* Mobil: frist og knap på linjen under titlen. Computer: hver sin kolonne. */}
                 <div className="col-start-2 col-end-4 flex flex-wrap items-center gap-2 sm:contents">
                   {r.frist ? (
-                    <span className={`whitespace-nowrap rounded-full px-[9px] py-[3px] text-[12.5px] sm:order-1 ${FRIST[r.frist.alvor]}`}>
+                    <span className={`whitespace-nowrap rounded-none px-[9px] py-[3px] text-[12.5px] sm:order-1 ${FRIST[r.frist.alvor]}`}>
                       {r.frist.tekst}
                     </span>
                   ) : (

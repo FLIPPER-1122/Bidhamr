@@ -139,7 +139,7 @@ export default async function ErhvervOversigt({
         link={tal.nyeHenvendelser > VIS_NYE ? { href: "/admin/erhverv/henvendelser?status=ny", label: "Se alle nye →" } : undefined}
       >
         {nyeListe.length === 0 ? (
-          <p className="rounded-[14px] border border-succes-kant bg-succes-bg px-5 py-4 text-sm text-succes-tekst">
+          <p className="rounded-none border border-succes-kant bg-succes-bg px-5 py-4 text-sm text-succes-tekst">
             <span aria-hidden="true">✓ </span>Ingen nye henvendelser.{" "}
             <Link href="/admin/erhverv/henvendelser?status=i_gang" className="font-semibold underline">
               Se dem, der er i gang
@@ -160,11 +160,11 @@ export default async function ErhvervOversigt({
 
       <Sektion id="erhverv-lukning" titel="Lukning, suspension og forslag">
         {lukningForslag.length === 0 && susp.length === 0 && tal.advarselForslag === 0 ? (
-          <p className="rounded-[14px] border border-admin-kant bg-white px-5 py-4 text-sm text-tekst-daempet">
+          <p className="rounded-none border border-admin-kant bg-white px-5 py-4 text-sm text-tekst-daempet">
             Ingen firmakonti er suspenderet, og der er ingen forslag om lukning eller advarsel.
           </p>
         ) : (
-          <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+          <ul className="overflow-hidden rounded-none border border-admin-kant bg-white">
             {lukningForslag.map((l) => (
               <li key={l.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-admin-kant px-4 py-3 first:border-t-0">
                 <span className="min-w-0">
@@ -216,7 +216,7 @@ export default async function ErhvervOversigt({
           ))}
         </div>
         {abonnementProblemer.length > 0 && (
-          <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+          <ul className="overflow-hidden rounded-none border border-admin-kant bg-white">
             {abonnementProblemer.slice(0, 10).map((f) => (
               <li key={f.id} className="border-t border-admin-kant first:border-t-0">
                 <Link href={`/admin/erhverv/firmaer/${f.id}`} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 hover:bg-admin-bg">

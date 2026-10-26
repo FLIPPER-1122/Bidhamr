@@ -151,7 +151,7 @@ export default function EkstraFragtKort({
           Ekstra fragt: <span className="font-bold tabular-nums">{beloeb}</span>
         </h2>
         <span
-          className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+          className={`inline-block rounded-none border px-2.5 py-0.5 text-xs font-semibold ${
             r.spaerrer ? "border-fejl-kant bg-white text-fejl-tekst" : "border-advarsel-kant bg-white text-advarsel-tekst"
           }`}
         >
@@ -216,7 +216,7 @@ function Ramme({
     fejl: "border-fejl-kant bg-fejl-bg",
   }[tone];
   return (
-    <section aria-labelledby={titelId} className={`rounded-[14px] border p-5 sm:p-6 ${stil}`}>
+    <section aria-labelledby={titelId} className={`rounded-none border p-5 sm:p-6 ${stil}`}>
       {children}
     </section>
   );

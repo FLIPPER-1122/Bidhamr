@@ -123,7 +123,7 @@ export default async function AdminDac7({ searchParams }: { searchParams: Promis
                 key={a}
                 href={`/admin/dac7?aar=${a}`}
                 aria-current={a === aar ? "page" : undefined}
-                className={`inline-flex min-h-11 items-center rounded-full border px-4 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+                className={`inline-flex min-h-11 items-center rounded-none border px-4 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
                   a === aar ? "border-groen bg-groen text-white" : "border-kant-staerk bg-white text-tekst hover:bg-groen-lys"
                 }`}
               >
@@ -153,7 +153,7 @@ export default async function AdminDac7({ searchParams }: { searchParams: Promis
         ))}
       </dl>
 
-      <section className="rounded-[14px] border border-kant bg-white">
+      <section className="rounded-none border border-kant bg-white">
         <h2 className="border-b border-kant px-4 py-3 text-base font-semibold">
           Skal indberettes for {aar} ({pligtige.length})
         </h2>
@@ -165,7 +165,7 @@ export default async function AdminDac7({ searchParams }: { searchParams: Promis
       </section>
 
       {naer.length > 0 && (
-        <section className="rounded-[14px] border border-kant bg-white">
+        <section className="rounded-none border border-kant bg-white">
           <h2 className="border-b border-kant px-4 py-3 text-base font-semibold">
             Nærmer sig grænsen ({naer.length})
           </h2>
@@ -177,7 +177,7 @@ export default async function AdminDac7({ searchParams }: { searchParams: Promis
         </section>
       )}
 
-      <section className="rounded-[14px] border border-kant bg-white p-4">
+      <section className="rounded-none border border-kant bg-white p-4">
         <h2 className="text-base font-semibold">Indberetning for {aar}</h2>
         {o.sendt_kl ? (
           <p className="mt-2 text-sm text-succes-tekst">
@@ -200,7 +200,7 @@ export default async function AdminDac7({ searchParams }: { searchParams: Promis
         )}
       </section>
 
-      <section className="rounded-[14px] border border-kant bg-white p-4">
+      <section className="rounded-none border border-kant bg-white p-4">
         <h2 className="text-base font-semibold">Indstillinger</h2>
         <p className="mt-1 text-sm text-tekst-daempet">
           BidHamr som platformsoperatør (står i filen) og årets kurs. Kursen kan ikke ændres, når året er sendt.

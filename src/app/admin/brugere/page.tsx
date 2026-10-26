@@ -94,7 +94,7 @@ export default async function AdminBrugere({
             key={f.id || "alle"}
             href={filterHref(f.id)}
             aria-current={filter === f.id ? "true" : undefined}
-            className={`inline-flex min-h-9 items-center rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`inline-flex min-h-9 items-center rounded-none border px-3 py-1.5 text-sm font-medium transition-colors ${
               filter === f.id
                 ? "border-neutral-900 bg-neutral-900 text-white"
                 : "border-admin-kant bg-white text-tekst-daempet hover:border-neutral-300 hover:text-tekst"
@@ -116,7 +116,7 @@ export default async function AdminBrugere({
           <Link
             key={user.id}
             href={`/admin/brugere/${user.id}`}
-            className="flex flex-wrap items-center gap-3 sm:gap-4 rounded-[14px] border border-admin-kant bg-white p-4 transition-shadow hover:shadow-md"
+            className="flex flex-wrap items-center gap-3 sm:gap-4 rounded-none border border-admin-kant bg-white p-4 transition-shadow hover:shadow-md"
           >
             <Avatar url={user.avatar_url} navn={user.navn} size={48} />
             <div className="min-w-0 flex-1">
@@ -130,19 +130,19 @@ export default async function AdminBrugere({
             <div className="flex flex-wrap items-center gap-1.5">
               {user.rolle && user.rolle !== "bruger" && <RolleBadge rolle={user.rolle} />}
               {user.konto_lukket_kl ? (
-                <span className="rounded-full bg-neutral-900 px-2.5 py-1 text-xs font-medium text-white">
+                <span className="rounded-none bg-neutral-900 px-2.5 py-1 text-xs font-medium text-white">
                   Lukket
                 </span>
               ) : (
                 <StatusBadge status={brugerStatus(user, user.advarsler_antal)} />
               )}
               {user.advarsler_antal > 0 && (
-                <span className="rounded-full bg-yellow-50 px-2 py-0.5 text-xs font-medium text-yellow-800">
+                <span className="rounded-none bg-yellow-50 px-2 py-0.5 text-xs font-medium text-yellow-800">
                   {user.advarsler_antal} {user.advarsler_antal === 1 ? "advarsel" : "advarsler"}
                 </span>
               )}
               {user.paamindelser_antal > 0 && (
-                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-tekst-daempet">
+                <span className="rounded-none bg-neutral-100 px-2 py-0.5 text-xs font-medium text-tekst-daempet">
                   {user.paamindelser_antal} {user.paamindelser_antal === 1 ? "påmindelse" : "påmindelser"}
                 </span>
               )}
@@ -153,7 +153,7 @@ export default async function AdminBrugere({
           </Link>
         ))}
         {!error && users.length === 0 && (
-          <div className="rounded-[14px] border border-admin-kant bg-white p-10 text-center text-tekst-svag">
+          <div className="rounded-none border border-admin-kant bg-white p-10 text-center text-tekst-svag">
             Ingen brugere fundet – prøv et andet navn, e-mail, telefonnummer eller bruger-id.
           </div>
         )}

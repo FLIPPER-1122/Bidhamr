@@ -8,7 +8,7 @@ export default function BoostetMaerke({ lille = false, className = "" }: { lille
   return (
     <span
       title={BOOST_TEKST.maerkeForklaring}
-      className={`inline-flex items-center gap-1 rounded-full bg-orange-knap font-semibold text-white ${stoerrelse} ${className}`}
+      className={`inline-flex items-center gap-1 rounded-none bg-orange-knap font-semibold text-white ${stoerrelse} ${className}`}
     >
       <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.25} aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />

@@ -355,7 +355,7 @@ export default async function DsaAdminSide({
   const overskredne = grupper.filter((g) => fristNiveau(g.frist) === "over").length;
 
   const chip = (aktiv: boolean) =>
-    `inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+    `inline-flex min-h-9 items-center gap-1.5 rounded-none border px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
       aktiv ? "border-groen bg-groen text-white" : "border-kant-staerk bg-white text-tekst hover:bg-groen-lys"
     }`;
 
@@ -477,7 +477,7 @@ export default async function DsaAdminSide({
           })}
 
           {viste.length === 0 && !fejl && (
-            <p className="rounded-[14px] border border-kant bg-white px-5 py-10 text-center text-sm text-tekst-daempet">
+            <p className="rounded-none border border-kant bg-white px-5 py-10 text-center text-sm text-tekst-daempet">
               {grupper.length === 0 ? "Der er ingen åbne anmeldelser." : "Ingen anmeldelser passer til filteret."}
             </p>
           )}
@@ -499,7 +499,7 @@ export default async function DsaAdminSide({
             />
           ))}
           {klager.length === 0 && !fejl && (
-            <li className="rounded-[14px] border border-kant bg-white px-5 py-10 text-center text-sm text-tekst-daempet">
+            <li className="rounded-none border border-kant bg-white px-5 py-10 text-center text-sm text-tekst-daempet">
               Der er ingen klager, der venter.
             </li>
           )}
@@ -510,7 +510,7 @@ export default async function DsaAdminSide({
         <div className="space-y-6">
           <section aria-labelledby="afg-titel" className="space-y-2">
             <h2 id="afg-titel" className="text-sm font-semibold text-tekst">Seneste indgreb (begrundelser sendt til brugeren)</h2>
-            <div className="overflow-x-auto rounded-[14px] border border-admin-kant bg-white">
+            <div className="overflow-x-auto rounded-none border border-admin-kant bg-white">
               <table className="w-full min-w-[720px] text-sm">
                 <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-tekst-svag">
                   <tr>
@@ -568,7 +568,7 @@ export default async function DsaAdminSide({
             <h2 id="anm-titel" className="text-sm font-semibold text-tekst">Seneste afsluttede anmeldelser</h2>
             <ul className="space-y-2">
               {afsAnm.map((a) => (
-                <li key={a.id} className="rounded-[14px] border border-admin-kant bg-white p-4 text-sm">
+                <li key={a.id} className="rounded-none border border-admin-kant bg-white p-4 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-tekst">{a.sagsnummer}</span>
                     <Pille>{anmeldKategoriNavn(a.kategori)}</Pille>
@@ -584,7 +584,7 @@ export default async function DsaAdminSide({
                 </li>
               ))}
               {afsAnm.length === 0 && (
-                <li className="rounded-[14px] border border-admin-kant bg-white px-5 py-8 text-center text-sm text-tekst-daempet">
+                <li className="rounded-none border border-admin-kant bg-white px-5 py-8 text-center text-sm text-tekst-daempet">
                   Ingen afsluttede anmeldelser endnu.
                 </li>
               )}
@@ -595,7 +595,7 @@ export default async function DsaAdminSide({
             <h2 id="kl-titel" className="text-sm font-semibold text-tekst">Seneste afgjorte klager</h2>
             <ul className="space-y-2">
               {afsKlager.map((k) => (
-                <li key={k.id} className="rounded-[14px] border border-admin-kant bg-white p-4 text-sm">
+                <li key={k.id} className="rounded-none border border-admin-kant bg-white p-4 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-tekst">{k.sagsnummer}</span>
                     <Pille farve={k.udfald === "medhold" ? "blaa" : "neutral"}>
@@ -609,7 +609,7 @@ export default async function DsaAdminSide({
                 </li>
               ))}
               {afsKlager.length === 0 && (
-                <li className="rounded-[14px] border border-admin-kant bg-white px-5 py-8 text-center text-sm text-tekst-daempet">
+                <li className="rounded-none border border-admin-kant bg-white px-5 py-8 text-center text-sm text-tekst-daempet">
                   Ingen afgjorte klager endnu.
                 </li>
               )}

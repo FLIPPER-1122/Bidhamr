@@ -64,7 +64,7 @@ export function Sektion({
   children: ReactNode;
 }) {
   return (
-    <section aria-labelledby={id} className="rounded-[14px] border border-kant bg-white p-4 sm:p-6">
+    <section aria-labelledby={id} className="rounded-none border border-kant bg-white p-4 sm:p-6">
       <h2 id={id} className="flex items-center gap-3 text-[17px] font-semibold text-tekst sm:text-lg">
         <span
           aria-hidden="true"
@@ -244,7 +244,7 @@ export function BilledVaelger({
                 </div>
               )}
               {i === 0 ? (
-                <span className="absolute bottom-1 left-1 rounded-full bg-groen px-2 py-0.5 text-xs font-semibold text-white">
+                <span className="absolute bottom-1 left-1 rounded-none bg-groen px-2 py-0.5 text-xs font-semibold text-white">
                   Forside
                 </span>
               ) : (
@@ -252,7 +252,7 @@ export function BilledVaelger({
                   <button
                     type="button"
                     onClick={() => goerTilForside(b.noegle)}
-                    className="absolute bottom-1 left-1 rounded-full bg-white/95 px-2 py-1 text-xs font-medium text-groen-mork focus-visible:outline-2 focus-visible:outline-groen"
+                    className="absolute bottom-1 left-1 rounded-none bg-white/95 px-2 py-1 text-xs font-medium text-groen-mork focus-visible:outline-2 focus-visible:outline-groen"
                   >
                     Gør til forside
                   </button>
@@ -350,7 +350,7 @@ export function Afkrydsning({
           onChange={(e) => onChange(e.target.checked)}
           aria-invalid={fejl ? true : undefined}
           aria-describedby={[hjaelp ? `${id}-hjaelp` : "", fejl ? `${id}-fejl` : ""].filter(Boolean).join(" ") || undefined}
-          className="mt-0.5 h-5 w-5 shrink-0 rounded-[6px] accent-groen"
+          className="mt-0.5 h-5 w-5 shrink-0 rounded-none accent-groen"
         />
         <span className="text-[15px] text-tekst">{children}</span>
       </label>

@@ -32,7 +32,7 @@ export default function EkstraFragtBjaelke({
   return (
     <div
       role={spaerret ? "alert" : "status"}
-      className={`rounded-[14px] border p-4 sm:p-5 ${
+      className={`rounded-none border p-4 sm:p-5 ${
         spaerret ? "border-fejl-kant bg-fejl-bg text-fejl-tekst" : "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst"
       } ${className}`}
     >

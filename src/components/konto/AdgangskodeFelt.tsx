@@ -113,7 +113,7 @@ export default function AdgangskodeFelt({
               {[0, 1, 2, 3].map((i) => (
                 <span
                   key={i}
-                  className={`h-1.5 flex-1 rounded-full transition-colors ${
+                  className={`h-1.5 flex-1 rounded-none transition-colors ${
                     vaerdi && vurdering.styrke > i ? STYRKE_FARVE[vurdering.styrke] : "bg-kant"
                   }`}
                 />

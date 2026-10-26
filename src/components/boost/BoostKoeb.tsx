@@ -175,12 +175,12 @@ function PakkeKort({ pakke, valgt, onVaelg }: { pakke: BoostPakke; valgt: boolea
           {(pakke.spar_oere > 0 || pakke.bedste) && (
             <span className="mt-1.5 flex flex-wrap gap-1.5">
               {pakke.spar_oere > 0 && (
-                <span className="rounded-full bg-white px-2.5 py-0.5 text-[12px] font-semibold whitespace-nowrap text-groen-mork ring-1 ring-groen/30">
+                <span className="rounded-none bg-white px-2.5 py-0.5 text-[12px] font-semibold whitespace-nowrap text-groen-mork ring-1 ring-groen/30">
                   {BOOST_TEKST.spar(pakke.spar_oere)}
                 </span>
               )}
               {pakke.bedste && (
-                <span className="rounded-full bg-orange-knap px-2.5 py-0.5 text-[12px] font-semibold whitespace-nowrap text-white">
+                <span className="rounded-none bg-orange-knap px-2.5 py-0.5 text-[12px] font-semibold whitespace-nowrap text-white">
                   {BOOST_TEKST.bedsteKoeb}
                 </span>
               )}

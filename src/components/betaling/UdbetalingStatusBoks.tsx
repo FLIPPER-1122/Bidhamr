@@ -96,7 +96,7 @@ export default function UdbetalingStatusBoks({ v }: { v: Udbetalingsvisning }) {
       stil = "border-info-kant bg-info-bg text-info-tekst";
   }
   return (
-    <div className={`rounded-[14px] border p-5 text-sm sm:p-6 ${stil}`}>
+    <div className={`rounded-none border p-5 text-sm sm:p-6 ${stil}`}>
       <p className="font-semibold">{titel}</p>
       <p className="mt-1">{tekst}</p>
       {ekstra && <p className="mt-2">{ekstra}</p>}
