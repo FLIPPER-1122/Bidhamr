@@ -520,3 +520,7 @@ Indsnævrer "Intet to-trins-login" fra 7. okt. 2026: **brugere har stadig intet 
 - **Gem kort:** kun kort (Apple Pay og Google Pay gemmes som kort). MobilePay og Revolut Pay kan ikke gemmes.
 - **Åbne betalinger fra før 20. okt. 2026** (lavet med Stripes automatiske metoder) annulleres og laves om med de tilladte metoder, næste gang køberen åbner betalingen. En betaling, der allerede er gennemført eller under behandling, røres ikke.
 - *Bygget 20. okt. 2026.* Før live (fase 6): MobilePay og Revolut Pay skal være slået til i Stripe-dashboardet, både for platformen og i Connect-indstillingerne for Express-konti – se docs/GO-LIVE-STRIPE.md E.
+
+## Før lancering: kun coming soon og erhverv, SEO tidligt (Filip, 26. okt. 2026)
+- Besøgende uden login ser før lancering kun coming soon (vist direkte på bidhamr.dk) og Erhverv i et minimalt layout uden links videre ind på sitet. Sidefoden viser kun firmaoplysninger, Privatlivspolitik (GDPR art. 13, erhvervsformularen) og DSA-kontaktpunkt (art. 11-12). /bidhamr-beskyttelse og /cookies lukkes før lancering. Cookie-banneret vises først efter lancering (kun nødvendige cookies før). Accept af brugerbetingelser kun for indloggede som før. Staff, beta-testere og firmakonti er uændrede.
+- SEO slås til nu for forsiden (coming soon) og Erhverv, så Google lærer domænet at kende før lancering; alt andet forbliver skjult for søgemaskiner indtil lancering. Filip opretter Google Search Console (DNS-bekræftelse hos one.com) og evt. Google Business-profil.
