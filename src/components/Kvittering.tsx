@@ -104,7 +104,9 @@ export function KvitteringFuld({ k }: { k: Kvittering }) {
       <div className="mt-6 space-y-2 text-sm text-tekst-daempet">
         {k.rolle === "saelger" && (
           <p>
-            Udbetalingen er salgsprisen minus {k.prismodel === "gammel" ? "5 % i sælgergebyr" : "sælgergebyret"} og
+            {k.saelgergebyrOere === 0
+              ? "Udbetalingen er hele salgsprisen og "
+              : `Udbetalingen er salgsprisen minus ${k.prismodel === "gammel" || k.prismodel === "erhverv" ? "5 % i sælgergebyr" : "sælgergebyret"} og `}
             sendes til din udbetalingskonto
             hos vores betalingspartner Stripe.
             {k.prismodel !== "gammel" && " Vi samler dine salg og sender pengene til din bank højst hver 14. dag."}

@@ -34,7 +34,7 @@ import { metodeTekst } from "@/lib/betaling/betalingsmetoder";
 import type { Checkout } from "@/lib/fragt/handlinger";
 import { transportoerNavn } from "@/lib/fragt/types";
 import { kroner } from "@/lib/kroner";
-import { erBeskyttet, koebergebyrTekst } from "@/lib/betaling/beregn";
+import { erBeskyttet, erErhvervPrismodel, koebergebyrTekst } from "@/lib/betaling/beregn";
 import { BIDPANEL } from "@/lib/tekster/beskyttelse";
 import { kanOptimeres } from "@/lib/billedUrl";
 import { slaaPostnummerOp } from "@/lib/postnumre";
@@ -275,7 +275,7 @@ export default function CheckoutSide({
   const gammelModel = status.prismodel === "gammel";
   const beskFjernet = gammelModel && maade === "afhentning" && !kunAfhentning && beskForsendelse > 0;
   // Ny prismodel: BidHamr Beskyttelse er med i gebyret, når varen sendes (privat).
-  const erhvervHandel = vare.erhverv || status.prismodel === "erhverv";
+  const erhvervHandel = vare.erhverv || erErhvervPrismodel(status.prismodel);
   const beskyttetVist = gammelModel ? beskVist > 0 : erBeskyttet(erhvervHandel, !afhentningValgt);
   const gebyrNavn = koebergebyrTekst(status.prismodel, beskyttetVist);
 

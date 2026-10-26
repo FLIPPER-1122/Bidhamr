@@ -100,11 +100,18 @@ export function kvitteringLinjer(k: Kvittering): KvitteringLinje[] {
     }
     return linjer;
   }
-  return [
-    { tekst: "Salgspris (vindende bud)", oere: k.budOere },
-    { tekst: k.prismodel === "gammel" ? "Sælgergebyr (5 %)" : "Sælgergebyr", oere: k.saelgergebyrOere, fratraek: true },
-    { tekst: "Udbetaling til dig", oere: k.udbetalingOere, fremhaev: true },
-  ];
+  // Firmaer betaler intet sælgergebyr (prismodel 'erhverv2', 20261101010000):
+  // ingen 0-kr.-linje - udbetalingen er hele salgsprisen.
+  const linjer: KvitteringLinje[] = [{ tekst: "Salgspris (vindende bud)", oere: k.budOere }];
+  if (k.saelgergebyrOere > 0) {
+    linjer.push({
+      tekst: k.prismodel === "gammel" || k.prismodel === "erhverv" ? "Sælgergebyr (5 %)" : "Sælgergebyr",
+      oere: k.saelgergebyrOere,
+      fratraek: true,
+    });
+  }
+  linjer.push({ tekst: "Udbetaling til dig", oere: k.udbetalingOere, fremhaev: true });
+  return linjer;
 }
 
 export function kvitteringKroner(oere: number): string {
