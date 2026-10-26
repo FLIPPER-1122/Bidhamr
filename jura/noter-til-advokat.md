@@ -134,7 +134,7 @@ Sådan virker koden i dag: Stripe Connect, "separate charges and transfers". Kø
 82. **Disputes efter udbetaling.** BidHamr bærer tabet ved disputes efter udbetaling. Kan BidHamr kræve beløbet tilbage fra sælgeren, og hvad skal der stå i sælgervilkårene?
 83. **Afhentning.** Afhentning frigiver pengene med det samme, uden klagefrist. Hvad skal vilkårene sige om det?
 84. **Ikke-betalende vinder.** Bud er bindende, men der betales først efter auktionen. En køber, der ikke betaler, kan få kontoen lukket permanent. Kan det håndhæves, og hvordan skal det stå?
-85. **Beskyttelse, sager og anke i betingelserne.** Fx at refusion efter en vundet sag sker uden BidHamr Beskyttelse (gebyret for Beskyttelse refunderes ikke).
+85. **Beskyttelse, sager og anke i betingelserne.** Fx at køberen efter en vundet sag kun får buddet tilbage – gebyret (inkl. BidHamr Beskyttelse) og fragten refunderes ikke (Filip, 26. okt. 2026; gamle handler: alt undtagen Beskyttelse).
 86. **Databehandleraftaler** med Supabase, Stripe, Vercel og Resend.
 87. **Opbevaring af beviser.** Sletning af brugere og opbevaringstid – også for chatbeskeder og billeder, der bruges som bevis i sager.
 

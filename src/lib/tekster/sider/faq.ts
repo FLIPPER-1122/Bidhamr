@@ -172,10 +172,9 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvad får jeg tilbage, hvis jeg får medhold?",
-          // AFKLARES: før blev købergebyret refunderet, men ikke BidHamr Beskyttelse.
-          // Nu er Beskyttelse en del af gebyret. Ret svaret, når det er besluttet,
-          // om gebyret refunderes helt, delvist eller slet ikke ved medhold.
-          svar: "Prisen for varen og fragten. Skal varen sendes retur, betaler du selv returfragten og får pengene, når pakken er afleveret.",
+          // ROADMAP-BESLUTNINGER afsnit 3 (Filip, 26. okt. 2026): kun buddet refunderes,
+          // ikke gebyr og fragt. Gælder ikke køb fra erhverv.
+          svar: "Prisen for varen – altså dit bud. Gebyret og fragten får du ikke tilbage. Skal varen sendes retur, betaler du selv returfragten og får pengene, når pakken er afleveret. Det gælder ikke, når du køber af et firma.",
         },
         {
           spoergsmaal: "Hvornår bliver pengene flyttet efter en afgørelse?",

@@ -9,6 +9,7 @@
 > - Opdateret 10. oktober 2026: køb fra erhvervssælgere (nyt afsnit 29 – fortrydelsesret, reklamation, ingen BidHamr Beskyttelse, hvem man klager til), firmakonti i 1.1, 1.4, 2.3, 2.4, 5.5 og 17, og BidHamrs firmaoplysninger i 1.2 og 30. Kontakt er flyttet fra 29 til 30. Vilkårene for firmaerne selv står i `jura/erhvervsvilkaar-udkast.md`.
 > - Opdateret 15. oktober 2026: kunst er en forbudt vare (4.6, Filips beslutning 14. oktober 2026). Ny version 0.2 (VILKAAR_VERSION og vilkaar_aktuel_version() i 20261023010000_kunst_forbudt.sql): alle accepterer igen.
 > - Opdateret 26. oktober 2026: ny prismodel (ROADMAP-BESLUTNINGER afsnit 3 og 4, Filips beslutning 26. oktober 2026). Gebyrtabel i 5.1, fragt i 5.2, BidHamr Beskyttelse er altid med i købers gebyr ved forsendelse og er ikke længere et tilvalg (2.2, 5.3, 5.4, 12.4, 14), højeste bud 25.000 kr (5.7), udbetaling hver 14. dag (6.5), erhvervsgebyrer (29.2). Ændringen kræver en ny version af betingelserne (VILKAAR_VERSION), hvis den går live efter, at brugerne har accepteret 0.2.
+> - Opdateret 26. oktober 2026: refusion ved medhold i en sag (ROADMAP-BESLUTNINGER afsnit 3, Filips beslutning 26. oktober 2026). Køberen får kun buddet (auktionsprisen) tilbage – gebyret og fragten refunderes ikke. Gælder ikke køb fra erhvervssælgere (12.8 og 14.7).
 > - `[TODO Filip: …]` = oplysninger eller beslutninger, Filip skal udfylde.
 > - `[ADVOKAT: …]` = juridiske spørgsmål, advokaten skal tage stilling til. Alle spørgsmål er samlet i `jura/noter-til-advokat.md`.
 > - Udkastet er ikke et juridisk løfte. Intet her må vises som endelige betingelser, før advokaten har godkendt det.
@@ -302,7 +303,7 @@ BidHamr Beskyttelse er altid med, når du køber af en privatperson, og varen bl
 
 12.7 **Ord mod ord.** Står det ord mod ord, og viser sporingen, at pakken er leveret, får sælgeren pengene. Mener køberen at være snydt, kan køberen anmelde det til politiet.
 
-12.8 **Medhold til køberen.** Får køberen medhold, får køberen buddet og fragten tilbage. [TODO Filip: før fik køberen købergebyret tilbage, men ikke prisen for BidHamr Beskyttelse. Nu er Beskyttelsen en del af gebyret. Afklar, om gebyret refunderes helt, delvist eller slet ikke ved medhold, og ret 12.8 og 14.7.]
+12.8 **Medhold til køberen.** Får køberen medhold, får køberen kun buddet (auktionsprisen) tilbage. Gebyret og fragten bliver ikke refunderet. Det gælder ikke køb fra en erhvervssælger (se afsnit 29).
 
 12.9 **Retur af varen.** Er varen gået i stykker eller ikke som beskrevet, skal køberen sende den retur til sælgeren for egen regning, før pengene bliver refunderet. Returfragten bliver ikke refunderet. Pengene refunderes, når returpakken er afleveret til fragtfirmaet. Sender køberen ikke varen retur, kan sagen tidligst afgøres til sælgerens fordel 7 dage efter, at køberen har fået besked om at sende den.
 
@@ -353,11 +354,11 @@ BidHamr Beskyttelse er altid med, når du køber af en privatperson, og varen bl
 - sager, der er oprettet efter fristen eller uden billeder
 - returfragten, når du sender en vare retur
 
-14.7 **Refusion.** Bliver handlen annulleret, før varen er sendt (fx fordi sælgeren ikke sendte inden 5 dage), får du alle pengene tilbage – også gebyret. Hvad du får tilbage, hvis du får medhold i en sag, står i 12.8.
+14.7 **Refusion.** Bliver handlen annulleret, før varen er sendt (fx fordi sælgeren ikke sendte inden 5 dage), får du alle pengene tilbage – også gebyret og fragten. Får du medhold i en sag, får du kun buddet tilbage – ikke gebyret og fragten (se 12.8).
 
 14.8 BidHamr Beskyttelse er hjælp fra BidHamr til at løse sagen og en mulighed for at få pengene tilbage gennem BidHamr. Den giver ikke erstatning ud over det, du har betalt.
 
-[ADVOKAT: Er BidHamr Beskyttelse et forsikringsprodukt eller en garanti i lovens forstand (fx lov om forsikringsdistribution/finansiel virksomhed)? Hvordan skal ydelsen beskrives, så den ikke bliver det? Ændrer det vurderingen, at den nu er en fast del af købers gebyr og ikke et tilvalg (26. oktober 2026)? Hvad må vi beholde af gebyret, når køberen får medhold i en sag?]
+[ADVOKAT: Er BidHamr Beskyttelse et forsikringsprodukt eller en garanti i lovens forstand (fx lov om forsikringsdistribution/finansiel virksomhed)? Hvordan skal ydelsen beskrives, så den ikke bliver det? Ændrer det vurderingen, at den nu er en fast del af købers gebyr og ikke et tilvalg (26. oktober 2026)? Filip har besluttet (26. oktober 2026), at køberen ved medhold i en sag kun får buddet tilbage, og at gebyret og fragten ikke refunderes (12.8). Er det i orden over for forbrugere – også når sagen skyldes sælgerens svindel, eller pakken er bortkommet?]
 
 ---
 
