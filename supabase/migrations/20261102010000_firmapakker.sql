@@ -193,6 +193,26 @@ comment on column public.firmaer.intro_status is
   'planlagt: aftalt, ikke sat på abonnementet endnu (sættes, når abonnementet findes). aktiv: kuponen er på abonnementet i Stripe (intro_coupon_id, intro_til = discount.end).';
 comment on column public.firmaer.saerpris_oere is
   'Særpris ekskl. moms i øre for pakken saerpris_pakke_id (egen Stripe-pris for firmaet). Skifter firmaet pakke, bortfalder særprisen.';
+-- Særprisen gælder kun den pakke, den er aftalt for: skifter firmaet pakke
+-- (uanset hvordan - firmaets opgradering, nedgradering, staff), bortfalder
+-- den. Ét sted, så ingen vej kan glemme det.
+create or replace function public.firmaer_saerpris_bortfalder()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if new.pakke_id is distinct from old.pakke_id
+     and new.saerpris_pakke_id is not null and new.saerpris_pakke_id is distinct from new.pakke_id then
+    new.saerpris_oere := null;
+    new.saerpris_pakke_id := null;
+    new.saerpris_aftale := null;
+  end if;
+  return new;
+end $$;
+revoke all on function public.firmaer_saerpris_bortfalder() from public, anon, authenticated;
+drop trigger if exists firmaer_saerpris_bortfalder on public.firmaer;
+create trigger firmaer_saerpris_bortfalder
+  before update of pakke_id on public.firmaer
+  for each row execute function public.firmaer_saerpris_bortfalder();
+
 comment on column public.firmaer.stripe_pris_synk is
   'Prisen i Stripe skal skiftes til firmaets pakke/særpris (fra næste betaling) - sat ved flytning af pakker; betalings-cron''en gør det.';
 
@@ -1139,7 +1159,9 @@ begin
          stripe_abonnement_status = left(p_stripe_status, 40),
          opsiges_fra = p_opsiges_fra,
          periode_slut = coalesce(p_periode_slut, periode_slut),
-         proeve_slut = case when p_stripe_status = 'trialing' then p_proeve_slut else null end,
+         -- Uden p_proeve_slut (fx en server med den gamle kode under en
+         -- udrulning) bevares den kendte dato.
+         proeve_slut = case when p_stripe_status = 'trialing' then coalesce(p_proeve_slut, proeve_slut) else null end,
          proeve_givet_kl = case when p_proeve_slut is not null then coalesce(proeve_givet_kl, now())
                                 else proeve_givet_kl end,
          opdateret_kl = now()

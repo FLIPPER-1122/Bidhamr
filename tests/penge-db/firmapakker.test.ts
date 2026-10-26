@@ -503,6 +503,33 @@ describe("firmapakker (20261102010000)", () => {
     });
   });
 
+  describe("særpris og prøveperiode - værn", () => {
+    it("særprisen bortfalder også, når firmaet selv skifter pakke (betalt opgradering)", async () => {
+      // F.ny står på Pro.
+      expect(await rpc(`public.erhverv_firma_saerpris_gem($1, $2, 150000, $3, 'Pro-aftale', 'naeste_betaling')`, [CHEF, F.ny, NY.PRO]))
+        .toMatchObject({ kode: "ok" });
+      const s = await en<{ id: string }>(
+        `insert into public.firma_pakkeskift (firma_id, fra_pakke_id, til_pakke_id, type, status)
+         values ($1, $2, $3, 'opgradering', 'afventer_betaling') returning id`,
+        [F.ny, NY.PRO, NY.BUTIK],
+      );
+      await rpc(`public.firma_pakkeskift_betalt($1, 'in_saer_1', 0, 'in_saer_1')`, [s.id]);
+      const f = await en<Record<string, unknown>>(
+        `select pakke_id, saerpris_oere, saerpris_pakke_id, saerpris_aftale from public.firmaer where id = $1`, [F.ny],
+      );
+      expect(f).toEqual({ pakke_id: NY.BUTIK, saerpris_oere: null, saerpris_pakke_id: null, saerpris_aftale: null });
+    });
+
+    it("et spejl uden trial_end (gammel kode under udrulning) bevarer datoen for den gratis periode", async () => {
+      const slut = new Date(Date.now() + 20 * 86400_000).toISOString();
+      await rpc(`public.firma_stripe_abonnement_spejl($1, 'sub_ny', 'trialing', null, null, false, null, $2::timestamptz)`, [F.ny, slut]);
+      // Gammel kode: 7 argumenter.
+      await rpc(`public.firma_stripe_abonnement_spejl($1, 'sub_ny', 'trialing', null, null, false, null)`, [F.ny]);
+      const f = await en<{ proeve_slut: string }>(`select proeve_slut from public.firmaer where id = $1`, [F.ny]);
+      expect(new Date(f.proeve_slut).toISOString()).toBe(slut);
+    });
+  });
+
   describe("fremhævninger", () => {
     it("Start har ingen fremhævninger", async () => {
       // Basis-firmaet står nu på Butik efter opgraderingen; sæt Plus-firmaet på Start.
