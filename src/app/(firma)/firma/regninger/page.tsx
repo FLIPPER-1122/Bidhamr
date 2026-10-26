@@ -12,8 +12,9 @@ import FakturaListe from "@/components/faktura/FakturaListe";
 // laves af Stripe Billing (src/lib/erhverv/betaling.ts): beløb ekskl. moms,
 // moms (25 %) og i alt, "Hent faktura (PDF)" og - for en ubetalt regning -
 // Stripes fakturaside. Kun https-links.
-// Nederst: BidHamrs fakturaer på sælgergebyret ved hvert salg (Dinero,
-// src/lib/faktura) - udstedt til firmaet med CVR.
+// Nederst: BidHamrs Dinero-fakturaer (src/lib/faktura) - udstedt til firmaet
+// med CVR: Ugens butik (og sælgergebyret fra ældre handler - firmaer betaler
+// intet sælgergebyr længere, prismodel 'erhverv2', 20261101010000).
 
 export const metadata = { title: T.regninger.titel };
 

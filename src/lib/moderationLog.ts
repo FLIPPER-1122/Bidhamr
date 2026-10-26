@@ -114,6 +114,13 @@ export const HANDLING_NAVNE: Record<string, string> = {
   reklamation_saelger_godkendt: "Sælger: fragtfirmaet godkendte erstatning",
   reklamation_saelger_afvist: "Sælger: fragtfirmaet afviste erstatning",
   reklamation_saelger_fravalgt: "Sælger ønsker ikke at reklamere",
+  // 20261101020000_ugens_butik.sql og 20261101060000_ugens_butik_rettelser.sql
+  ugens_butik_booket: "Bookede Ugens butik for et firma",
+  ugens_butik_annulleret: "Annullerede Ugens butik",
+  ugens_butik_refunderet: "Annullerede og refunderede Ugens butik",
+  ugens_butik_pris: "Ændrede prisen på Ugens butik",
+  ugens_butik_rabat_firma: "Ændrede firmaets rabat på Ugens butik",
+  ugens_butik_loft_omgaaet: "Omgik loftet for Ugens butik (4 uger i træk)",
   // 20261029020000_ekstra_fragt.sql (sælgerens indsigelse og betaling logges
   // med systembrugeren som afsender).
   ekstra_fragt_oprettet: "Oprettede ekstraregning for fragt (for lille pakke)",
@@ -147,6 +154,7 @@ const MAAL_NAVNE: Record<string, string> = {
   firma: "Firmakonto",
   erhverv_henvendelse: "Erhvervshenvendelse",
   erhverv_pakke: "Erhvervspakke",
+  ugens_butik: "Ugens butik",
   beta_invitation: "Beta-invitation",
   beta: "Beta-testen",
 };

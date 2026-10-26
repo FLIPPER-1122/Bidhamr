@@ -9,7 +9,11 @@
 // sent, kasseret), staff (book med/uden betaling, annullér, kun chefen
 // refunderer og retter prisen - alt logges), faktura og kreditnota i
 // Dinero-køen, forsiden (offentlig, kun aktive auktioner, højst 8) og
-// firmaets egen oversigt.
+// firmaets egen oversigt. Rettelserne (20261101060000) køres oven på - også
+// to gange: igangværende uge, højst 4 uger i træk + 2 ugers pause (også ved
+// samtidige bookinger, databasens værn og når staff omgår loftet),
+// sælger-rollen refunderer, staff-reservation langt frem, sen betaling på en
+// uge, der er slut, firma ikke aktivt, valuta og rabat pr. firma.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
@@ -17,6 +21,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { funktion, MIG } from "./prismodelStub";
 
 const MIGRATION = readFileSync(path.join(MIG, "20261101020000_ugens_butik.sql"), "utf8");
+const RETTELSER = readFileSync(path.join(MIG, "20261101060000_ugens_butik_rettelser.sql"), "utf8");
 
 const FIRMA_A = "00000000-0000-4000-8000-0000000000f1";
 const FIRMA_B = "00000000-0000-4000-8000-0000000000f2";
@@ -55,7 +60,10 @@ insert into public.users (id, navn, rolle, konto_type, suspenderet, avatar_url) 
   ('${CHEF}', 'Chef', 'chef', 'privat', false, null),
   ('${SAELGERROLLE}', 'Sælger', 'saelger', 'privat', false, null),
   ('${ADMIN}', 'Admin', 'admin', 'privat', false, null);
-create table public.erhverv_pakker (id uuid primary key, navn text not null);
+create table public.erhverv_pakker (id uuid primary key default gen_random_uuid(), navn text not null, beskrivelse text,
+  maanedspris numeric, auktioner_pr_uge integer not null default 1, aktiv boolean not null default true,
+  sortering integer not null default 0, oprettet_af uuid, opdateret_af uuid,
+  oprettet_kl timestamptz not null default now(), opdateret_kl timestamptz not null default now());
 insert into public.erhverv_pakker values ('${PAKKE_START}', 'Start'), ('${PAKKE_BUTIK}', 'Butik');
 create table public.firmaer (id uuid primary key, bruger_id uuid not null unique references public.users(id),
   firmanavn text not null, abonnement_status text not null, pakke_id uuid references public.erhverv_pakker(id));
@@ -76,8 +84,8 @@ create function public.nye_betalinger_stoppet() returns boolean language sql sta
 create table public.moderation_log (id uuid primary key default gen_random_uuid(), medarbejder_id uuid not null,
   handling text not null, maal_type text not null, maal_id uuid not null, bruger_id uuid, aarsag text not null,
   oprettet_kl timestamptz not null default now(),
-  constraint moderation_log_handling_check check (handling = any ('{boost_justering,firma_opdateret}'::text[])),
-  constraint moderation_log_maal_type_check check (maal_type = any ('{bruger,firma}'::text[])));
+  constraint moderation_log_handling_check check (handling = any ('{boost_justering,erhverv_pakke_gemt,firma_opdateret}'::text[])),
+  constraint moderation_log_maal_type_check check (maal_type = any ('{bruger,erhverv_pakke,firma}'::text[])));
 create table public.fakturaer (id uuid primary key default gen_random_uuid(), dokument text not null, part text not null,
   bruger_id uuid not null, betaling_id uuid, trade_id uuid, firma_regning_id uuid, krediterer_id uuid, linjer jsonb not null,
   beloeb_oere bigint not null, moms_oere bigint not null, betalt_dato date not null, stripe_reference text,
@@ -102,8 +110,8 @@ async function start(bruger: string, uge: string): Promise<Svar> {
 async function gemPi(id: string, pi: string, forsoeg = 0): Promise<string> {
   return (await en<{ r: string }>(`select public.ugens_butik_gem_pi($1, $2, $3) as r`, [id, pi, forsoeg])).r;
 }
-async function registrer(pi: string, status: string, beloeb: number | null, charge: string | null = null): Promise<Svar> {
-  return (await en<{ r: Svar }>(`select public.ugens_butik_registrer($1, $2, $3, $4, null) as r`, [pi, status, charge, beloeb])).r;
+async function registrer(pi: string, status: string, beloeb: number | null, charge: string | null = null, valuta = "dkk"): Promise<Svar> {
+  return (await en<{ r: Svar }>(`select public.ugens_butik_registrer($1, $2, $3, $4, null, $5) as r`, [pi, status, charge, beloeb, valuta])).r;
 }
 async function booking(id: string): Promise<Record<string, unknown>> {
   return en(`select * from public.ugens_butik_bookinger where id = $1`, [id]);
@@ -120,7 +128,10 @@ function uge(n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-beforeAll(async () => {
+// Ny database: stubs, de rigtige fakturafunktioner og erhverv_har_adgang/
+// erhverv_pakke_gem (20261010030000) og begge migrationer - to gange hver
+// (idempotente; md5-drift-tjekket accepterer både den gamle og den nye krop).
+async function nyDatabase(): Promise<void> {
   db = new PGlite();
   await db.exec(STUB);
   for (const start of [
@@ -130,8 +141,20 @@ beforeAll(async () => {
   ]) {
     await db.exec(funktion("20261012080000_fakturaer.sql", start));
   }
+  for (const start of [
+    "create or replace function public.erhverv_har_adgang(",
+    "create or replace function public.erhverv_pakke_gem(",
+  ]) {
+    await db.exec(funktion("20261010030000_erhverv.sql", start));
+  }
   await db.exec(MIGRATION);
   await db.exec(MIGRATION);
+  await db.exec(RETTELSER);
+  await db.exec(RETTELSER);
+}
+
+beforeAll(async () => {
+  await nyDatabase();
   naeste = (await en<{ d: string }>(`select (public.ugens_butik_uge(now()) + 7)::text as d`)).d;
 }, 60_000);
 
@@ -155,9 +178,11 @@ describe("pris og uger", () => {
     expect(String(r.t)).toBe("2026-10-19");
   });
 
-  it("firmaet kan kun købe fra næste uge, mandage, højst 12 uger frem", async () => {
+  it("firmaet kan købe fra den igangværende uge, mandage, højst 12 uger frem", async () => {
     const nu = (await en<{ d: string }>(`select public.ugens_butik_uge(now())::text as d`)).d;
-    expect((await start(FIRMA_A, nu)).kode).toBe("uge_ugyldig");
+    const forrige = new Date(`${nu}T12:00:00Z`);
+    forrige.setUTCDate(forrige.getUTCDate() - 7);
+    expect((await start(FIRMA_A, forrige.toISOString().slice(0, 10))).kode).toBe("uge_ugyldig");
     const tirsdag = new Date(`${naeste}T12:00:00Z`);
     tirsdag.setUTCDate(tirsdag.getUTCDate() + 1);
     expect((await start(FIRMA_A, tirsdag.toISOString().slice(0, 10))).kode).toBe("uge_ugyldig");
@@ -342,12 +367,13 @@ describe("staff", () => {
   it("chef og sælger booker; admin har ingen adgang; begrundelse påkrævet; logges", async () => {
     const nu = (await en<{ d: string }>(`select public.ugens_butik_uge(now())::text as d`)).d;
     const s = async (staff: string, firma: string, u: string, med: boolean, grund: string | null) =>
-      (await en<{ r: Svar }>(`select public.ugens_butik_staff_book($1, $2, $3::date, $4, $5) as r`, [staff, firma, u, med, grund])).r;
+      (await en<{ r: Svar }>(`select public.ugens_butik_staff_book($1, $2, $3::date, $4, $5, false) as r`, [staff, firma, u, med, grund])).r;
     expect((await s(ADMIN, F.A, nu, false, "aftale")).kode).toBe("ingen_adgang");
     expect((await s(SAELGERROLLE, F.A, nu, false, " ")).kode).toBe("begrundelse_mangler");
-    expect((await s(SAELGERROLLE, F.PAUSE, uge(8), false, "aftale")).kode).toBe("ikke_aktiv");
-    // Den igangværende uge kan kun bookes uden betaling (af staff).
-    expect((await s(SAELGERROLLE, F.A, nu, true, "aftale")).kode).toBe("uge_ugyldig");
+    // Med betaling kun aktive firmaer; uden betaling (manuelt) også et firma på pause.
+    expect((await s(SAELGERROLLE, F.PAUSE, uge(8), true, "aftale")).kode).toBe("ikke_aktiv");
+    const pause = await s(SAELGERROLLE, F.PAUSE, uge(8), false, "Aftale - vises, når firmaet er aktivt igen");
+    expect([pause.kode, pause.status]).toEqual(["ok", "manuel"]);
     const m = await s(SAELGERROLLE, F.A, nu, false, "Aftale med Alfa om lancering");
     expect([m.kode, m.status]).toEqual(["ok", "manuel"]);
     expect((await s(CHEF, F.B, nu, false, "dobbelt")).kode).toBe("optaget");
@@ -370,16 +396,25 @@ describe("staff", () => {
     ]);
   });
 
-  it("annullering: sælger må annullere ubetalte, kun chefen betalte - med eller uden refusion", async () => {
+  it("annullering: chef og sælger-rollen annullerer ubetalte og betalte - med eller uden refusion", async () => {
     const ann = async (staff: string, id: string, grund: string, refunder = false) =>
       (await en<{ r: Svar }>(`select public.ugens_butik_staff_annuller($1, $2, $3, $4) as r`, [staff, id, grund, refunder])).r;
     const betalt = await en<{ id: string }>(`select id from public.ugens_butik_bookinger where stripe_payment_intent_id = 'pi_b6'`);
-    expect((await ann(SAELGERROLLE, betalt.id, "fejl")).kode).toBe("kun_chef");
     expect((await ann(ADMIN, betalt.id, "fejl")).kode).toBe("ingen_adgang");
-    const r = await ann(CHEF, betalt.id, "Firmaet har fået en anden uge", true);
+    expect((await ann(SAELGERROLLE, betalt.id, " ", true)).kode).toBe("begrundelse_mangler");
+    // Forhåndstjekket (før Stripe) giver de samme koder - uden at ændre noget.
+    const tjek = async (staff: string, grund: string, refunder: boolean) =>
+      (await en<{ r: string | null }>(`select public.ugens_butik_staff_tjek($1, $2, $3, $4) as r`, [staff, betalt.id, grund, refunder])).r;
+    expect(await tjek(ADMIN, "x", true)).toBe("ingen_adgang");
+    expect(await tjek(SAELGERROLLE, "", true)).toBe("begrundelse_mangler");
+    expect(await tjek(FIRMA_B, "x", true)).toBe("ingen_adgang");
+    expect(await tjek(SAELGERROLLE, "x", true)).toBeNull();
+    // Sælger-rollen refunderer en betalt uge ligesom chefen (hel refusion).
+    const r = await ann(SAELGERROLLE, betalt.id, "Firmaet har fået en anden uge", true);
     expect([r.kode, r.status]).toEqual(["ok", "refunderes"]);
     const b = await booking(betalt.id);
-    expect([b.refusion_aarsag, b.refusion_af]).toEqual(["staff", CHEF]);
+    expect([b.refusion_aarsag, b.refusion_af]).toEqual(["staff", SAELGERROLLE]);
+    expect(await tjek(SAELGERROLLE, "x", true)).toBe("forkert_status");
     // Ugen er ledig igen.
     expect((await start(FIRMA_A, uge(6))).kode).not.toBe("optaget");
 
@@ -489,7 +524,7 @@ describe("forsiden og Firma oversigt", () => {
       has_function_privilege('authenticated', 'public.firma_ugens_butik()', 'execute') as firma_auth,
       has_function_privilege('authenticated', 'public.ugens_butik_koeb_start(uuid, date)', 'execute') as start_auth,
       has_function_privilege('service_role', 'public.ugens_butik_koeb_start(uuid, date)', 'execute') as start_service,
-      has_function_privilege('authenticated', 'public.ugens_butik_staff_book(uuid, uuid, date, boolean, text)', 'execute') as staff_auth,
+      has_function_privilege('authenticated', 'public.ugens_butik_staff_book(uuid, uuid, date, boolean, text, boolean)', 'execute') as staff_auth,
       has_function_privilege('service_role', 'public.ugens_butik_udloeb_uge(date)', 'execute') as intern_service,
       has_table_privilege('authenticated', 'public.ugens_butik_bookinger', 'select') as tabel_auth`);
     expect(r).toEqual({
@@ -505,8 +540,10 @@ describe("forsiden og Firma oversigt", () => {
       `select public.firma_ugens_butik() as r`)).r;
     expect(o.pris.inkl_moms_oere).toBe(62500);
     expect(o.kan_koebe).toBe(true);
-    expect(o.uger.length).toBe(12);
-    expect(o.uger[0].uge_start).toBe(uge(0));
+    // Fra den igangværende uge og 12 uger frem.
+    expect(o.uger.length).toBe(13);
+    expect(o.uger[0].uge_start).toBe(uge(-1));
+    expect(o.uger[1].uge_start).toBe(uge(0));
     const status = new Map(o.uger.map((x) => [x.uge_start, x.status]));
     expect(status.get(uge(10))).toBe("din");
     expect(status.get(uge(1))).toBe("ledig"); // B's reservation udløb (cron-testen)
@@ -538,16 +575,7 @@ describe("forsiden og Firma oversigt", () => {
 describe("rabat fra pakken (Butik/Pro)", () => {
   // Ny database, så ugerne er ledige.
   beforeAll(async () => {
-    db = new PGlite();
-    await db.exec(STUB);
-    for (const s of [
-      "create or replace function public.faktura_linje(",
-      "create or replace function public.faktura_moms(",
-      "create or replace function public.faktura_sum(",
-    ]) {
-      await db.exec(funktion("20261012080000_fakturaer.sql", s));
-    }
-    await db.exec(MIGRATION);
+    await nyDatabase();
     await db.exec(`insert into public.users (id, navn, konto_type) values ('${FIRMA_R}', 'Firma R', 'erhverv');
       insert into public.firmaer values ('${F_R}', '${FIRMA_R}', 'Rabat ApS', 'aktiv', '${PAKKE_BUTIK}');`);
   }, 60_000);
@@ -607,5 +635,300 @@ describe("rabat fra pakken (Butik/Pro)", () => {
     await expect(
       db.query(`update public.ugens_butik_bookinger set rabat_procent = 0, rabat_oere = 0 where id = $1`, [a.id]),
     ).rejects.toThrow(/ændres/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 20261101060000_ugens_butik_rettelser.sql: igangværende uge, loftet (4 uger i
+// træk + 2 ugers pause), staff-reservation langt frem, sen betaling på en uge,
+// der er slut, firma ikke aktivt, valuta, sælger-refusion og rabat pr. firma.
+// ---------------------------------------------------------------------------
+describe("rettelser: igangværende uge, loftet, sen betaling og rabat pr. firma", () => {
+  const B = {
+    X: "00000000-0000-4000-8000-0000000001a1",
+    Y: "00000000-0000-4000-8000-0000000001a2",
+    Z: "00000000-0000-4000-8000-0000000001a3",
+    V: "00000000-0000-4000-8000-0000000001a4",
+    W: "00000000-0000-4000-8000-0000000001a5",
+    R: "00000000-0000-4000-8000-0000000001a6",
+  };
+  const FF = {
+    X: "00000000-0000-4000-8000-0000000002a1",
+    Y: "00000000-0000-4000-8000-0000000002a2",
+    Z: "00000000-0000-4000-8000-0000000002a3",
+    V: "00000000-0000-4000-8000-0000000002a4",
+    W: "00000000-0000-4000-8000-0000000002a5",
+    R: "00000000-0000-4000-8000-0000000002a6",
+  };
+  // Den igangværende uge + n uger.
+  const u = (n: number) => uge(n - 1);
+
+  beforeAll(async () => {
+    await nyDatabase();
+    for (const k of Object.keys(B) as (keyof typeof B)[]) {
+      await db.query(`insert into public.users (id, navn, konto_type) values ($1, $2, 'erhverv')`, [B[k], `Firma ${k}`]);
+      await db.query(`insert into public.firmaer values ($1, $2, $3, 'aktiv', $4)`, [FF[k], B[k], `${k} ApS`, PAKKE_START]);
+    }
+  }, 60_000);
+
+  const book = async (staff: string, firma: string, uu: string, med: boolean, grund: string, omgaa = false) =>
+    (await en<{ r: Svar & { loft_omgaaet?: boolean } }>(
+      `select public.ugens_butik_staff_book($1, $2, $3::date, $4, $5, $6) as r`, [staff, firma, uu, med, grund, omgaa])).r;
+  const ann = async (staff: string, id: string, grund: string, refunder = false) =>
+    (await en<{ r: Svar }>(`select public.ugens_butik_staff_annuller($1, $2, $3, $4) as r`, [staff, id, grund, refunder])).r;
+  async function koebOgBetal(bruger: string, uu: string, pi: string): Promise<Svar> {
+    const s = await start(bruger, uu);
+    expect(s.kode).toBe("ok");
+    expect(await gemPi(s.id!, pi)).toBe("ok");
+    expect((await registrer(pi, "succeeded", s.beloeb_oere!, `ch_${pi}`)).kode).toBe("betalt");
+    return s;
+  }
+  async function firmaOversigt(bruger: string) {
+    await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [bruger]);
+    const o = (await en<{ r: { uger: { uge_start: string; status: string; igangvaerende: boolean }[] } }>(
+      `select public.firma_ugens_butik() as r`)).r;
+    await db.query(`select set_config('request.jwt.claim.sub', '', false)`);
+    return new Map(o.uger.map((x) => [x.uge_start, x]));
+  }
+
+  it("den igangværende uge kan købes til fuld pris og holder til mandag kl. 00; en staff-reservation for den kan betales", async () => {
+    const x = await start(B.X, u(0));
+    expect([x.kode, x.beloeb_oere]).toEqual(["ok", 62500]);
+    const bx = await booking(x.id!);
+    expect(new Date(String(bx.reserveret_til)).getTime()).toBeLessThanOrEqual(new Date(String(bx.slut_kl)).getTime());
+    expect((await start(B.Y, u(0))).kode).toBe("optaget");
+    expect((await firmaOversigt(B.X)).get(u(0))).toMatchObject({ status: "din_reservation", igangvaerende: true });
+    await db.query(`select public.ugens_butik_firma_annuller($1, $2, null)`, [B.X, x.id]);
+
+    // Staff reserverer den igangværende uge med betaling; firmaet betaler den.
+    const w = await book(SAELGERROLLE, FF.W, u(0), true, "Aftalt i telefonen");
+    expect([w.kode, w.status]).toEqual(["ok", "reserveret"]);
+    const bw = await booking(w.id!);
+    expect(new Date(String(bw.reserveret_til)).getTime()).toBeLessThanOrEqual(new Date(String(bw.slut_kl)).getTime());
+    const f = await start(B.W, u(0));
+    expect([f.kode, f.id]).toEqual(["findes", w.id]);
+    expect(await gemPi(w.id!, "pi_w0")).toBe("ok");
+    expect((await registrer("pi_w0", "succeeded", 62500, "ch_w0")).kode).toBe("betalt");
+    expect((await start(B.X, u(0))).kode).toBe("optaget");
+    expect((await firmaOversigt(B.W)).get(u(0))).toMatchObject({ status: "din", igangvaerende: true });
+  });
+
+  it("sælger-rollen annullerer en betalt uge uden refusion og refunderer den senere (hel refusion)", async () => {
+    const w = await en<{ id: string }>(`select id from public.ugens_butik_bookinger where stripe_payment_intent_id = 'pi_w0'`);
+    const a = await ann(SAELGERROLLE, w.id, "Firmaet lukker midlertidigt - aftalt uden refusion");
+    expect([a.kode, a.status]).toEqual(["ok", "annulleret"]);
+    const r = await ann(SAELGERROLLE, w.id, "Aftalen er ændret - fuld refusion", true);
+    expect([r.kode, r.status]).toEqual(["ok", "refunderes"]);
+    const b = await booking(w.id);
+    expect([b.refusion_aarsag, b.refusion_af]).toEqual(["staff", SAELGERROLLE]);
+    // Igen: forkert status (hel eller ingen - ingen anden refusion).
+    expect((await ann(SAELGERROLLE, w.id, "igen", true)).kode).toBe("forkert_status");
+  });
+
+  it("højst 4 uger i træk: uge 5 og uge 6 (kun én uges pause) afvises, uge 7 er fri", async () => {
+    await koebOgBetal(B.X, u(1), "pi_x1");
+    expect((await book(CHEF, FF.X, u(2), false, "Aftale")).kode).toBe("ok");
+    expect((await book(CHEF, FF.X, u(3), false, "Aftale")).kode).toBe("ok");
+    await koebOgBetal(B.X, u(4), "pi_x4");
+    expect((await start(B.X, u(5))).kode).toBe("loft");
+    expect((await start(B.X, u(6))).kode).toBe("loft");
+    const ok = await start(B.X, u(7));
+    expect(ok.kode).toBe("ok");
+    // Firma oversigt viser ugerne, firmaet ikke kan få.
+    const o = await firmaOversigt(B.X);
+    expect([o.get(u(5))?.status, o.get(u(6))?.status, o.get(u(7))?.status, o.get(u(8))?.status])
+      .toEqual(["loft", "loft", "din_reservation", "ledig"]);
+    // Annullerede, udløbne og refunderede uger tæller ikke.
+    await db.query(`select public.ugens_butik_firma_annuller($1, $2, null)`, [B.X, ok.id]);
+  });
+
+  it("også den anden vej: en uge lige før en stribe på 4 eller med én uges pause før den afvises; 3 + 1 + 3 er tilladt", async () => {
+    for (const n of [10, 11, 12, 13]) expect((await book(CHEF, FF.Y, u(n), false, "Aftale")).kode).toBe("ok");
+    expect((await start(B.Y, u(9))).kode).toBe("loft");
+    expect((await start(B.Y, u(8))).kode).toBe("loft");
+    expect((await book(CHEF, FF.Y, u(14), false, "Aftale")).kode).toBe("loft");
+    for (const n of [20, 21, 22, 24, 25]) expect((await book(CHEF, FF.Z, u(n), false, "Aftale")).kode).toBe("ok");
+    expect((await book(CHEF, FF.Z, u(26), false, "Aftale")).kode).toBe("ok"); // 3 + 1 + 3
+    expect((await book(CHEF, FF.Z, u(27), false, "Aftale")).kode).toBe("loft"); // 4 med kun én uges pause
+  });
+
+  it("staff kan omgå loftet ved en manuel booking - markeret og logget med begrundelse", async () => {
+    expect((await book(SAELGERROLLE, FF.X, u(5), false, "Julekampagne")).kode).toBe("loft");
+    const r = await book(SAELGERROLLE, FF.X, u(5), false, "Julekampagne aftalt med Filip", true);
+    expect([r.kode, r.status, r.loft_omgaaet]).toEqual(["ok", "manuel", true]);
+    expect((await booking(r.id!)).loft_omgaaet).toBe(true);
+    const log = await db.query<{ handling: string; aarsag: string }>(
+      `select handling, aarsag from public.moderation_log where maal_id = $1 order by handling`, [r.id]);
+    expect(log.rows.map((x) => x.handling)).toEqual(["ugens_butik_booket", "ugens_butik_loft_omgaaet"]);
+    expect(log.rows[1].aarsag).toContain("Julekampagne aftalt med Filip");
+    // Uden at loftet brydes, markeres intet.
+    const z = await book(CHEF, FF.Z, u(30), false, "Aftale", true);
+    expect(z.loft_omgaaet).toBe(false);
+  });
+
+  it("samtidige bookinger efter hinanden under firmaets lås: den sidste, der ville give 5 i træk, får 'loft'", async () => {
+    for (const n of [32, 33, 34]) expect((await book(CHEF, FF.V, u(n), false, "Aftale")).kode).toBe("ok");
+    await db.exec("begin");
+    const a = await book(CHEF, FF.V, u(35), false, "Aftale A");
+    await db.exec("commit");
+    await db.exec("begin");
+    const b = await book(SAELGERROLLE, FF.V, u(31), false, "Aftale B");
+    await db.exec("commit");
+    expect([a.kode, b.kode]).toEqual(["ok", "loft"]);
+  });
+
+  it("databasens sidste værn: en booking, der omgår funktionerne og bryder loftet, afvises (medmindre loft_omgaaet)", async () => {
+    const ind = (omgaaet: boolean) =>
+      db.query(
+        `insert into public.ugens_butik_bookinger (firma_id, bruger_id, uge_start, start_kl, slut_kl, kilde, betaling, status,
+           pris_ekskl_moms_oere, moms_oere, beloeb_oere, loft_omgaaet)
+         values ($1, $2, $3::date, now(), now(), 'staff', 'ingen', 'manuel', 0, 0, 0, $4)`,
+        [FF.V, B.V, u(36), omgaaet]);
+    await expect(ind(false)).rejects.toThrow(/4 uger i træk/);
+    await ind(true);
+  });
+
+  it("en udløbet reservation, der betales, efter at firmaet har fået 4 uger i træk: refunderes ('for_sent', loft)", async () => {
+    // X har u1-u5 (u5 omgået af staff). u7 var lovlig (2 ugers pause efter u4)...
+    await db.query(`update public.ugens_butik_bookinger set status = 'annulleret', annulleret_kl = now() where firma_id = $1 and uge_start = $2::date and status = 'manuel'`, [FF.X, u(5)]);
+    const s = await start(B.X, u(7));
+    expect(s.kode).toBe("ok");
+    await gemPi(s.id!, "pi_x7");
+    await udloeb(s.id!);
+    expect((await en<{ r: boolean }>(`select public.ugens_butik_udloeb($1, 'pi_x7') as r`, [s.id])).r).toBe(true);
+    // ... men staff giver firmaet u5 (omgår loftet), mens betalingen er på vej.
+    expect((await book(CHEF, FF.X, u(5), false, "Aftale", true)).kode).toBe("ok");
+    const r = await registrer("pi_x7", "succeeded", 62500, "ch_x7");
+    expect([r.kode, (r as { grund?: string }).grund]).toEqual(["for_sent", "loft"]);
+    const b = await booking(s.id!);
+    expect([b.status, b.refusion_aarsag, b.kraever_opmaerksomhed]).toEqual(["refunderes", "for_sent", true]);
+  });
+
+  it("staffs reservation mere end 12 uger frem kan betales af firmaet", async () => {
+    const r = await book(CHEF, FF.W, u(40), true, "Aftale om sommerkampagne");
+    expect(r.kode).toBe("ok");
+    expect((await start(B.W, u(40))).kode).toBe("findes");
+    expect((await start(B.W, u(3))).kode).toBe("aaben_reservation");
+    // Firmaet kan ikke selv vælge en uge så langt frem.
+    await db.query(`select public.ugens_butik_firma_annuller($1, $2, null)`, [B.W, r.id]);
+    expect((await start(B.W, u(40))).kode).toBe("uge_ugyldig");
+  });
+
+  it("sen betaling på en uge, der er slut: ingen uge, hel refusion ('for_sent', uge_slut) - også efter udløb", async () => {
+    const ind = (uu: string, status: string, pi: string, tidligere: string[]) =>
+      en<{ id: string }>(
+        `insert into public.ugens_butik_bookinger (firma_id, bruger_id, uge_start, start_kl, slut_kl, kilde, betaling, status,
+           reserveret_til, pris_ekskl_moms_oere, moms_oere, beloeb_oere, stripe_payment_intent_id, tidligere_payment_intents, udloebet_kl)
+         values ($1, $2, $3::date, now(), now(), 'staff', 'stripe', $4, now() + interval '1 hour', 50000, 12500, 62500, $5, $6,
+                 case when $4 = 'udloebet' then now() end)
+         returning id`,
+        [FF.Y, B.Y, uu, status, status === "udloebet" ? null : pi, tidligere]);
+    const a = await ind(u(-1), "reserveret", "pi_slut", []);
+    const r = await registrer("pi_slut", "succeeded", 62500, "ch_slut");
+    expect([r.kode, (r as { grund?: string }).grund]).toEqual(["for_sent", "uge_slut"]);
+    expect([(await booking(a.id)).status, (await booking(a.id)).kraever_opmaerksomhed]).toEqual(["refunderes", true]);
+    const b = await ind(u(-2), "udloebet", "pi_slut2", ["pi_slut2"]);
+    const r2 = await registrer("pi_slut2", "succeeded", 62500, "ch_slut2");
+    expect([r2.kode, (r2 as { grund?: string }).grund]).toEqual(["for_sent", "uge_slut"]);
+    expect((await booking(b.id)).status).toBe("refunderes");
+    // Og firmaet kan ikke genoptage en åben reservation for en uge, der er slut.
+    expect((await start(B.Y, u(-1))).kode).toBe("uge_ugyldig");
+  });
+
+  it("betaling fra et firma, der ikke er aktivt (pause): ingen uge, hel refusion ('for_sent', ikke_aktiv)", async () => {
+    const s = await start(B.Z, u(8));
+    expect(s.kode).toBe("ok");
+    await gemPi(s.id!, "pi_z8");
+    await db.query(`update public.firmaer set abonnement_status = 'pauset' where id = $1`, [FF.Z]);
+    const r = await registrer("pi_z8", "succeeded", 62500, "ch_z8");
+    expect([r.kode, (r as { grund?: string }).grund]).toEqual(["for_sent", "ikke_aktiv"]);
+    expect((await booking(s.id!)).status).toBe("refunderes");
+    // Uden betaling kan staff stadig booke firmaet manuelt (vises først, når det er aktivt).
+    const m = await book(SAELGERROLLE, FF.Z, u(16), false, "Aftale under pausen");
+    expect([m.kode, m.status]).toEqual(["ok", "manuel"]);
+    expect((await book(SAELGERROLLE, FF.Z, u(17), true, "Med betaling")).kode).toBe("ikke_aktiv");
+    // En lukket konto kan ikke bookes.
+    await db.query(`update public.users set konto_lukket_kl = now() where id = $1`, [B.Z]);
+    expect((await book(SAELGERROLLE, FF.Z, u(17), false, "Lukket")).kode).toBe("spaerret");
+    await db.query(`update public.users set konto_lukket_kl = null where id = $1`, [B.Z]);
+    await db.query(`update public.firmaer set abonnement_status = 'aktiv' where id = $1`, [FF.Z]);
+  });
+
+  it("betaling i en anden valuta end dkk: ingen uge, refunderes ('beloeb_afviger')", async () => {
+    const s = await start(B.Z, u(8));
+    expect(s.kode).toBe("ok");
+    await gemPi(s.id!, "pi_z8b");
+    expect((await registrer("pi_z8b", "succeeded", 62500, "ch_z8b", "eur")).kode).toBe("beloeb_afviger");
+    expect((await booking(s.id!)).status).toBe("refunderes");
+  });
+
+  it("rabat pr. firma: chef og sælger sætter den (logges); betalt og annulleret uden refusion tæller; refunderet giver den tilbage", async () => {
+    const saet = async (staff: string, pct: number | null, antal: number | null, grund: string) =>
+      (await en<{ r: Svar }>(`select public.ugens_butik_saet_firma_rabat($1, $2, $3, $4, $5) as r`, [staff, FF.R, pct, antal, grund])).r;
+    const pris = async (uu: string) =>
+      Number((await en<{ p: number }>(`select rabat_procent p from public.ugens_butik_pris_for($1, $2::date)`, [FF.R, uu])).p);
+    expect((await saet(ADMIN, 50, 1, "x")).kode).toBe("ingen_adgang");
+    expect((await saet(SAELGERROLLE, 50, null, "x")).kode).toBe("ugyldig");
+    expect((await saet(SAELGERROLLE, 95, 1, "x")).kode).toBe("ugyldig");
+    expect((await saet(SAELGERROLLE, 50, 1, " ")).kode).toBe("begrundelse_mangler");
+    expect(await pris(u(6))).toBe(0); // Start-pakken: ingen rabat
+    expect((await saet(SAELGERROLLE, 50, 1, "Introaftale")).kode).toBe("ok");
+    const log = await en<{ handling: string; maal_type: string; aarsag: string }>(
+      `select handling, maal_type, aarsag from public.moderation_log where maal_id = $1`, [FF.R]);
+    expect([log.handling, log.maal_type]).toEqual(["ugens_butik_rabat_firma", "firma"]);
+    expect(log.aarsag).toContain("50 %");
+    const a = await koebOgBetal(B.R, u(6), "pi_r6");
+    expect(a.beloeb_oere).toBe(31250);
+    // Betalt og annulleret UDEN refusion: firmaet har betalt - rabatten er brugt.
+    expect((await ann(CHEF, a.id!, "Aftalt uden refusion")).status).toBe("annulleret");
+    expect(await pris(u(7))).toBe(0);
+    // Refunderet: rabatten kan bruges igen.
+    expect((await ann(SAELGERROLLE, a.id!, "Fuld refusion", true)).status).toBe("refunderes");
+    expect(await pris(u(7))).toBe(50);
+    // En udløbet reservation med rabat, der betales senere og giver ugen, tæller som brugt.
+    const s = await start(B.R, u(7));
+    expect(s.beloeb_oere).toBe(31250);
+    await gemPi(s.id!, "pi_r7");
+    await udloeb(s.id!);
+    await db.query(`select public.ugens_butik_udloeb($1, 'pi_r7')`, [s.id]);
+    expect(await pris(u(9))).toBe(50); // udløbet giver rabatten tilbage ...
+    expect((await registrer("pi_r7", "succeeded", 31250, "ch_r7")).kode).toBe("betalt");
+    expect(await pris(u(9))).toBe(0); // ... men betalt senere er den brugt
+    // Året regnes fra ugens MANDAG: mandag 30. dec. 2030 (ISO-uge 1 2031) hører til 2030.
+    await db.query(
+      `insert into public.ugens_butik_bookinger (firma_id, bruger_id, uge_start, start_kl, slut_kl, kilde, betaling, status,
+         reserveret_til, pris_ekskl_moms_oere, moms_oere, beloeb_oere, rabat_procent, rabat_oere, betalt_kl, stripe_payment_intent_id)
+       values ($1, $2, '2030-12-23', now(), now(), 'firma', 'stripe', 'betalt', now(), 25000, 6250, 31250, 50, 25000, now(), 'pi_r2030')`,
+      [FF.R, B.R]);
+    expect(await pris("2030-12-30")).toBe(0);
+    expect(await pris("2031-01-06")).toBe(50);
+    // null/null: følg pakken igen (Start = 0 %).
+    expect((await saet(CHEF, null, null, "Aftalen er slut")).kode).toBe("ok");
+    expect(await pris("2031-01-06")).toBe(0);
+    const n = await en<{ n: string }>(`select count(*) n from public.moderation_log where handling = 'ugens_butik_rabat_firma'`);
+    expect(Number(n.n)).toBe(2);
+    // Admin-oversigten viser pakkens og firmaets egen rabat.
+    const ad = (await en<{ r: { firmaer: { id: string; egen_rabat: unknown; pakke_rabat_procent: number }[] } }>(
+      `select public.ugens_butik_admin($1) as r`, [SAELGERROLLE])).r;
+    expect(ad.firmaer.find((x) => x.id === FF.R)).toMatchObject({ egen_rabat: null, pakke_rabat_procent: 0 });
+  });
+
+  it("erhverv_pakke_gem: kun chefen sætter pakkens rabat (procent og antal); null = uændret", async () => {
+    const gem = (staff: string, pct: number | null, antal: number | null) =>
+      en<{ r: Svar }>(
+        `select public.erhverv_pakke_gem($1, $2, 'Butik', null, 999, 30, true, 0, $3, $4) as r`, [staff, PAKKE_BUTIK, pct, antal]);
+    await expect(gem(SAELGERROLLE, 50, 3)).rejects.toThrow(/Ingen adgang/);
+    expect((await gem(CHEF, 50, null)).r.kode).toBe("ugyldig_rabat");
+    expect((await gem(CHEF, 50, 3)).r.kode).toBe("ok");
+    const p = await en<{ a: number; b: number }>(
+      `select ugens_butik_rabat_procent a, ugens_butik_rabat_antal b from public.erhverv_pakker where id = $1`, [PAKKE_BUTIK]);
+    expect([p.a, p.b]).toEqual([50, 3]);
+    expect((await gem(CHEF, null, null)).r.kode).toBe("ok");
+    const q = await en<{ a: number; b: number }>(
+      `select ugens_butik_rabat_procent a, ugens_butik_rabat_antal b from public.erhverv_pakker where id = $1`, [PAKKE_BUTIK]);
+    expect([q.a, q.b]).toEqual([50, 3]);
+    const log = await en<{ aarsag: string }>(
+      `select aarsag from public.moderation_log where handling = 'erhverv_pakke_gemt' order by oprettet_kl desc limit 1`);
+    expect(log.aarsag).toContain("Ugens butik-rabat 50 % de første 3 uger");
   });
 });

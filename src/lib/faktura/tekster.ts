@@ -10,10 +10,13 @@ export const FAKTURA_TEKST = {
   fejl: "Dine fakturaer kunne ikke hentes lige nu. Prøv igen om lidt.",
   boksTitel: "Fakturaer fra BidHamr",
   boksIntro: "Fakturaen dækker BidHamrs gebyrer og fragt – ikke selve varen. Beløbene er inkl. moms.",
-  firmaTitel: "Fakturaer på gebyrer",
+  firmaTitel: "Fakturaer fra BidHamr",
+  // Firmaer betaler intet sælgergebyr (Filip, 26. okt. 2026). Regningerne på
+  // abonnementet (Stripe) står i kortet over; her er Dinero-fakturaerne -
+  // Ugens butik (og sælgergebyret fra ældre handler).
   firmaIntro:
-    "Når I sælger, får I en faktura fra BidHamr på sælgergebyret (5 %) med momsen vist for sig og jeres CVR-nummer. Fakturaen på selve varen sender I selv til køberen.",
-  firmaTom: "Når I sælger noget, kommer fakturaen på sælgergebyret her.",
+    "Her finder I BidHamrs fakturaer på Ugens butik – med momsen vist for sig og jeres CVR-nummer. Regningerne på abonnementet står ovenfor. I betaler intet gebyr af jeres salg, og fakturaen på selve varen sender I selv til køberen.",
+  firmaTom: "Når I køber Ugens butik, kommer fakturaen her.",
   paaVej: "Fakturaen er på vej. Den er normalt klar om få minutter.",
   hentPdf: "Hent faktura (PDF)",
   hentKreditnotaPdf: "Hent kreditnota (PDF)",

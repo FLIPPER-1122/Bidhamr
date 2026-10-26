@@ -1,15 +1,19 @@
 import "server-only";
 
 // "Ugens butik" - betalt forsideplads for firmaer (Filip, 26. okt. 2026).
-// Migration 20261101020000_ugens_butik.sql (regler, låse og tilstande).
+// Migrationer 20261101020000_ugens_butik.sql og 20261101060000_ugens_butik_
+// rettelser.sql (regler, låse og tilstande).
 //
 // Pengestrømmen (BidHamrs EGEN omsætning - som boost, src/lib/betaling/boost.ts):
-//   1. ugens_butik_koeb_start reserverer ugen i 30 minutter (unikt indeks pr.
-//      uge + lås, så to firmaer aldrig får samme uge) og låser prisen på
-//      bookingen: 500 kr. + 25 % moms = 625 kr. (ugens_butik_indstillinger),
-//      minus pakkens rabat (erhverv_pakker.ugens_butik_rabat_procent/_antal,
-//      fx Butik 50 % de første 3 uger pr. kalenderår) - ugens_butik_pris_for.
-//      Kun aktive firmaer, fra næste uge og højst 12 uger frem.
+//   1. ugens_butik_koeb_start reserverer ugen i 30 minutter (dog højst til
+//      ugens slutning; unikt indeks pr. uge + lås, så to firmaer aldrig får
+//      samme uge) og låser prisen på bookingen: 500 kr. + 25 % moms = 625 kr.
+//      (ugens_butik_indstillinger), minus rabatten (firmaets egen,
+//      ugens_butik_firma_rabat, ellers pakkens erhverv_pakker.ugens_butik_
+//      rabat_procent/_antal, fx Butik 50 % de første 3 uger pr. kalenderår) -
+//      ugens_butik_pris_for. Kun aktive firmaer, fra den IGANGVÆRENDE uge
+//      (samme pris hele ugen; pladsen ophører mandag kl. 00) og højst 12 uger
+//      frem, og højst 4 uger i træk (2 ugers pause efter 4 i træk - 'loft').
 //   2. En PaymentIntent på BidHamrs PLATFORMSKONTO - ingen on_behalf_of,
 //      ingen transfer_data, intet application fee. Kort (inkl. Apple Pay og
 //      Google Pay), MobilePay og Revolut Pay, som de er slået til på
@@ -18,14 +22,18 @@ import "server-only";
 //      ugens_butik_id, firma_id, uge, bidhamr_db.
 //   3. Webhooken (payment_intent.*) - eller returen fra betalingen, eller
 //      cron'en efter 15 min - spejler betalingen (ugens_butik_registrer).
-//      Først da har firmaet ugen. Betalt med et andet beløb, eller for sent
-//      (ugen er taget af et andet firma, eller staff har annulleret): hele
-//      beløbet refunderes automatisk. En kasseret PaymentIntent, der alligevel
-//      betales, refunderes som dobbeltbetaling.
+//      Først da har firmaet ugen. Betalt med et andet beløb eller i en anden
+//      valuta end dkk, eller for sent (ugen er slut, firmaet er ikke aktivt
+//      længere, ugen er taget af et andet firma, loftet er nået, eller staff
+//      har annulleret): hele beløbet refunderes automatisk, og der laves en
+//      drift-alarm. En kasseret PaymentIntent, der alligevel betales,
+//      refunderes som dobbeltbetaling.
 //   4. Udløber reservationen, annullerer cron'en PaymentIntenten hos Stripe
 //      først (er den betalt imens, spejles den i stedet), og så frigives ugen.
-//   5. Refusion kun via chefen (Admin -> Erhverv -> Ugens butik ->
-//      "Annullér og refundér", med begrundelse og log) eller automatisk (3).
+//   5. Refusion (altid hele beløbet) via chefen eller sælger-rollen (Admin ->
+//      Erhverv -> Ugens butik -> "Annullér og refundér", med begrundelse og
+//      log) eller automatisk (3). Suspension, pause eller lukning efter
+//      betalingen: pladsen skjules, men der refunderes ikke automatisk.
 //   6. Faktura (salgskonto, med moms, firmaets CVR) og kreditnota laves af
 //      fakturakøen (faktura_planlaeg_ugens_butik -> Dinero).
 //
@@ -149,6 +157,7 @@ export type UgensButikStartKode =
   | "ikke_aktiv"
   | "uge_ugyldig"
   | "optaget"
+  | "loft"
   | "aaben_reservation"
   | "behandles"
   | "foer_lancering"
@@ -176,8 +185,9 @@ const START_FEJL: Record<string, string> = {
   ikke_firma: "Kun firmakonti kan købe Ugens butik.",
   spaerret: "Din konto kan ikke købe lige nu. Skriv til erhverv@bidhamr.dk.",
   ikke_aktiv: "Dit abonnement skal være betalt, før du kan købe Ugens butik.",
-  uge_ugyldig: "Vælg en uge fra næste uge og op til 12 uger frem.",
+  uge_ugyldig: "Vælg en uge fra denne uge og op til 12 uger frem.",
   optaget: "Ugen er desværre taget. Vælg en anden uge.",
+  loft: "I kan højst have Ugens butik 4 uger i træk. Efter 4 uger i træk skal der gå 2 uger, før I kan få pladsen igen.",
   aaben_reservation: "Du har allerede en uge, der venter på betaling. Betal den eller annullér den først.",
   behandles: "Din betaling er ved at blive behandlet. Vent et øjeblik, og opdater siden.",
   foer_lancering: "Ugens butik kan købes, når BidHamr er åbnet.",
@@ -448,6 +458,15 @@ export async function annullerEgenUgensButik(brugerId: string, bookingId: unknow
 
 // ------------------------------------------------------------------ spejl fra Stripe
 
+// Hvorfor en betalt uge ikke blev givet (ugens_butik_registrer 'for_sent').
+const FOR_SENT_GRUND: Record<string, string> = {
+  uge_slut: "ugen er slut",
+  ikke_aktiv: "firmaet er ikke aktivt - pause, suspenderet eller lukket",
+  optaget: "reservationen var udløbet, og ugen er taget af et andet firma",
+  loft: "reservationen var udløbet, og firmaet har nu 4 uger i træk",
+  annulleret: "bookingen var annulleret eller udløbet",
+};
+
 // Spejler en Ugens butik-PaymentIntent (webhook, retur og cron). Idempotent.
 // Svar: databasens kode ('betalt', 'allerede', 'for_sent', 'ukendt' ...).
 export async function spejlUgensButikPi(pi: Stripe.PaymentIntent): Promise<string> {
@@ -458,19 +477,27 @@ export async function spejlUgensButikPi(pi: Stripe.PaymentIntent): Promise<strin
     p_charge: stripeId(pi.latest_charge as string | { id: string } | null),
     p_beloeb: pi.status === "succeeded" ? pi.amount_received : null,
     p_fejl: pi.last_payment_error?.code ?? pi.last_payment_error?.message ?? null,
+    // Alt andet end dkk behandles som et forkert beløb (refunderes).
+    p_valuta: pi.currency,
   });
   if (error) {
     if (manglerUgensButik(error)) return "ukendt";
     throw new Error(`ugens_butik_registrer: ${error.message}`);
   }
-  const svar = data as { kode?: string; id?: string } | null;
+  const svar = data as { kode?: string; id?: string; grund?: string } | null;
   const kode = svar?.kode ?? "ukendt";
   if ((kode === "beloeb_afviger" || kode === "for_sent") && svar?.id) {
     if (kode === "beloeb_afviger") {
       await alarmPrTilfaelde({
         noegle: `ugens-butik-beloeb:${svar.id}`,
         hvor: "betaling/ugens-butik",
-        fejl: `Ugens butik ${svar.id} (PaymentIntent ${pi.id}) er betalt med et andet beløb end prisen. Ugen er ikke givet, og beløbet refunderes automatisk - kontrollér i Stripe.`,
+        fejl: `Ugens butik ${svar.id} (PaymentIntent ${pi.id}) er betalt med et andet beløb (${pi.amount_received} ${pi.currency}) end prisen. Ugen er ikke givet, og beløbet refunderes automatisk - kontrollér i Stripe.`,
+      });
+    } else {
+      await alarmPrTilfaelde({
+        noegle: `ugens-butik-for-sent:${svar.id}`,
+        hvor: "betaling/ugens-butik",
+        fejl: `Ugens butik ${svar.id} (PaymentIntent ${pi.id}) er betalt, men ugen kan ikke gives (${FOR_SENT_GRUND[svar.grund ?? ""] ?? svar.grund ?? "ukendt grund"}). Hele beløbet refunderes automatisk - kontrollér i Stripe.`,
       });
     }
     await refunderUgensButik(svar.id);
@@ -683,14 +710,14 @@ export async function spejlUgensButikIndsigelse(d: Pick<Stripe.Dispute, "id" | "
 
 const STAFF_FEJL: Record<string, string> = {
   ingen_adgang: "Kun chefen og sælger-rollen kan styre Ugens butik.",
-  kun_chef: "Kun chefen kan annullere eller refundere en betalt uge.",
   begrundelse_mangler: "Skriv en begrundelse.",
   ugyldig: "Ugyldig forespørgsel.",
   ikke_fundet: "Firmaet eller bookingen findes ikke.",
   spaerret: "Firmakontoen er lukket eller suspenderet.",
-  ikke_aktiv: "Firmaet har ikke et aktivt abonnement.",
-  uge_ugyldig: "Vælg en mandag fra denne uge og frem (med betaling: fra næste uge).",
+  ikke_aktiv: "Firmaet har ikke et aktivt abonnement. Book ugen uden betaling, eller vent, til firmaet er aktivt.",
+  uge_ugyldig: "Vælg en mandag fra denne uge og frem.",
   optaget: "Ugen er allerede booket.",
+  loft: "Firmaet får dermed mere end 4 uger i træk (eller under 2 ugers pause efter 4 uger i træk). Sæt flueben i \"Omgå loftet\" og skriv hvorfor, hvis det er aftalt.",
   aaben_reservation: "Firmaet har allerede en uge, der venter på betaling.",
   forkert_status: "Bookingen kan ikke ændres sådan.",
   behandles: "Betalingen er ved at blive behandlet hos Stripe. Prøv igen om lidt.",
@@ -701,12 +728,15 @@ const STAFF_FEJL: Record<string, string> = {
 export type StaffSvar = { ok: true; id?: string; status?: string; besked?: string } | { fejl: string; kode: string };
 
 // Staff booker en uge manuelt. staffId SKAL være verificeret (assertErhverv).
+// omgaaLoft: staff omgår loftet (4 uger i træk) - databasen logger det med
+// begrundelsen.
 export async function staffBookUgensButik(
   staffId: string,
   firmaId: string,
   uge: string,
   medBetaling: boolean,
   begrundelse: string,
+  omgaaLoft = false,
 ): Promise<StaffSvar> {
   if (!UUID.test(firmaId) || !DATO.test(uge)) return { fejl: STAFF_FEJL.ugyldig, kode: "ugyldig" };
   const { data, error } = await createAdminClient().rpc("ugens_butik_staff_book", {
@@ -715,6 +745,7 @@ export async function staffBookUgensButik(
     p_uge: uge,
     p_med_betaling: medBetaling,
     p_begrundelse: begrundelse.slice(0, 1000),
+    p_omgaa_loft: omgaaLoft,
   });
   if (error) throw new Error(`ugens_butik_staff_book: ${error.message}`);
   const s = data as { kode?: string; id?: string; status?: string; gammel_pi?: string[] | null } | null;
@@ -723,9 +754,11 @@ export async function staffBookUgensButik(
   return { ok: true, id: s.id, status: s.status };
 }
 
-// Staff annullerer en booking (chefen kan refundere en betalt). Databasen
-// tjekker rollen igen og logger. En åben PaymentIntent annulleres hos Stripe;
-// en refusion laves med det samme (cron'en prøver igen, hvis Stripe fejler).
+// Staff annullerer en booking (chef og sælger-rollen - også en betalt, med
+// eller uden refusion af hele beløbet). Databasen tjekker rolle, begrundelse,
+// inhabilitet og status, FØR en åben PaymentIntent annulleres hos Stripe, og
+// igen under lås, og logger. En refusion laves med det samme (cron'en prøver
+// igen, hvis Stripe fejler).
 export async function staffAnnullerUgensButik(
   staffId: string,
   bookingId: string,
@@ -734,9 +767,19 @@ export async function staffAnnullerUgensButik(
 ): Promise<StaffSvar> {
   if (!UUID.test(bookingId)) return { fejl: STAFF_FEJL.ugyldig, kode: "ugyldig" };
   const admin = createAdminClient();
+  const grund = begrundelse.slice(0, 1000);
+  // Forhåndstjek i databasen: ingen Stripe-kald for en, der ikke må.
+  const { data: tjek, error: tjekFejl } = await admin.rpc("ugens_butik_staff_tjek", {
+    p_staff: staffId,
+    p_id: bookingId,
+    p_begrundelse: grund,
+    p_refunder: refunder,
+  });
+  if (tjekFejl) throw new Error(`ugens_butik_staff_tjek: ${tjekFejl.message}`);
+  if (typeof tjek === "string") return { fejl: STAFF_FEJL[tjek] ?? "Noget gik galt. Prøv igen.", kode: tjek };
   // En åben betaling (reserveret med PaymentIntent) annulleres hos Stripe
   // FØRST, så den ikke kan betales, mens den annulleres. Er den betalt imens,
-  // spejles det - så er bookingen betalt, og kun chefen kan annullere den.
+  // spejles det - så er bookingen betalt (og kan annulleres på ny).
   const for_ = await hentBooking(admin, bookingId);
   if (for_?.status === "reserveret" && for_.stripe_payment_intent_id) {
     const r = await afslutPi(for_.stripe_payment_intent_id, "staff");
@@ -746,7 +789,7 @@ export async function staffAnnullerUgensButik(
   const { data, error } = await admin.rpc("ugens_butik_staff_annuller", {
     p_staff: staffId,
     p_id: bookingId,
-    p_begrundelse: begrundelse.slice(0, 1000),
+    p_begrundelse: grund,
     p_refunder: refunder,
   });
   if (error) throw new Error(`ugens_butik_staff_annuller: ${error.message}`);
@@ -778,6 +821,37 @@ export async function staffSaetUgensButikPris(staffId: string, prisEksklMomsOere
   const s = data as { kode?: string } | null;
   if (s?.kode === "ugyldig") return { fejl: "Prisen skal være mellem 100 og 10.000 kr. ekskl. moms.", kode: "ugyldig" };
   if (s?.kode !== "ok") return { fejl: "Kun chefen kan rette prisen.", kode: s?.kode ?? "fejl" };
+  return { ok: true };
+}
+
+// Chef eller sælger-rollen sætter firmaets egen rabat på Ugens butik
+// (tilsidesætter pakkens). procent og antal begge null = følg pakken igen.
+// Databasen tjekker rollen og logger med begrundelsen.
+export async function staffSaetUgensButikFirmaRabat(
+  staffId: string,
+  firmaId: string,
+  procent: number | null,
+  antal: number | null,
+  begrundelse: string,
+): Promise<StaffSvar> {
+  if (!UUID.test(firmaId)) return { fejl: STAFF_FEJL.ugyldig, kode: "ugyldig" };
+  const heltal = (v: number | null) => v === null || (Number.isInteger(v) && v >= 0);
+  if (!heltal(procent) || !heltal(antal) || (procent === null) !== (antal === null)) {
+    return { fejl: "Skriv både rabat i procent (0-90) og antal uger pr. år (0-52) - eller ingen af dem.", kode: "ugyldig" };
+  }
+  const { data, error } = await createAdminClient().rpc("ugens_butik_saet_firma_rabat", {
+    p_staff: staffId,
+    p_firma: firmaId,
+    p_procent: procent,
+    p_antal: antal,
+    p_begrundelse: begrundelse.slice(0, 1000),
+  });
+  if (error) throw new Error(`ugens_butik_saet_firma_rabat: ${error.message}`);
+  const s = data as { kode?: string } | null;
+  if (s?.kode === "ugyldig") {
+    return { fejl: "Skriv både rabat i procent (0-90) og antal uger pr. år (0-52) - eller ingen af dem.", kode: "ugyldig" };
+  }
+  if (s?.kode !== "ok") return { fejl: STAFF_FEJL[s?.kode ?? ""] ?? "Noget gik galt. Prøv igen.", kode: s?.kode ?? "fejl" };
   return { ok: true };
 }
 
