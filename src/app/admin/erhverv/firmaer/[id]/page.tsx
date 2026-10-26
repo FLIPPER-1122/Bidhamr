@@ -32,10 +32,10 @@ import {
   UgeHandlinger,
 } from "@/components/admin/erhverv/firma/FirmaFaner";
 import { EtKlikKnap, FirmaNote, GenaktiverKnap, type LedigUge } from "@/components/admin/erhverv/firma/FirmaHandlinger";
-import { ugeNr } from "@/components/admin/erhverv/firma/stil";
+import { introTilstand, ugeNr } from "@/components/admin/erhverv/firma/stil";
 import {
   hentFirmaAuktionerOgSalg,
-  hentFirmaKvote,
+  hentFirmaFremhaevninger,
   hentFirmaLog,
   hentFirmaRegninger,
   hentFirmaUgensButik,
@@ -45,7 +45,7 @@ import { ADMIN_FIRMA as T } from "@/lib/tekster/adminFirma";
 import { KLAGE_ADMIN } from "@/lib/tekster/erhvervKlager";
 import { ABONNEMENT_STATUS_NAVN } from "@/lib/erhverv/regler";
 import { KLAGE_FORSLAG_ANTAL, KLAGE_FORSLAG_MAANEDER } from "@/lib/erhverv/klager";
-import { kr, visTelefon } from "@/lib/erhverv/visning";
+import { kr, krFraOere, visTelefon } from "@/lib/erhverv/visning";
 import { firmaTitel } from "@/lib/admin/erhvervTitel";
 
 // Browserfanen hedder det samme som overskriften.
@@ -81,7 +81,7 @@ export default async function FirmaSide({
   if (!f) notFound();
 
   // Det, toppen af siden altid bruger (status, kræver handling, hurtighandlinger).
-  const [{ data: konto }, { data: lukningForslag }, kvote, ugensSvar, klagerSvar] = await Promise.all([
+  const [{ data: konto }, { data: lukningForslag }, ugensSvar, klagerSvar] = await Promise.all([
     admin
       .from("users")
       .select("suspenderet, suspenderet_til, suspenderet_aarsag, konto_lukket_kl")
@@ -93,7 +93,6 @@ export default async function FirmaSide({
       .eq("bruger_id", f.bruger_id)
       .eq("status", "afventer")
       .maybeSingle<{ id: string; advarsler_antal: number }>(),
-    hentFirmaKvote(admin, f.bruger_id),
     hentFirmaUgensButik(admin, userId, f.id),
     hentErhvervKlager({ status: null, firma: f.id }),
   ]);
@@ -104,10 +103,11 @@ export default async function FirmaSide({
   const aabneKlager = "fejl" in klagerSvar ? 0 : klagerSvar.antal.aaben + klagerSvar.antal.under_behandling;
 
   // Kun den aktive fanes ekstra data.
-  const [regninger, salg, log] = await Promise.all([
+  const [regninger, salg, log, fremhaevninger] = await Promise.all([
     fane === "regninger" ? hentFirmaRegninger(admin, f.id) : Promise.resolve(null),
     fane === "salg" ? hentFirmaAuktionerOgSalg(admin, f.bruger_id) : Promise.resolve(null),
     fane === "log" ? hentFirmaLog(admin, f.id, f.bruger_id) : Promise.resolve(null),
+    fane === "kvoter" ? hentFirmaFremhaevninger(admin, f.id) : Promise.resolve(null),
   ]);
 
   // --- Tilstand ---------------------------------------------------------------
@@ -125,8 +125,23 @@ export default async function FirmaSide({
         ? "groen"
         : "gul";
   const statusTekst = lukket ? T.status.lukket : suspenderet ? T.status.suspenderet : (ABONNEMENT_STATUS_NAVN[status] ?? status);
-  const pris = f.pakke?.maanedspris ?? null;
-  const naesteDato = f.periode_slut ?? f.betalt_til;
+  // Pakkens standardpris og det, firmaet faktisk betaler (særpris eller pakkens pris).
+  const pakkePris = f.pakke?.maanedspris ?? null;
+  const pris = f.pris ?? pakkePris;
+  const kvote = f.kvote ?? null;
+  const intro = f.introrabat ?? null;
+  // intro_status kan ikke bruges (står altid 'aktiv') - intro_til afgør det.
+  const introNu = intro ? introTilstand(intro.til, nu) : null;
+  const gratisTil = f.gratis_til && new Date(f.gratis_til).getTime() > nu ? f.gratis_til : null;
+  const naesteDato = gratisTil ?? f.periode_slut ?? f.betalt_til;
+  // Næste betaling med introrabat, hvis rabatten gælder den (planlagt, eller
+  // kører stadig ved næste betaling).
+  const introGaelder =
+    !!intro &&
+    introNu !== "slut" &&
+    (!intro.til || !naesteDato || new Date(intro.til).getTime() > new Date(naesteDato).getTime());
+  const naestePris = pris != null && introGaelder && intro ? (pris * (100 - intro.procent)) / 100 : pris;
+  const kortTekst = f.kort ? T.abonnement.kort(f.kort.maerke, f.kort.sidste4) : null;
 
   const ledigeUger: LedigUge[] = ugens
     ? ugens.uger
@@ -183,6 +198,13 @@ export default async function FirmaSide({
       tone: "gul",
       tekst: T.kraever.ikkeLoggetInd,
       handling: <EtKlikKnap firmaId={f.id} handling="gensendVelkomst" label={T.kraever.sendVelkomst} className="btn btn-sekundaer btn-lille" />,
+    });
+  if (f.kort?.udloeber_snart && !lukket && status !== "opsagt" && kortTekst)
+    punkter.push({
+      id: "kort",
+      tone: "gul",
+      tekst: T.kraever.kortUdloeber(`${kortTekst}, ${f.kort.udloeb}`),
+      handling: <EtKlikKnap firmaId={f.id} handling="kortMail" label={T.kraever.sendKortMail} className="btn btn-sekundaer btn-lille" />,
     });
   if (f.afventende_opgradering) punkter.push({ id: "opgradering", tone: "gul", tekst: T.kraever.afventerOpgradering(f.afventende_opgradering.navn) });
   if (aabneKlager > 0)
@@ -257,31 +279,45 @@ export default async function FirmaSide({
           {
             label: T.status.pakke,
             vaerdi: f.pakke?.navn ?? T.status.ingenPakke,
-            under: pris != null ? `${kr(pris)} ${T.status.eksklMoms}` : undefined,
+            under:
+              pris != null
+                ? `${kr(pris)} ${T.status.eksklMoms}${f.saerpris != null ? ` (${T.abonnement.saerpris.toLowerCase()})` : ""}`
+                : undefined,
           },
           {
             label: T.status.auktioner,
-            vaerdi: kvote ? T.status.brugtAf(kvote.brugt, kvote.max) : "–",
-            under: `${f.aktive_auktioner} ${X.aktiveAuktioner.toLowerCase()}`,
+            vaerdi: kvote ? (kvote.max == null ? T.status.brugtUbegraenset(kvote.brugt) : T.status.brugtAf(kvote.brugt, kvote.max)) : "–",
+            under: [
+              `${f.aktive_auktioner} ${X.aktiveAuktioner.toLowerCase()}`,
+              kvote && !kvote.ubegraenset && kvote.ekstra > 0 ? T.status.ekstra(kvote.ekstra) : null,
+            ]
+              .filter(Boolean)
+              .join(" · "),
           },
           {
             label: T.status.naesteBetaling,
             vaerdi:
               lukket || status === "opsagt" || opsiges || !f.stripe_subscription_id
                 ? T.status.ingenBetaling
-                : pris != null
-                  ? `${kr(pris)}`
-                  : "–",
+                : gratisTil
+                  ? T.status.gratisTil(dato(gratisTil))
+                  : naestePris != null
+                    ? krFraOere(Math.round(naestePris * 100))
+                    : "–",
             under:
               lukket || status === "opsagt"
                 ? T.status.opsagt
                 : opsiges && f.opsiges_fra
                   ? T.status.opsigesFra(dato(f.opsiges_fra))
                   : !f.stripe_subscription_id
-                    ? T.status.ikkeIStripe
-                    : naesteDato
-                      ? `${dato(naesteDato)} · ${T.status.eksklMoms}`
-                      : T.status.eksklMoms,
+                    ? f.gratis_maaneder_ved_start > 0
+                      ? `${T.status.ikkeIStripe} · ${T.status.gratisVedStart(f.gratis_maaneder_ved_start)}`
+                      : T.status.ikkeIStripe
+                    : gratisTil && naestePris != null
+                      ? `${T.status.derefter(krFraOere(Math.round(naestePris * 100)))}${introGaelder && intro ? ` ${T.status.medIntro(intro.procent)}` : ""}`
+                      : naesteDato
+                        ? `${dato(naesteDato)} · ${T.status.eksklMoms}${introGaelder && intro ? ` · ${T.status.medIntro(intro.procent)}` : ""}`
+                        : T.status.eksklMoms,
           },
         ]}
       />
@@ -291,7 +327,19 @@ export default async function FirmaSide({
       <FirmaHurtighandlinger
         firmaId={f.id}
         pakkeId={f.pakke_id}
+        pakkeNavn={f.pakke?.navn ?? T.status.ingenPakke}
+        pakkePris={pakkePris}
         pakker={pakker}
+        lukket={lukket}
+        abonnement={{
+          saerpris: f.saerpris ?? null,
+          gratisTil: gratisTil ? dato(gratisTil) : null,
+          gratisVedStart: f.gratis_maaneder_ved_start ?? 0,
+          intro,
+          ekstraAuktioner: kvote?.ekstra ?? 0,
+          ekstraFremh: f.fremhaevninger?.ekstra ?? 0,
+          ubegraenset: !!kvote?.ubegraenset,
+        }}
         status={status}
         opsiges={opsiges}
         ledigeUger={ugens ? ledigeUger : null}
@@ -320,7 +368,7 @@ export default async function FirmaSide({
             <Raekker
               raekker={[
                 [T.abonnement.pakke, f.pakke?.navn ?? T.status.ingenPakke],
-                [T.abonnement.standardpris, pris != null ? `${kr(pris)} ${T.status.eksklMoms}` : X.prisIkkeSat],
+                [T.abonnement.standardpris, pakkePris != null ? `${kr(pakkePris)} ${T.status.eksklMoms}` : X.prisIkkeSat],
                 [T.abonnement.status, statusTekst],
                 [T.abonnement.start, dato(f.abonnement_start)],
                 [
@@ -363,10 +411,74 @@ export default async function FirmaSide({
               />
             </div>
           </Felt>
+          <Felt titel={T.abonnement.prisTitel}>
+            <Raekker
+              raekker={[
+                [T.abonnement.firmaetBetaler, pris != null ? T.abonnement.prisPrMaaned(kr(pris)) : X.prisIkkeSat],
+                [T.abonnement.saerpris, f.saerpris != null ? T.abonnement.prisPrMaaned(kr(f.saerpris)) : T.abonnement.ingen],
+                ...(f.saerpris != null && f.saerpris_aftale
+                  ? ([[T.abonnement.saerprisAftale, f.saerpris_aftale]] as [string, string][])
+                  : []),
+                [
+                  T.abonnement.introrabat,
+                  intro && introNu ? (
+                    <>
+                      {T.abonnement.introTekst(intro.procent, intro.maaneder, intro.fra)}
+                      <span className="block font-normal text-tekst-daempet">
+                        {T.abonnement.introStatus(introNu, intro.til ? dato(intro.til) : null)}
+                      </span>
+                    </>
+                  ) : (
+                    T.abonnement.ingen
+                  ),
+                ],
+                [
+                  T.abonnement.gratis,
+                  gratisTil
+                    ? T.abonnement.gratisTil(dato(gratisTil))
+                    : f.gratis_maaneder_ved_start > 0
+                      ? T.abonnement.gratisVedStart(f.gratis_maaneder_ved_start)
+                      : f.gratis_brugt
+                        ? T.abonnement.gratisBrugt
+                        : T.abonnement.ingen,
+                ],
+              ]}
+            />
+          </Felt>
+          <Felt titel={T.abonnement.kortTitel}>
+            {f.kort && kortTekst ? (
+              <>
+                <Raekker
+                  raekker={[
+                    [T.abonnement.kortTitel, kortTekst],
+                    [
+                      T.abonnement.kortUdloeb,
+                      f.kort.udloeber_snart ? (
+                        <span className="text-advarsel-tekst">
+                          {f.kort.udloeb} · {T.abonnement.kortUdloeberSnart}
+                        </span>
+                      ) : (
+                        f.kort.udloeb
+                      ),
+                    ],
+                  ]}
+                />
+                {!lukket && (
+                  <div className="mt-3">
+                    <EtKlikKnap firmaId={f.id} handling="kortMail" label={T.kraever.sendKortMail} className="btn btn-sekundaer btn-lille" />
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-tekst-daempet">{T.abonnement.ingenKort}</p>
+            )}
+          </Felt>
         </div>
       )}
 
-      {fane === "kvoter" && <FaneKvoter kvote={kvote} ugens={ugens} />}
+      {fane === "kvoter" && (
+        <FaneKvoter kvote={kvote} fremh={f.fremhaevninger ?? null} fremhaevninger={fremhaevninger} ugens={ugens} />
+      )}
 
       {fane === "ugens-butik" && (
         <FaneUgensButik

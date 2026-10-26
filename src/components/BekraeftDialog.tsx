@@ -163,12 +163,14 @@ export default function BekraeftDialog({
               </p>
             )}
 
-            <div className="mt-6 flex justify-end gap-3">
+            {/* Mobil: knapperne under hinanden i fuld bredde (lange danske
+                knaptekster må ikke skubbe "Annullér" ud af dialogen). */}
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 onClick={luk}
                 disabled={pending}
-                className="btn btn-sekundaer"
+                className="btn btn-sekundaer h-auto min-h-11 whitespace-normal"
               >
                 {cancelLabel}
               </button>
@@ -177,7 +179,7 @@ export default function BekraeftDialog({
                 type="button"
                 onClick={bekraeft}
                 disabled={pending || confirmDisabled}
-                className="btn btn-primaer"
+                className="btn btn-primaer h-auto min-h-11 whitespace-normal"
               >
                 {pending ? "Arbejder…" : confirmLabel}
               </button>

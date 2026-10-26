@@ -1,12 +1,19 @@
 import Link from "next/link";
-import { hentFirmaAuktioner, kraevFirma } from "@/lib/erhverv/firmaData";
+import { hentFirmaAuktioner, hentFirmaFremhaevninger, kraevFirma } from "@/lib/erhverv/firmaData";
+import FremhaevKnap from "@/components/firma/FremhaevKnap";
+import BoostetMaerke from "@/components/boost/BoostetMaerke";
 import { foerLancering } from "@/lib/lancering";
 import { opretStatus } from "@/lib/erhverv/firmaStatus";
 import { AUKTION_GRUPPER, erAuktionGruppe, type AuktionGruppe } from "@/lib/erhverv/regler";
 import { FirmaSide, Kort, LukketBoks, OpretKnap, VareBillede } from "@/components/firma/dele";
 import { E_KNAP_SEKUNDAER, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
-import { FIRMA_DASHBOARD as D, ERHVERV_MOMS as M } from "@/lib/tekster/erhverv";
-import { kr, ugedagDato } from "@/lib/erhverv/visning";
+import {
+  FIRMA_DASHBOARD as D,
+  ERHVERV_MOMS as M,
+  FIRMA_FREMHAEV_KNAP as FK,
+  FIRMA_FREMHAEVNING as FF,
+} from "@/lib/tekster/erhverv";
+import { kr, langDato, ugedagDato } from "@/lib/erhverv/visning";
 
 // Auktioner: firmaets auktioner i fanerne Aktive / Solgte / Usolgte /
 // Annullerede (firma_auktioner - visninger fra auction_views). Fanerne er
@@ -25,8 +32,17 @@ export default async function FirmaAuktionerSide({
   const { oversigt: o } = await kraevFirma("/firma/auktioner");
   const sp = await searchParams;
   const gruppe: AuktionGruppe = erAuktionGruppe(sp.vis) ? sp.vis : "aktive";
-  const data = await hentFirmaAuktioner(gruppe);
   const lukket = foerLancering();
+  // Fremhævninger kun på de aktive (før lancering kan intet fremhæves).
+  const [data, fremh] = await Promise.all([
+    hentFirmaAuktioner(gruppe),
+    gruppe === "aktive" && !lukket ? hentFirmaFremhaevninger() : Promise.resolve(null),
+  ]);
+  const aktiveFremh = new Map((fremh?.fremhaevninger ?? []).filter((h) => h.aktiv).map((h) => [h.auktion_id, h.slut_kl]));
+  const fk = fremh?.kvote ?? o.ugekvote?.fremhaevninger ?? null;
+  // eslint-disable-next-line react-hooks/purity -- serverkomponent: tidspunktet for denne visning
+  const nu = Date.now();
+  const kanFremhaeve = !lukket && o.firma.abonnement_status === "aktiv" && !!fk && fk.tilbage > 0;
   const k = o.ugekvote;
   const auktioner = data?.auktioner ?? [];
 
@@ -44,6 +60,14 @@ export default async function FirmaAuktionerSide({
         {k && <p className={`mb-4 ${E_TEKST}`}>{A.ugeKvote(k.brugt, k.max)}</p>}
         <OpretKnap status={opretStatus(o, lukket)} />
       </Kort>
+
+      {gruppe === "aktive" && !lukket && fk && (
+        <Kort id="fremhaev" titel={FF.titel} forklaring={FF.forklaring}>
+          <p className={E_TEKST}>
+            {fk.maks === 0 ? FF.ingenIPakken : fk.tilbage > 0 ? FF.tilbage(fk.tilbage, fk.maks) : FF.fejl.kvote_brugt}
+          </p>
+        </Kort>
+      )}
 
       <nav aria-label={A.fanerLabel}>
         <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -75,11 +99,18 @@ export default async function FirmaAuktionerSide({
               // Auktioner afsluttes af cron (højst et minut efter slut).
               const koerer = a.status === "aktiv";
               const harBud = a.nuvaerende_bud != null || a.antal_bud > 0;
+              const fremhaevetTil = koerer ? aktiveFremh.get(a.id) : undefined;
               return (
                 <li key={a.id} className="rounded-none border-2 border-kant p-4">
                   <div className="flex gap-4">
                     <VareBillede url={a.billede} />
                     <div className="min-w-0 flex-1">
+                      {fremhaevetTil && (
+                        <p className="mb-1 flex flex-wrap items-center gap-2 text-[16px] font-semibold text-tekst">
+                          <BoostetMaerke annonce />
+                          {FK.fremhaevetTil(langDato(fremhaevetTil))}
+                        </p>
+                      )}
                       <p className="text-[19px] leading-snug font-semibold break-words text-tekst">{a.titel}</p>
                       <p className={E_TEKST}>
                         {gruppe === "solgte" && a.solgt_for != null
@@ -104,6 +135,9 @@ export default async function FirmaAuktionerSide({
                         <Link href={`/firma/auktioner/${a.id}/rediger`} className={E_KNAP_SEKUNDAER}>
                           {A.knapRediger}
                         </Link>
+                      )}
+                      {koerer && !a.skjult && !fremhaevetTil && kanFremhaeve && fk && new Date(a.slutter_kl).getTime() - nu > 3600_000 && (
+                        <FremhaevKnap auktionId={a.id} tilbage={fk.tilbage} />
                       )}
                       {a.trade_id ? (
                         <Link href={`/firma/salg/${a.trade_id}`} className={E_KNAP_SEKUNDAER}>

@@ -5,10 +5,27 @@ import Link from "next/link";
 import AdminBadge, { type BadgeTone } from "@/components/admin/AdminBadge";
 import AdminFejl from "@/components/admin/AdminFejl";
 import { dato, datoTid } from "@/components/admin/erhverv/ErhvervFaner";
-import { AnnullerUgeKnap, BookUgeKnap, UgensRabatKort, type LedigUge } from "@/components/admin/erhverv/firma/FirmaHandlinger";
+import {
+  AnnullerUgeKnap,
+  BookUgeKnap,
+  RefunderRegningKnap,
+  StopFremhaevningKnap,
+  UgensRabatKort,
+  type LedigUge,
+} from "@/components/admin/erhverv/firma/FirmaHandlinger";
 import { mandag, ugeNr } from "@/components/admin/erhverv/firma/stil";
 import { KlageStatusMaerke } from "@/components/erhverv/klager/visning";
-import type { FirmaAuktion, FirmaHandel, FirmaKvote, FirmaLogRaekke, FirmaRegning, FirmaUgensButik, UgensBooking } from "@/lib/admin/firmaSide";
+import type {
+  FirmaAuktion,
+  FirmaFremhaevning,
+  FirmaHandel,
+  FirmaLogRaekke,
+  FirmaRegning,
+  FirmaUgensButik,
+  UgensBooking,
+} from "@/lib/admin/firmaSide";
+import type { FirmaAbonnement, FremhaevningKvote } from "@/lib/erhverv/regler";
+import { FIRMA_FREMHAEVNING } from "@/lib/tekster/erhverv";
 import type { AdminKlageRaekke } from "@/app/actions/adminErhvervKlager";
 import { salgStatus } from "@/lib/erhverv/firmaStatus";
 import { kr, krFraOere } from "@/lib/erhverv/visning";
@@ -52,26 +69,101 @@ function Tom({ children }: { children: ReactNode }) {
 
 // --- Kvoter -----------------------------------------------------------------
 
-export function FaneKvoter({ kvote, ugens }: { kvote: FirmaKvote | null; ugens: FirmaUgensButik | null }) {
+export function FaneKvoter({
+  kvote,
+  fremh,
+  fremhaevninger,
+  ugens,
+}: {
+  kvote: FirmaAbonnement["kvote"] | null;
+  fremh: FremhaevningKvote | null;
+  fremhaevninger: FirmaFremhaevning[] | null;
+  ugens: FirmaUgensButik | null;
+}) {
   const K = T.kvoter;
   const r = ugens?.rabat ?? null;
   const aar = ugens ? Number(ugens.denneUge.slice(0, 4)) : new Date().getFullYear();
+  // eslint-disable-next-line react-hooks/purity -- serverkomponent: tidspunktet for denne visning
+  const nu = Date.now();
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Felt titel={K.auktionerTitel}>
         {kvote ? (
           <>
-            <Raekker raekker={[[K.brugt, T.status.brugtAf(kvote.brugt, kvote.max)]]} />
-            <Maaler pct={kvote.max ? (kvote.brugt / kvote.max) * 100 : 0} />
+            <Raekker
+              raekker={[
+                [K.pakken, kvote.ubegraenset ? K.ubegraenset : String(kvote.pakke_max ?? 0)],
+                [K.ekstra, kvote.ubegraenset ? "–" : String(kvote.ekstra)],
+                [K.iAlt, kvote.max == null ? K.ubegraenset : String(kvote.max)],
+                [K.brugt, kvote.max == null ? T.status.brugtUbegraenset(kvote.brugt) : T.status.brugtAf(kvote.brugt, kvote.max)],
+              ]}
+            />
+            {kvote.max != null && <Maaler pct={kvote.max ? (kvote.brugt / kvote.max) * 100 : 100} />}
             <p className="mt-2 text-xs text-tekst-daempet">
-              {kvote.brugt >= kvote.max && kvote.max > 0 && <>{K.alleOptaget} </>}
-              {kvote.naeste_uge && K.nulstilles(dato(kvote.naeste_uge))}
+              {kvote.max != null && kvote.brugt >= kvote.max && <>{K.alleOptaget} </>}
+              {kvote.periode_slut && K.nulstilles(dato(kvote.periode_slut))}
             </p>
           </>
         ) : (
           <Tom>{K.ikkeTilgaengelig}</Tom>
         )}
       </Felt>
+      <Felt titel={K.fremhTitel}>
+        {fremh ? (
+          <>
+            <Raekker
+              raekker={[
+                [K.pakken, String(fremh.pakke)],
+                [K.ekstra, String(fremh.ekstra)],
+                [K.brugt, T.status.brugtAf(fremh.brugt, fremh.maks)],
+                [K.fremhTilbage, String(fremh.tilbage)],
+              ]}
+            />
+            {fremh.maks > 0 && <Maaler pct={(fremh.brugt / fremh.maks) * 100} />}
+          </>
+        ) : (
+          <Tom>{K.ikkeTilgaengelig}</Tom>
+        )}
+      </Felt>
+      <div className="md:col-span-2">
+        <Felt titel={K.fremhListe}>
+          {!fremhaevninger ? (
+            <AdminFejl>{K.fremhFejl}</AdminFejl>
+          ) : fremhaevninger.length === 0 ? (
+            <Tom>{K.ingenFremh}</Tom>
+          ) : (
+            <ul className="divide-y divide-kant">
+              {fremhaevninger.map((h) => {
+                const aktiv = !h.stoppet_kl && new Date(h.slut_kl).getTime() > nu;
+                return (
+                  <li key={h.id} className="flex flex-col gap-2 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="flex flex-wrap items-center gap-2 break-words font-semibold text-tekst">
+                        {h.titel ?? "–"}
+                        {aktiv && <AdminBadge tone="groen">{FIRMA_FREMHAEVNING.aktiv}</AdminBadge>}
+                      </p>
+                      <p className="text-tekst-daempet">
+                        {datoTid(h.start_kl)} ·{" "}
+                        {h.stoppet_kl
+                          ? K.fremhStoppet(datoTid(h.stoppet_kl), h.tilbagegivet)
+                          : aktiv
+                            ? K.fremhAktiv(datoTid(h.slut_kl))
+                            : K.fremhSlut(datoTid(h.slut_kl))}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Link href={`/auktion/${h.auktion_id}`} className="btn btn-sekundaer btn-lille">
+                        {T.salg.aabn}
+                      </Link>
+                      {aktiv && <StopFremhaevningKnap id={h.id} />}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Felt>
+      </div>
       <Felt titel={K.ugensTitel}>
         {!r ? (
           <Tom>{K.ikkeTilgaengelig}</Tom>
@@ -343,6 +435,12 @@ export function FaneRegninger({
           <a href={r.pdf_url ?? r.hosted_url ?? undefined} target="_blank" rel="noopener noreferrer" className="btn btn-sekundaer btn-lille">
             {r.pdf_url ? R.pdf : R.se}
           </a>
+        ) : undefined,
+      // Hel refusion af en betalt regning (abonnement eller opgradering) med
+      // kreditnota. 0 kr. (fx den gratis måned) kan ikke refunderes.
+      handling:
+        r.status === "betalt" && r.beloeb_oere > 0 && r.type !== "andet" ? (
+          <RefunderRegningKnap regningId={r.id} beloebOere={r.beloeb_oere} />
         ) : undefined,
     })),
     ...uger.map((b) => ({

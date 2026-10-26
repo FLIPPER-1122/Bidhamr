@@ -457,7 +457,18 @@ export const ADMIN_ERHVERV = {
       "Opretter en ny, separat konto med firmaets e-mail og sender velkomstmailen (link til at vælge adgangskode). En evt. privat konto berøres ikke.",
     feltEmail: "Firmaets e-mail (login)",
     feltPakke: "Pakke",
-    feltPakkeHjaelp: "Den pakke, der er aftalt med firmaet.",
+    feltPakkeHjaelp: "Den pakke, der er aftalt med firmaet. Alle nye firmaer får 1 måned gratis.",
+    pakkeValg: (navn: string, auktioner: string, pris: string | null) =>
+      `${navn} – ${auktioner}${pris ? ` – ${pris} pr. md. ekskl. moms` : ""}`,
+    introTitel: "Introrabat",
+    introSlaa: "Giv introrabat efter den gratis måned",
+    introHjaelp: "Til firmaer, BidHamr selv har kontaktet. Standard er 50 % i 6 måneder.",
+    introProcent: "Rabat i procent (1-100)",
+    introMaaneder: "Antal måneder (1-24)",
+    introUgyldig: "Skriv hele tal: 1-100 % og 1-24 måneder.",
+    introOpsummering: (procent: number, maaneder: number) =>
+      `Måned 1 er gratis. Derefter ${procent} % rabat i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}.`,
+    udenIntro: "Måned 1 er gratis. Derefter pakkens almindelige pris.",
     cvrTjekket: "CVR tjekket: aktivt dansk firma.",
     knapOpret: "Opret og send velkomstmail",
     oprettet: (email: string) => `Firmakontoen er oprettet. Velkomstmailen er sendt til ${email}.`,
@@ -1220,4 +1231,86 @@ export const ADMIN_FIRMA_ABONNEMENT = {
   },
   ikkeAktiv: "Abonnementet i Stripe er ikke aktivt. Løs betalingen først.",
   mailIkkeSendt: "Bemærk: mailen til firmaet kunne ikke sendes.",
+} as const;
+
+// --- Admin: pakke-editoren (kun chef) - pakkerne fra 26. okt. 2026 ----------------
+export const ADMIN_PAKKE_EDITOR = {
+  ubegraenset: "Ubegrænset antal auktioner",
+  ubegraensetHjaelp: "Fx Pro. Så er der ingen grænse for, hvor mange auktioner firmaet kan oprette.",
+  antalHjaelp: "Pr. kalendermåned. Nulstilles den 1.",
+  fremh: "Fremhævede auktioner pr. måned",
+  fremhHjaelp: "0 = ingen. Ubrugte forsvinder ved månedens udgang.",
+  statistik: "Statistik i Firma oversigt",
+  statistikValg: {
+    ingen: "Ingen statistik",
+    statistik: "Statistik (tal pr. måned)",
+    fuld: "Fuld statistik (også pr. auktion)",
+  } as Record<string, string>,
+  fastKontakt: "Fast kontaktperson hos BidHamr",
+  fastKontaktHjaelp: "Vises i pakken i Firma oversigt.",
+  ugensTitel: "Rabat på Ugens butik",
+  ugensHjaelp: "Fx 50 % de første 3 gange hvert kalenderår. Skriv 0 og 0 for ingen rabat.",
+  ugensProcent: "Rabat i procent (0-90)",
+  ugensAntal: "Gange pr. år (0-52)",
+  fejl: {
+    fremh: "Fremhævninger skal være et helt tal fra 0 til 1000.",
+    ugens: "Rabatten på Ugens butik: procent 0-90 og gange 0-52 (hele tal).",
+  },
+  arkiveret: "Arkiveret",
+  arkiveretHjaelp: "Gammel pakke. Den kan ikke vælges eller ændres.",
+  linjePris: (pris: string | null) => (pris ? `${pris} pr. md. ekskl. moms` : "Pris ikke sat"),
+  linjeUgens: (pct: number, antal: number) => `${pct} % på Ugens butik ${antal} ${antal === 1 ? "gang" : "gange"}/år`,
+} as const;
+
+// --- Firma oversigt -> Abonnement: gratis måned, introrabat, særpris og kort ------
+// (Filip, 26. okt. 2026). Store, enkle sætninger - målgruppen er ældre.
+export const FIRMA_ABONNEMENT = {
+  gratisStartTitel: "Start din gratis måned",
+  gratisStartTekst: (maaneder: number) =>
+    maaneder === 1
+      ? "Din første måned er gratis. Du giver dit kort i dag, men der trækkes 0 kr. nu."
+      : `Dine første ${maaneder} måneder er gratis. Du giver dit kort i dag, men der trækkes 0 kr. nu.`,
+  gratisFoersteBetaling: (dato: string, beloeb: string) => `Første betaling er den ${dato}: ${beloeb}.`,
+  knapStartGratis: "Start gratis med dit kort",
+  iDag: "I dag betaler du 0 kr.",
+  gratisNu: (dato: string) => `Du er i din gratis periode til og med ${dato}. Du betaler ikke noget før.`,
+  dinPris: "Din pris",
+  saerpris: (pris: string, normal: string) => `Du har en aftalt pris: ${pris} om måneden + moms (normalpris ${normal}).`,
+  introPlanlagt: (procent: number, maaneder: number, efterGratis: boolean) =>
+    `Du får ${procent} % rabat i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}${efterGratis ? " efter din gratis periode" : ""}.`,
+  introPris: (pris: string) => `Med rabatten betaler du ${pris} om måneden + moms.`,
+  kortTitel: "Dit betalingskort",
+  kort: (kort: string, udloeb: string) => `${kort}, udløber ${udloeb}`,
+  kortUdloeberSnart: "Dit kort udløber snart. Skift det, så din betaling ikke stopper.",
+  kvitteringGratisTitel: "Din gratis måned er startet",
+  kvitteringGratisTekst: (dato: string) =>
+    `Du kan oprette auktioner nu. Der er ikke trukket penge. Første betaling er den ${dato}.`,
+  bekraeftOpgraderGratis:
+    "Du er i din gratis periode. Den nye pakke gælder med det samme, og du betaler ikke noget nu. Den nye pris gælder fra din første betaling.",
+  bekraeftNedgraderGratis:
+    "Du er i din gratis periode. Den nye pakke gælder med det samme, og du betaler ikke noget nu.",
+  bekraeftNedgraderGratisJa: "Ja, skift pakke nu",
+  knapSkiftNu: "Skift til denne pakke",
+} as const;
+
+// --- Firma oversigt -> Statistik efter pakkens niveau ----------------------------
+export const FIRMA_STATISTIK_NIVEAU = {
+  laastTitel: "Statistik følger med Butik og Pro",
+  laastTekst:
+    "Med Butik ser du visninger, bud og salg pr. måned. Med Pro ser du også tallene for hver auktion.",
+  knapSePakker: "Se pakkerne",
+  prAuktionLaast: "Tal for hver auktion følger med Pro.",
+} as const;
+
+// --- Firma oversigt -> Auktioner: fremhæv en auktion -----------------------------
+export const FIRMA_FREMHAEV_KNAP = {
+  bekraeftTitel: "Fremhæv auktionen i 7 dage?",
+  bekraeftTekst: (tilbage: number) =>
+    `Auktionen står øverst i sin kategori og i søgningen og er markeret "Annonce". Det bruger 1 af dine ${tilbage} fremhævninger i denne måned.`,
+  ja: "Ja, fremhæv",
+  annuller: "Annullér",
+  ingenTilbage: "Du har brugt alle månedens fremhævninger.",
+  talLabel: "Fremhævninger tilbage",
+  tal: (tilbage: number, maks: number) => `${tilbage} af ${maks}`,
+  fremhaevetTil: (dato: string) => `Fremhævet til ${dato}`,
 } as const;
