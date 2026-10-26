@@ -39,7 +39,7 @@ export const FORSIDE = {
     {
       ikon: "skjold",
       titel: "BidHamr Beskyttelse",
-      tekst: "Vælg det, når du byder. Så hjælper vi, hvis varen går i stykker under forsendelsen eller ikke er som beskrevet.",
+      tekst: "Altid med i gebyret, når varen sendes. Så hjælper vi, hvis varen går i stykker under forsendelsen eller ikke er som beskrevet.",
       href: "/bidhamr-beskyttelse",
     },
     {

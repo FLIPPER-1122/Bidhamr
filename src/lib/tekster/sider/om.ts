@@ -29,7 +29,7 @@ export const OM: Tekstside = {
       punkter: [
         "Betalingen håndteres af vores betalingspartner Stripe. Sælgeren får først pengene, når handlen er gået godt.",
         "Vi hjælper altid, hvis en pakke ikke kommer frem, og ved åbenlys svindel.",
-        "Med BidHamr Beskyttelse kan køberen også få hjælp, hvis varen går i stykker under forsendelsen eller ikke er som beskrevet.",
+        "Sendes varen, er BidHamr Beskyttelse altid med i købers gebyr. Så får køberen også hjælp, hvis varen går i stykker under forsendelsen eller ikke er som beskrevet.",
         "Du ser altid den samlede pris med gebyr og fragt, før du byder.",
         "Private skal bekræfte deres identitet med MitID, før de byder eller sælger. Det kan du se på mærket \"MitID-verificeret\". Du kan kun have én konto, og du skal være fyldt 18 år.",
         // OPDATER: når ROADMAP-punktet om sælgerens adresse/telefon er færdigt

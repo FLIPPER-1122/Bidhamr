@@ -1,5 +1,8 @@
 // Tekster til siden /bidhamr-beskyttelse og til budfeltet (BidPanel).
-// Bygger på ROADMAP-BESLUTNINGER.md, afsnit 1, 2 og 4 (inkl. "Pakke kommer ikke frem" og "Visning", 1. okt. 2026).
+// Bygger på ROADMAP-BESLUTNINGER.md, afsnit 1, 2, 3 og 4 (ny prismodel, Filip 26. okt. 2026):
+// BidHamr Beskyttelse er altid inkluderet i købers gebyr, når varen sendes. Den kan
+// ikke til- eller fravælges. Ved afhentning: samme gebyr, men ingen Beskyttelse.
+// Erhvervsauktioner: ingen Beskyttelse (fortrydelsesret i stedet).
 // Brug altid navnet "BidHamr Beskyttelse". Procenter må kun stå på siden, ikke ved budfeltet.
 
 export type Sektion = {
@@ -16,14 +19,18 @@ export type FaqPunkt = {
 export const SIDETITEL = "BidHamr Beskyttelse";
 
 export const METABESKRIVELSE =
-  "Se, hvad BidHamr altid hjælper med, og hvad du får ekstra med BidHamr Beskyttelse, hvis varen går i stykker under forsendelsen eller ikke er som beskrevet.";
+  "BidHamr Beskyttelse er altid med i gebyret, når varen sendes. Se, hvad den dækker, hvis varen går i stykker under forsendelsen eller ikke er som beskrevet.";
 
 export const INTRO =
-  "På BidHamr handler du med andre privatpersoner. Vi hjælper altid, hvis noget går helt galt. Med BidHamr Beskyttelse får du også hjælp, hvis varen går i stykker under forsendelsen eller ikke er som beskrevet. Her kan du se forskellen.";
+  "På BidHamr handler du med andre privatpersoner. Når du køber en vare, der bliver sendt, er BidHamr Beskyttelse altid med. Den er en del af gebyret, så du skal ikke vælge den, og den koster ikke ekstra. Her kan du se, hvad vi hjælper med.";
+
+// Mærkerne over de to kolonner øverst på siden.
+export const MAERKE_ALTID = "Altid";
+export const MAERKE_MED = "Med, når varen sendes";
 
 export const SEKTION_ALTID: Sektion = {
   overskrift: "Det hjælper BidHamr altid med",
-  tekst: "Det gælder alle køb – også uden BidHamr Beskyttelse.",
+  tekst: "Det gælder alle køb fra privatpersoner.",
   punkter: [
     "Betalingen håndteres af vores betalingspartner Stripe, som holder pengene, indtil du har godkendt varen. Sælgeren får dem først, når du har bekræftet, at varen er i orden, eller når fristen for at oprette en sag er gået.",
     "Pakken kommer ikke frem. Forsvinder pakken under forsendelsen, hjælper vi dig.",
@@ -32,19 +39,20 @@ export const SEKTION_ALTID: Sektion = {
 };
 
 export const SEKTION_MED: Sektion = {
-  overskrift: "Det hjælper BidHamr Beskyttelse med",
-  tekst: "Har du valgt BidHamr Beskyttelse, får du også hjælp her:",
+  overskrift: "Det dækker BidHamr Beskyttelse",
+  tekst: "Når varen bliver sendt, får du også hjælp her:",
   punkter: [
     "Varen er gået i stykker under forsendelsen. Du kan oprette en sag og sende varen retur.",
     "Varen er ikke som beskrevet. Her håndterer BidHamr sagen for dig, så du ikke selv skal løse det med sælgeren.",
   ],
 };
 
-export const SEKTION_UDEN: Sektion = {
-  overskrift: "Uden BidHamr Beskyttelse",
+export const SEKTION_AFHENTNING: Sektion = {
+  overskrift: "Når du henter varen hos sælgeren",
   punkter: [
-    "Går varen i stykker under forsendelsen, eller er den ikke som beskrevet, må du og sælgeren selv blive enige om en løsning. BidHamr blander sig ikke, og varen kan ikke sendes retur gennem BidHamr.",
-    "Pakke, der ikke kommer frem, og åbenlys svindel hjælper vi stadig med.",
+    "BidHamr Beskyttelse gælder kun pakker, der bliver sendt. Henter du varen selv, kan du se den, før du tager imod den.",
+    "Du viser en kode, når du har fået varen, og så går pengene til sælgeren med det samme. Der er ingen frist til at oprette en sag bagefter, så se varen godt efter, før du viser koden.",
+    "Du betaler det samme gebyr som ved forsendelse, men ingen fragt.",
   ],
 };
 
@@ -61,10 +69,11 @@ export const SEKTION_SAG: Sektion = {
 export const SEKTION_PRIS: Sektion = {
   overskrift: "Hvad koster det?",
   punkter: [
-    "BidHamr Beskyttelse koster 5 % af dit bud – mindst 25 kr og højst 250 kr.",
-    "Du vælger det selv, når du byder. Det er ikke slået til på forhånd.",
-    "Dit valg følger buddet og kan ikke ændres bagefter.",
-    "Vinder du auktionen, indgår prisen i det beløb, du betaler på betalingssiden.",
+    "BidHamr Beskyttelse koster ikke ekstra. Den er en del af det gebyr, du betaler som køber.",
+    "Gebyret er 7 % af buddet + 5 kr., dog højst 300 kr., når varen sælges for op til 7.500 kr.",
+    "Sælges varen for mere end 7.500 kr., er gebyret 3 % af buddet + 15 kr., dog højst 650 kr.",
+    "Du skal ikke vælge noget, og du kan ikke fravælge den. Den er med, når varen bliver sendt.",
+    "Ved auktionen ser du gebyret i kroner og den samlede pris, før du byder.",
     "Alle beløb er inkl. moms.",
   ],
 };
@@ -72,7 +81,7 @@ export const SEKTION_PRIS: Sektion = {
 export const SEKTIONER: Sektion[] = [
   SEKTION_ALTID,
   SEKTION_MED,
-  SEKTION_UDEN,
+  SEKTION_AFHENTNING,
   SEKTION_SAG,
   SEKTION_PRIS,
 ];
@@ -81,16 +90,20 @@ export const FAQ_OVERSKRIFT = "Spørgsmål og svar";
 
 export const FAQ: FaqPunkt[] = [
   {
-    spoergsmaal: "Kan jeg tilføje BidHamr Beskyttelse, efter jeg har budt?",
-    svar: "Nej. Du vælger BidHamr Beskyttelse, når du byder, og valget kan ikke ændres bagefter. Vil du have den, skal du sætte flueben, før du afgiver dit bud.",
+    spoergsmaal: "Skal jeg vælge BidHamr Beskyttelse, når jeg byder?",
+    svar: "Nej. BidHamr Beskyttelse er altid med i gebyret, når varen sendes. Du skal ikke sætte flueben, og den koster ikke ekstra.",
+  },
+  {
+    spoergsmaal: "Kan jeg fravælge BidHamr Beskyttelse for at betale mindre?",
+    svar: "Nej. Gebyret er det samme for alle køb fra privatpersoner, og BidHamr Beskyttelse er en del af det.",
   },
   {
     spoergsmaal: "Hvad sker der, hvis min pakke ikke kommer frem?",
-    svar: "Så hjælper vi dig – også selvom du ikke har valgt BidHamr Beskyttelse.",
+    svar: "Så hjælper vi dig. Du kan melde pakken bortkommet på handelssiden 7 dage efter, at sælgeren har sendt den.",
   },
   {
-    spoergsmaal: "Varen er gået i stykker, men jeg har ikke BidHamr Beskyttelse. Hvad gør jeg?",
-    svar: "Så må du og sælgeren selv finde en løsning, og varen kan ikke sendes retur gennem BidHamr. Er der tale om åbenlys svindel, fx en tom pakke eller en helt anden vare, kan du dog altid oprette en sag.",
+    spoergsmaal: "Varen er gået i stykker under forsendelsen. Hvad gør jeg?",
+    svar: "Tag billeder af pakken, labelen og skaden, og opret en sag på handelssiden inden for 48 timer. En medarbejder ser på sagen. Får du medhold, sendes varen retur til sælgeren.",
   },
   {
     spoergsmaal: "Kan jeg fortryde mit køb?",
@@ -98,15 +111,23 @@ export const FAQ: FaqPunkt[] = [
   },
   {
     spoergsmaal: "Gælder det, hvis jeg henter varen hos sælgeren?",
-    svar: "Når du henter varen hos sælgeren, viser du en kode, og pengene går til sælgeren med det samme. Der er ingen frist til at oprette en sag bagefter, så se varen godt efter, før du viser koden.",
+    svar: "Nej. BidHamr Beskyttelse gælder kun pakker, der bliver sendt. Når du henter varen, viser du en kode, og pengene går til sælgeren med det samme. Der er ingen frist til at oprette en sag bagefter, så se varen godt efter, før du viser koden. Du betaler det samme gebyr, men ingen fragt.",
+  },
+  {
+    spoergsmaal: "Gælder det, når jeg køber af et firma?",
+    svar: "Nej. Når du køber af et firma, har du i stedet fortrydelsesret og reklamationsret efter loven.",
   },
 ];
 
 // Tekster til budfeltet. Ingen procenter her – kun beløb i kroner (vises af koden).
+// beskyttelseLabel bruges af det gamle flueben i BidPanel. Fluebenet skal fjernes
+// (frontend-agenten), og så bruges beskyttelseInkluderet i stedet.
 export const BIDPANEL = {
   beskyttelseLabel: "Tilføj BidHamr Beskyttelse",
+  beskyttelseInkluderet: "BidHamr Beskyttelse er med i gebyret, når varen sendes.",
+  gebyrLabel: "Gebyr",
   laesMere: "Læs mere",
   laesMereHref: "/bidhamr-beskyttelse",
   prisLinje:
-    "Vinder du, betaler du dit bud + købergebyr + fragt + evt. BidHamr Beskyttelse. Du ser den samlede pris i kroner, før du betaler, og har 48 timer til at betale. Alle beløb er inkl. moms.",
+    "Vinder du, betaler du dit bud + gebyr + fragt. Du ser den samlede pris i kroner, før du byder, og har 48 timer til at betale. Alle beløb er inkl. moms.",
 } as const;

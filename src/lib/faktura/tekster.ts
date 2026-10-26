@@ -4,12 +4,12 @@
 export const FAKTURA_TEKST = {
   sideTitel: "Fakturaer",
   sideIntro:
-    "Her finder du dine fakturaer fra BidHamr. Som køber får du en faktura på købergebyr, fragt og eventuel BidHamr Beskyttelse. Som sælger får du en faktura på sælgergebyret. Beløbene er inkl. moms. Selve varen er ikke med, fordi den handles direkte mellem køber og sælger.",
+    "Her finder du dine fakturaer fra BidHamr. Som køber får du en faktura på gebyret (med BidHamr Beskyttelse, når varen sendes) og fragten. Som sælger får du en faktura på sælgergebyret. Beløbene er inkl. moms. Selve varen er ikke med, fordi den handles direkte mellem køber og sælger.",
   tomTitel: "Du har ingen fakturaer endnu",
   tomTekst: "Når du køber eller sælger noget, kommer fakturaen på BidHamrs gebyrer her.",
   fejl: "Dine fakturaer kunne ikke hentes lige nu. Prøv igen om lidt.",
   boksTitel: "Fakturaer fra BidHamr",
-  boksIntro: "Fakturaen dækker BidHamrs gebyrer, fragt og eventuel BidHamr Beskyttelse – ikke selve varen. Beløbene er inkl. moms.",
+  boksIntro: "Fakturaen dækker BidHamrs gebyrer og fragt – ikke selve varen. Beløbene er inkl. moms.",
   firmaTitel: "Fakturaer på gebyrer",
   firmaIntro:
     "Når I sælger, får I en faktura fra BidHamr på sælgergebyret (5 %) med momsen vist for sig og jeres CVR-nummer. Fakturaen på selve varen sender I selv til køberen.",

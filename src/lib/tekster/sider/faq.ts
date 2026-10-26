@@ -70,7 +70,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Får jeg en faktura?",
-          svar: "Ja, på BidHamrs gebyrer. Som køber får du en faktura på købergebyret, fragten og BidHamr Beskyttelse, hvis du valgte den. Som sælger får du en faktura på sælgergebyret. Alle beløb er inkl. moms. Du finder fakturaerne under Min konto → Fakturaer og på handelssiden.",
+          svar: "Ja, på BidHamrs gebyrer. Som køber får du en faktura på gebyret (med BidHamr Beskyttelse) og fragten. Som sælger får du en faktura på sælgergebyret. Alle beløb er inkl. moms. Du finder fakturaerne under Min konto → Fakturaer og på handelssiden.",
         },
         {
           spoergsmaal: "Får jeg en faktura på selve varen?",
@@ -78,7 +78,11 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvad koster det?",
-          svar: "Køber og sælger betaler hver 5 % af buddet i gebyr. Fragt betales af køberen og koster fra 40 kr. til en pakkeshop eller fra 60 kr. med levering til døren, alt efter pakkens størrelse. Alle priser er inkl. moms. Du ser altid den samlede pris, før du byder.",
+          svar: "Sælges varen for op til 7.500 kr., betaler køber 7 % + 5 kr. (højst 300 kr.), og sælger betaler 5 % + 5 kr. (højst 95 kr.). Over 7.500 kr. betaler køber 3 % + 15 kr. (højst 650 kr.), og sælger betaler 2 % + 15 kr. (højst 450 kr.). Købers gebyr indeholder altid BidHamr Beskyttelse, når varen sendes. Fragt betales af køberen og koster fra 42 kr. til en pakkeshop eller fra 60 kr. med levering til døren, alt efter pakkens størrelse. Alle priser er inkl. moms. Ved auktionen ser du gebyret i kroner og den samlede pris, før du byder.",
+        },
+        {
+          spoergsmaal: "Hvad er det højeste, jeg kan byde?",
+          svar: "25.000 kr. Det gælder også startprisen og dit maksimum ved automatisk bud.",
         },
         {
           spoergsmaal: "Holder BidHamr mine penge?",
@@ -100,7 +104,7 @@ export const FAQ_SIDE: Tekstside = {
       punkter: [
         {
           spoergsmaal: "Hvem betaler fragten?",
-          svar: "Køberen. Prisen afhænger af pakkens størrelse: til en pakkeshop 40 kr. (Lille, op til 1 kg), 50 kr. (Mellem, op til 5 kg) eller 65 kr. (Stor, op til 15 kg). Levering hjem koster 60 kr. (Lille) eller 85 kr. (Mellem). Store pakker kan kun sendes til en pakkeshop. Alle priser er inkl. moms. Fragten står på auktionen, før du byder.",
+          svar: "Køberen. Prisen afhænger af pakkens størrelse: til en pakkeshop 42 kr. (Lille, op til 1 kg), 52 kr. (Mellem, op til 5 kg) eller 67 kr. (Stor, op til 15 kg). Levering hjem koster 60 kr. (Lille) eller 85 kr. (Mellem). Store pakker kan kun sendes til en pakkeshop. Alle priser er inkl. moms. Fragten står på auktionen, før du byder.",
         },
         {
           spoergsmaal: "Hvornår vælger jeg levering?",
@@ -116,7 +120,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvornår bliver min vare sendt?",
-          svar: "Sælgeren skal sende pakken inden 5 dage efter din betaling. Sker det ikke, annulleres handlen automatisk, og du får alle pengene tilbage – også fragt og BidHamr Beskyttelse.",
+          svar: "Sælgeren skal sende pakken inden 5 dage efter din betaling. Sker det ikke, annulleres handlen automatisk, og du får alle pengene tilbage – også gebyr og fragt.",
         },
         {
           spoergsmaal: "Kan jeg vælge at hente varen i stedet?",
@@ -141,12 +145,16 @@ export const FAQ_SIDE: Tekstside = {
           svar: "Hvis pakken ikke kommer frem, og ved åbenlys svindel: en tom pakke, en helt anden vare, en falsk kopi solgt som ægte, eller en vare, der aldrig blev sendt.",
         },
         {
-          spoergsmaal: "Hvad giver BidHamr Beskyttelse ekstra?",
-          svar: "Går varen i stykker under forsendelsen, eller er den ikke som beskrevet, tager BidHamr sagen for dig. Uden BidHamr Beskyttelse må du og sælgeren selv blive enige.",
+          spoergsmaal: "Hvad dækker BidHamr Beskyttelse?",
+          svar: "Går varen i stykker under forsendelsen, eller er den ikke som beskrevet, tager BidHamr sagen for dig. Den gælder alle pakker, der bliver sendt, når du køber af en privatperson.",
         },
         {
           spoergsmaal: "Hvad koster BidHamr Beskyttelse?",
-          svar: "5 % af dit bud, mindst 25 kr. og højst 250 kr. Du vælger den, når du byder, og valget kan ikke ændres bagefter.",
+          svar: "Ikke noget ekstra. Den er altid med i gebyret, når varen sendes. Du skal ikke vælge den, og du kan ikke fravælge den.",
+        },
+        {
+          spoergsmaal: "Gælder BidHamr Beskyttelse, når jeg henter varen?",
+          svar: "Nej. Den gælder kun pakker, der bliver sendt. Når du henter varen, ser du den, før du viser din kode. Du betaler det samme gebyr, men ingen fragt.",
         },
       ],
     },
@@ -160,11 +168,14 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Min pakke er ikke kommet. Hvad gør jeg?",
-          svar: "Du kan melde pakken bortkommet 7 dage efter, at sælgeren har sendt den. Vi tjekker sporingen og hjælper dig – også uden BidHamr Beskyttelse.",
+          svar: "Du kan melde pakken bortkommet 7 dage efter, at sælgeren har sendt den. Vi tjekker sporingen og hjælper dig.",
         },
         {
           spoergsmaal: "Hvad får jeg tilbage, hvis jeg får medhold?",
-          svar: "Prisen for varen, købergebyret og fragten. BidHamr Beskyttelse refunderes ikke, fordi den er brugt på sagen. Skal varen sendes retur, betaler du selv returfragten og får pengene, når pakken er afleveret.",
+          // AFKLARES: før blev købergebyret refunderet, men ikke BidHamr Beskyttelse.
+          // Nu er Beskyttelse en del af gebyret. Ret svaret, når det er besluttet,
+          // om gebyret refunderes helt, delvist eller slet ikke ved medhold.
+          svar: "Prisen for varen og fragten. Skal varen sendes retur, betaler du selv returfragten og får pengene, når pakken er afleveret.",
         },
         {
           spoergsmaal: "Hvornår bliver pengene flyttet efter en afgørelse?",
@@ -186,7 +197,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvornår får jeg mine penge?",
-          svar: "Når køberen har godkendt varen, eller når køberen ikke har oprettet en sag inden for 48 timer. Ved afhentning får du pengene, så snart du har tastet køberens kode.",
+          svar: "Pengene bliver frigivet til dig, når køberen har godkendt varen, eller når køberen ikke har oprettet en sag inden for 48 timer. Ved afhentning bliver de frigivet, så snart du har tastet køberens kode. Vores betalingspartner Stripe sender pengene til din bankkonto hver 14. dag. Har du solgt flere ting i den periode, kommer de samlet i én udbetaling.",
         },
         {
           spoergsmaal: "Kan jeg rette eller annullere min auktion?",
@@ -230,8 +241,12 @@ export const FAQ_SIDE: Tekstside = {
           svar: "Ja. Du har 14 dages fortrydelsesret fra den dag, du har fået varen. Tryk \"Fortryd køb\" på handelssiden, så får du en returlabel. Du får pengene tilbage, når firmaet har fået varen retur.",
         },
         {
-          spoergsmaal: "Kan jeg vælge BidHamr Beskyttelse, når jeg køber af et firma?",
+          spoergsmaal: "Gælder BidHamr Beskyttelse, når jeg køber af et firma?",
           svar: "Nej. Når du køber af et firma, har du i stedet fortrydelsesret og reklamationsret efter loven.",
+        },
+        {
+          spoergsmaal: "Hvad koster det at købe af et firma?",
+          svar: "Køber du af et firma, betaler du et gebyr på 5 % af buddet. Alle priser er inkl. moms, og du ser den samlede pris, før du byder.",
         },
         {
           spoergsmaal: "Varen fra firmaet har en fejl. Hvad gør jeg?",

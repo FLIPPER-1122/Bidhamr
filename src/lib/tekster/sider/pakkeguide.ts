@@ -23,7 +23,7 @@ export const PAKKEGUIDE: Tekstside = {
       overskrift: "Du har ansvaret for indpakningen",
       tekst: [
         "Varen skal kunne tåle at blive løftet, stablet og tabt på vejen. Pak den, så den ikke kan rykke sig i kassen, og så den kan klare et stød.",
-        "Går en vare i stykker, og køberen har valgt BidHamr Beskyttelse, bruger vi dine pakkebilleder til at vurdere, om varen var pakket ordentligt.",
+        "Går en vare i stykker under forsendelsen, bruger vi dine pakkebilleder til at vurdere, om varen var pakket ordentligt.",
       ],
     },
     {
@@ -70,7 +70,7 @@ export const PAKKEGUIDE: Tekstside = {
         "Som sælger har du altid ansvaret for, at varen er pakket forsvarligt – så den kan tåle at blive løftet, stablet og rystet på vejen.",
         "Pakken bliver håndteret af mange hænder og maskiner, før den når frem. En god indpakning er den bedste måde at sikre, at køberen får varen hel.",
         "Går varen i stykker, fordi den var pakket dårligt, er det dit tab. Fragtfirmaer erstatter som regel ikke skader, der skyldes dårlig indpakning.",
-        "Har køberen valgt BidHamr Beskyttelse, og har du pakket ordentligt, klager BidHamr til fragtfirmaet, hvis varen alligevel går i stykker på vejen. Dine pakkebilleder er beviset.",
+        "Har du pakket ordentligt, klager BidHamr til fragtfirmaet, hvis varen alligevel går i stykker på vejen. Dine pakkebilleder er beviset.",
         "Derfor skal du tage billeder af varen i den åbne kasse og af den lukkede kasse, når du sender pakken.",
         "Pakker du for dårligt, kan du få en påmindelse eller en advarsel. Begrundelsen kan du altid se på din konto.",
       ],
