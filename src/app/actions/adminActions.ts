@@ -948,7 +948,7 @@ const FRIGIV_FEJL: Record<string, string> = {
 
 // Afregn saelgeren uden koeberens godkendelse. Kun admin og opefter.
 // Handler med en Stripe-betaling: frigivet_kl saettes i databasen, og
-// beloebet (bud minus 5% saelgergebyr) overfoeres til saelgerens Connect-konto.
+// beloebet (bud minus saelgergebyr) overfoeres til saelgerens Connect-konto.
 // Handler uden betaling kan ikke frigives.
 async function handelFrigivImpl(formData: FormData): Promise<void> {
   const tradeId = formData.get("tradeId") as string;

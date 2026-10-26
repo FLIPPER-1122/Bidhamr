@@ -42,8 +42,8 @@ export async function afgivBud(
 export async function saetMaksimum(
   auktionId: string,
   maks: number,
-  // Fører byderen, kan BidHamr Beskyttelse ikke ændres (den følger hans
-  // førende bud) - budpanelet sender så den nuværende værdi.
+  // Ignoreres (20261031010000): BidHamr Beskyttelse er inkluderet i gebyret
+  // ved forsendelse - budpanelet sender altid false.
   beskyttelse: boolean,
   redigeretKl?: string | null,
 ): Promise<

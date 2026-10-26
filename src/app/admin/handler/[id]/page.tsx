@@ -273,7 +273,10 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
                   <Felt navn="Til sælger">{oere(b.udbetaling_oere)}</Felt>
                   <Felt navn="Fragt">{oere(b.fragt_oere)}</Felt>
                   <Felt navn="Købergebyr">{oere(b.koebergebyr_oere)}</Felt>
-                  <Felt navn="BidHamr Beskyttelse">{oere(b.beskyttelse_oere)}</Felt>
+                  {/* Kun gamle handler har et tilkøbt beløb - nye har Beskyttelsen i gebyret. */}
+                  {Number(b.beskyttelse_oere ?? 0) > 0 && (
+                    <Felt navn="BidHamr Beskyttelse (tilkøb)">{oere(b.beskyttelse_oere)}</Felt>
+                  )}
                 </>
               )}
               {b.sidste_fejl && (

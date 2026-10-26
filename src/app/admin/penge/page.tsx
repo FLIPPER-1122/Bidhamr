@@ -187,9 +187,11 @@ function Indtjening({ t }: { t: PengeTal }) {
       titel="BidHamrs indtjening"
       note="Gebyrer på handler betalt i perioden, som ikke er refunderet eller tabt ved indsigelse."
     >
-      <Linje label="Købergebyr (5 %)" vaerdi={kr(i.koebergebyr)} />
-      <Linje label="Sælgergebyr (5 % af bud)" vaerdi={kr(i.saelgergebyr)} />
-      <Linje label="BidHamr Beskyttelse" antal={i.antal_beskyttelse} vaerdi={kr(i.beskyttelse)} />
+      <Linje label="Købergebyr (inkl. BidHamr Beskyttelse)" vaerdi={kr(i.koebergebyr)} />
+      <Linje label="Sælgergebyr" vaerdi={kr(i.saelgergebyr)} />
+      {(i.beskyttelse > 0 || i.antal_beskyttelse > 0) && (
+        <Linje label="BidHamr Beskyttelse (tilkøb på gamle handler)" antal={i.antal_beskyttelse} vaerdi={kr(i.beskyttelse)} />
+      )}
       {i.oevrigt > 0 && <Linje label="Øvrigt beholdt ved delvis refusion" vaerdi={kr(i.oevrigt)} />}
       <Linje label="Indtjening i alt" vaerdi={kr(i.i_alt)} fremhaev />
       {i.heraf_ikke_frigivet > 0 && (

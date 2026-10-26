@@ -981,7 +981,7 @@ export default async function HandelDetalje({
                   <>
                     <p className="mt-1">
                       Du får {kroner(ikkeAfhentet.refusionOere)} tilbage – købsbeløbet minus
-                      købergebyret{ikkeAfhentet.beskyttelseOere > 0 ? ", BidHamr Beskyttelse" : ""} og
+                      gebyret{ikkeAfhentet.beskyttelseOere > 0 ? ", BidHamr Beskyttelse" : ""} og
                       fragten begge veje (fragt {kroner(ikkeAfhentet.fragtOere)} og returfragt{" "}
                       {kroner(ikkeAfhentet.returfragtOere)}).
                     </p>
@@ -1167,7 +1167,7 @@ export default async function HandelDetalje({
 
         {/* Køberen kan oprette en sag */}
         {muligheder && !muligheder.harSag && (muligheder.typer.length > 0 || muligheder.kraeverBeskyttelse.length > 0) && (
-          <OpretSagForm tradeId={handel.id} koeberId={user.id} muligheder={muligheder} />
+          <OpretSagForm tradeId={handel.id} koeberId={user.id} muligheder={muligheder} erhverv={erhvervHandel} />
         )}
         {muligheder &&
           muligheder.typer.length === 0 &&

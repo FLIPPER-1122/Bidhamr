@@ -33,8 +33,6 @@ export const AUTOBUD = {
   knapSkiftTilMaks: "Hæv mit maksimum",
   // Fører man: knap ved "Du fører" og i budbjælken på mobil.
   knapRetMaks: "Ret maksimum",
-  // BidHamr Beskyttelse kan ikke ændres via maksimum, mens man fører.
-  beskyttelseLaast: "Følger dit førende bud og kan ikke ændres, mens du fører.",
   // Meget højt maksimum (> 10 × nuværende bud eller > 10.000 kr).
   bekraeftHoejtTitel: "Er du sikker? Dit maksimum er bindende.",
   bekraeftHoejtTekst: (maks: string) =>

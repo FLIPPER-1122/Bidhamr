@@ -188,10 +188,19 @@ function useSend(onResultat: (besked: string) => void, onLuk: () => void) {
 
 type Udfald = "koeber" | "saelger" | "lukket";
 
-function konsekvens(udfald: Udfald, type: SagType): string {
+// Hvad køberen får tilbage ved medhold (public.sag_refusion_oere): ny
+// prismodel = kun buddet; gamle handler og erhverv = alt undtagen BidHamr
+// Beskyttelse. Ukendt model (fx før migrationen) = begge regler nævnes.
+function refusionHvadTekst(prismodel: string | null | undefined): string {
+  if (prismodel === "ny") return "kun buddet – gebyr og fragt refunderes ikke";
+  if (prismodel === "gammel" || prismodel === "erhverv") return "alt undtagen BidHamr Beskyttelse";
+  return "nye handler: kun buddet, gamle handler: alt undtagen BidHamr Beskyttelse";
+}
+
+function konsekvens(udfald: Udfald, type: SagType, refusionHvad: string): string {
   if (udfald === "koeber") {
     return type === "svindel" || type === "bortkommet"
-      ? "Køberen refunderes – alt undtagen BidHamr Beskyttelse – når ankefristen på 4 dage er udløbet. Indtil da kan en admin genåbne sagen."
+      ? `Køberen refunderes (${refusionHvad}), når ankefristen på 4 dage er udløbet. Indtil da kan en admin genåbne sagen.`
       : "Køberen skal sende varen retur for egen regning før refusion. Sagen står som \"Afventer retur\", indtil du registrerer, at returpakken er afleveret. Køberen refunderes, når returpakken er afleveret og ankefristen på 4 dage er udløbet.";
   }
   if (udfald === "saelger") {
@@ -216,9 +225,11 @@ function AfgoerKnap({
   koeberNavn,
   saelgerNavn,
   koeberBeloebOere,
+  refusionHvad,
 }: {
   sagId: string;
   type: SagType;
+  refusionHvad: string;
   indsigelse: boolean;
   naesteHref?: string | null;
   koeberNavn: string;
@@ -312,7 +323,7 @@ function AfgoerKnap({
                   />
                   <span>
                     <span className="block font-semibold text-neutral-900">{UDFALD_NAVN[u]}</span>
-                    <span className="block text-neutral-600">{konsekvens(u, type)}</span>
+                    <span className="block text-neutral-600">{konsekvens(u, type, refusionHvad)}</span>
                   </span>
                 </label>
                 ))}
@@ -327,7 +338,7 @@ function AfgoerKnap({
               {udfald === "koeber" && koeberBeloebOere != null && (
                 <>
                   <dt className="text-tekst-daempet">Beløb</dt>
-                  <dd className="font-semibold text-tekst">{kroner(koeberBeloebOere)} (alt undtagen BidHamr Beskyttelse)</dd>
+                  <dd className="font-semibold text-tekst">{kroner(koeberBeloebOere)} ({refusionHvad})</dd>
                 </>
               )}
               <dt className="text-tekst-daempet">Hvornår</dt>
@@ -406,11 +417,13 @@ function AnkeKnap({
   anke,
   onResultat,
   naesteHref,
+  refusionHvad,
 }: {
   ankeId: string;
   anke: AnkeInfo;
   onResultat: (b: string) => void;
   naesteHref?: string | null;
+  refusionHvad: string;
 }) {
   const id = useId();
   const [aaben, setAaben] = useState(false);
@@ -437,12 +450,12 @@ function AnkeKnap({
         ? "Pengene udbetales til sælgeren nu."
         : anke.ankedeStatus === "afventer_retur"
           ? "Køberen skal sende varen retur. Køberen refunderes, så snart returpakken er registreret."
-          : "Køberen refunderes nu (alt undtagen BidHamr Beskyttelse).",
+          : `Køberen refunderes nu (${refusionHvad}).`,
     omgoer:
       anke.part === "saelger"
         ? "Sælgeren får medhold, og pengene udbetales til sælgeren nu. Køberen skal ikke sende varen retur. Har køberen allerede sendt varen, skal det med i vurderingen."
         : anke.type === "svindel" || anke.type === "bortkommet"
-          ? "Køberen får medhold og refunderes nu (alt undtagen BidHamr Beskyttelse)."
+          ? `Køberen får medhold og refunderes nu (${refusionHvad}).`
           : "Køberen får medhold og skal sende varen retur for egen regning. Køberen refunderes, så snart returpakken er registreret.",
   };
 
@@ -567,7 +580,15 @@ function AnkeKnap({
 
 // ------------------------------------------------------------------ Retur afleveret
 
-function ReturKnap({ sagId, onResultat }: { sagId: string; onResultat: (b: string) => void }) {
+function ReturKnap({
+  sagId,
+  onResultat,
+  refusionHvad,
+}: {
+  sagId: string;
+  onResultat: (b: string) => void;
+  refusionHvad: string;
+}) {
   const id = useId();
   const [aaben, setAaben] = useState(false);
   const luk = () => setAaben(false);
@@ -594,7 +615,7 @@ function ReturKnap({ sagId, onResultat }: { sagId: string; onResultat: (b: strin
       </button>
       <Dialog
         titel="Er returpakken afleveret?"
-        beskrivelse="Køberen refunderes – alt undtagen BidHamr Beskyttelse – når ankefristen på 4 dage efter afgørelsen er udløbet (straks, hvis den allerede er udløbet). Kan ikke fortrydes."
+        beskrivelse={`Køberen refunderes (${refusionHvad}), når ankefristen på 4 dage efter afgørelsen er udløbet (straks, hvis den allerede er udløbet). Kan ikke fortrydes.`}
         aaben={aaben}
         onLuk={luk}
         laast={sender}
@@ -1065,6 +1086,7 @@ export default function SagHandlinger({
   naesteHref,
   inhabil = false,
   koeberBeloebOere = null,
+  prismodel = null,
   sagId,
   type,
   indsigelse,
@@ -1083,11 +1105,15 @@ export default function SagHandlinger({
   naesteHref?: string | null;
   inhabil?: boolean;
   koeberBeloebOere?: number | null;
+  // betalinger.prismodel (20261031010000) - styrer teksten om, hvad køberen
+  // får tilbage ved medhold.
+  prismodel?: string | null;
   // "Indpakning var ordentlig" / "Fortryd" (reklamation hos fragtfirmaet) -
   // vises ved siden af "Dårlig indpakning".
   indpakningOrdentlig?: ReactNode;
 }) {
   const [resultat, setResultat] = useState<string | null>(null);
+  const refusionHvad = refusionHvadTekst(prismodel);
 
   return (
     <div className="space-y-4">
@@ -1105,7 +1131,13 @@ export default function SagHandlinger({
           </p>
           {kan.behandleAnke ? (
             <div className="mt-3">
-              <AnkeKnap ankeId={anke.id} anke={anke} onResultat={setResultat} naesteHref={naesteHref} />
+              <AnkeKnap
+                ankeId={anke.id}
+                anke={anke}
+                onResultat={setResultat}
+                naesteHref={naesteHref}
+                refusionHvad={refusionHvad}
+              />
             </div>
           ) : (
             ankeIkkeTilladt && <p className="mt-1">{ankeIkkeTilladt}</p>
@@ -1136,6 +1168,7 @@ export default function SagHandlinger({
               koeberNavn={koeber.navn}
               saelgerNavn={saelger.navn}
               koeberBeloebOere={koeberBeloebOere}
+              refusionHvad={refusionHvad}
               sagId={sagId}
               type={type}
               indsigelse={indsigelse}
@@ -1144,7 +1177,7 @@ export default function SagHandlinger({
               naesteHref={naesteHref}
             />
           )}
-          {kan.registrereRetur && <ReturKnap sagId={sagId} onResultat={setResultat} />}
+          {kan.registrereRetur && <ReturKnap sagId={sagId} onResultat={setResultat} refusionHvad={refusionHvad} />}
           {kan.genaabne && <GenaabnKnap sagId={sagId} onResultat={setResultat} />}
         </div>
       )}

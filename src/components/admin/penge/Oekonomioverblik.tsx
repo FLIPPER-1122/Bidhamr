@@ -198,7 +198,7 @@ export default function Oekonomioverblik({ o, besked }: { o: Oekonomi; besked?: 
           {!o.tal.ok && <Fejl tekst={o.tal.fejl} />}
           {t && (
             <>
-              <Linje label="Gebyrer og BidHamr Beskyttelse" vaerdi={kr(t.indtjening.i_alt)} />
+              <Linje label="Gebyrer" vaerdi={kr(t.indtjening.i_alt)} />
               <Linje label={`Refusioner (${t.refusioner.fulde.antal + t.refusioner.delvise.antal})`} vaerdi={kr(t.refusioner.fulde.beloeb + t.refusioner.delvise.beloeb)} />
               <Linje label={`Indsigelser (${t.indsigelser.antal}, heraf ${t.indsigelser.aabne} åbne)`} vaerdi={kr(t.indsigelser.beloeb)} />
               <Linje label={`Tab ved indsigelser efter udbetaling (${t.indsigelser.tabt_efter_udbetaling.antal})`} vaerdi={kr(t.indsigelser.tabt_efter_udbetaling.tab)} />

@@ -88,7 +88,7 @@ export default async function AuktionPage({
     hentBruger(),
     createAdminClient()
       .from("bids")
-      .select("id, bruger_id, beløb, oprettet, automatisk, beskyttelse")
+      .select("id, bruger_id, beløb, oprettet, automatisk")
       .eq("auktion_id", id)
       // Bud stiger altid, så beløb giver samme rækkefølge som tidspunkt -
       // også når et bud og de automatiske bud, det udløste, har samme
@@ -103,7 +103,6 @@ export default async function AuktionPage({
           beløb: number;
           oprettet: string;
           automatisk: boolean | null;
-          beskyttelse: boolean | null;
         }[],
         { merge: false }
       >(),
@@ -208,11 +207,6 @@ export default async function AuktionPage({
     // Kun at BidHamr bød automatisk - aldrig maksimum.
     automatisk: b.automatisk === true,
   }));
-
-  // BidHamr Beskyttelse på mit seneste (= højeste) bud. Fører jeg, følger
-  // mine automatiske bud den, så budpanelet viser den låst. Kun mit eget.
-  const mitSenesteBud = mitId ? bud.find((b) => b.bruger_id === mitId) : undefined;
-  const minBeskyttelse = mitSenesteBud ? mitSenesteBud.beskyttelse === true : null;
 
   // Mit eget maksimum (automatisk bud). Kun byderen selv kan se det
   // (mit_maksimum bruger auth.uid()); sælger og andre får null.
@@ -605,7 +599,6 @@ export default async function AuktionPage({
               initialBud={anonymeBud}
               mitMaksimum={mitMaksimum?.maks ?? null}
               mitMaksimumNaaet={mitMaksimum?.naaet ?? false}
-              minBeskyttelse={minBeskyttelse}
               brugerId={bruger?.id ?? null}
               saelgerId={auktion.bruger_id}
               forsendelseMulig={auktion.forsendelse_mulig}

@@ -253,7 +253,7 @@ export default function BetalingHandlinger({
                 triggerLabel="Refundér køber"
                 triggerClassName={KNAP_ROED}
                 title="Refundér køberen og annullér handlen?"
-                description="Køberen får hele det betalte beløb (bud, købergebyr, fragt og evt. BidHamr Beskyttelse) tilbage via Stripe. Sælgeren får intet. Kan ikke fortrydes."
+                description="Køberen får hele det betalte beløb (bud, gebyr, fragt og evt. tilkøbt BidHamr Beskyttelse på gamle handler) tilbage via Stripe. Sælgeren får intet. Kan ikke fortrydes."
                 confirmLabel="Ja, refundér"
                 action={handelRefunder}
                 hiddenFields={{ tradeId: b.trade_id }}
@@ -268,7 +268,7 @@ export default function BetalingHandlinger({
                 triggerLabel="Frigiv til sælger"
                 triggerClassName={KNAP_GROEN}
                 title="Frigiv pengene til sælgeren?"
-                description="Sælgeren afregnes (minus 5% gebyr), som om køberen havde godkendt varen. Kan ikke fortrydes."
+                description="Sælgeren afregnes (minus sælgergebyret), som om køberen havde godkendt varen. Kan ikke fortrydes."
                 confirmLabel="Ja, frigiv pengene"
                 action={handelFrigiv}
                 hiddenFields={{ tradeId: b.trade_id }}

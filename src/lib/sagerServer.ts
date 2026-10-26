@@ -4,6 +4,7 @@ import "server-only";
 // efter ankefristen. Bruges af server actions (src/app/actions/sager.ts,
 // adminSager.ts) og cron.
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { Prismodel } from "@/lib/betaling/beregn";
 import { send, type SendResultat } from "@/lib/notifikationer/send";
 import { refunderBetaling } from "@/lib/betaling/stripeBetaling";
 import { pengeTilSaelger } from "@/lib/betaling/udbetaling";
@@ -26,15 +27,40 @@ async function handelOgTitel(admin: Admin, tradeId: string) {
     .eq("id", tradeId)
     .maybeSingle<{ buyer_id: string; seller_id: string; auction_id: string }>();
   if (!t) return null;
-  const [{ data: a }, { data: b }] = await Promise.all([
+  const [{ data: a }, b] = await Promise.all([
     admin.from("auctions").select("titel").eq("id", t.auction_id).maybeSingle(),
-    admin.from("betalinger").select("beskyttelse").eq("trade_id", tradeId).maybeSingle(),
+    betalingModel(admin, tradeId),
   ]);
   return {
     ...t,
     titel: (a?.titel as string | undefined) ?? "din vare",
-    beskyttelse: !!(b?.beskyttelse as boolean | undefined),
+    beskyttelse: !!b?.beskyttelse,
+    prismodel: b?.prismodel ?? "gammel",
   };
+}
+
+// Betalingens Beskyttelse og prismodel. prismodel findes først efter
+// 20261031010000 - mangler kolonnen, hentes kun beskyttelse (= gammel model).
+async function betalingModel(
+  admin: Admin,
+  tradeId: string,
+): Promise<{ beskyttelse: boolean | null; prismodel?: Prismodel | null } | null> {
+  const med = await admin.from("betalinger").select("beskyttelse, prismodel").eq("trade_id", tradeId).maybeSingle();
+  if (!med.error) return med.data as { beskyttelse: boolean | null; prismodel: Prismodel | null } | null;
+  const uden = await admin.from("betalinger").select("beskyttelse").eq("trade_id", tradeId).maybeSingle();
+  return uden.data as { beskyttelse: boolean | null } | null;
+}
+
+// Hvad køberen får tilbage ved medhold (samme regel som public.sag_refusion_oere
+// / beregn.ts sagRefusionOere): ny prismodel = kun buddet; gammel med tilkøbt
+// BidHamr Beskyttelse = alt undtagen Beskyttelsen; ellers alle pengene.
+// Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
+function refusionTekster(h: { beskyttelse: boolean; prismodel: Prismodel }): { hvad: string; note: string } {
+  if (h.prismodel === "ny") return { hvad: "prisen for varen (dit bud)", note: " Gebyr og fragt får du ikke tilbage." };
+  if (h.prismodel === "gammel" && h.beskyttelse) {
+    return { hvad: "pengene for varen, gebyret og fragten", note: " Prisen for BidHamr Beskyttelse får du ikke tilbage." };
+  }
+  return { hvad: "alle pengene", note: "" };
 }
 
 // Tidspunkt til beskeder, fx "tirsdag den 7. oktober kl. 14.05". Fast
@@ -183,9 +209,7 @@ export async function notificerSagAfgoerelse(
     const ankefrist = dato ? ` ${dato}` : " om 4 dage";
     // Det køberen får tilbage ved medhold. Returfragten betaler køberen selv
     // direkte til fragtfirmaet - den trækkes ikke fra refusionen.
-    // Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
-    const hvad = h.beskyttelse ? "pengene for varen, gebyret og fragten" : "alle pengene";
-    const beskyttelseNote = h.beskyttelse ? " Prisen for BidHamr Beskyttelse får du ikke tilbage." : "";
+    const { hvad, note: beskyttelseNote } = refusionTekster(h);
 
     const tekster: Record<SagUdfaldBesked, { koeber: [string, string]; saelger: [string, string] }> = {
       planlagt_refusion: {
@@ -531,9 +555,7 @@ export async function notificerAnkeAfgjort(
     const t = h.titel;
     const grund = begrundelse ? ` Begrundelse: ${begrundelse}` : "";
     const endelig = "Afgørelsen er endelig.";
-    // Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
-    const hvad = h.beskyttelse ? "pengene for varen, gebyret og fragten" : "alle pengene";
-    const beskyttelseNote = h.beskyttelse ? " Prisen for BidHamr Beskyttelse får du ikke tilbage." : "";
+    const { hvad, note: beskyttelseNote } = refusionTekster(h);
 
     // Kun "nu", når pengene faktisk er flyttet. Ellers en tekst uden tidspunkt.
     const returFristNote = RETUR_FRIST_NOTE;

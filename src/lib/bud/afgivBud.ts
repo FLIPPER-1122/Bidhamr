@@ -164,7 +164,8 @@ export async function afgivBudFor(
     auktion_id: auktionId,
     bruger_id: brugerId,
     beløb: beloeb,
-    // Kun et oenske - beloebet beregnes i databasen, naar auktionen slutter.
+    // Ignoreres af databasen (20261031010000): BidHamr Beskyttelse er
+    // inkluderet i gebyret ved forsendelse. Kolonnen bevares for appen.
     beskyttelse: beskyttelse === true,
     auktion_redigeret_kl: version,
   });
@@ -212,8 +213,8 @@ export type MaksimumOk = {
 
 // Automatisk bud (maksimum) - se ROADMAP-BESLUTNINGER.md, "Autobud".
 // public.saet_maksimum gemmer det hemmelige maksimum og byder (fører man
-// ikke) det mindst mulige. Fører byderen, kan BidHamr Beskyttelse ikke
-// ændres (den følger hans førende bud).
+// ikke) det mindst mulige. BidHamr Beskyttelse vælges ikke længere
+// (20261031010000): p_beskyttelse sendes stadig, men databasen ignorerer den.
 export async function saetMaksimumFor(
   supabase: SupabaseClient,
   brugerId: string,
@@ -275,12 +276,6 @@ export async function saetMaksimumFor(
     // Nogen bød lige før dig (mindstebuddet steg) - bed om at prøve igen.
     if (besked.includes("minimum_bid")) {
       return { fejl: "En anden har lige budt. Se det nye bud, og prøv igen.", kode: "minimum_bid" };
-    }
-    if (besked.includes("beskyttelse_laast")) {
-      return {
-        fejl: "Du fører allerede. BidHamr Beskyttelse følger dit bud og kan ikke ændres, mens du fører.",
-        kode: "beskyttelse_laast",
-      };
     }
     if (besked.includes("Kontoen er slettet")) return { fejl: "Du kan ikke byde.", kode: bhKode(error) ?? "afvist" };
     const s = sidsteFejl(error, besked);

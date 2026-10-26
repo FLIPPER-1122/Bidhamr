@@ -97,9 +97,10 @@ export type Checkout = {
   // true = sælgeren tilbyder både forsendelse og afhentning: køberen kan
   // vælge "Afhent hos sælger – 0 kr." (maade "afhentning") før betaling.
   afhentningMulig: boolean;
-  // BidHamr Beskyttelse (øre), hvis der vælges forsendelse. Ved afhentning
-  // fjernes den fra betalingen (ingen sag ved afhentning) og lægges på igen
-  // ved skift til forsendelse.
+  // Kun gamle handler (prismodel 'gammel'): det tilkøbte BidHamr Beskyttelse-
+  // beløb (øre), hvis der vælges forsendelse. Ved afhentning fjernes det fra
+  // betalingen og lægges på igen ved skift til forsendelse (databasen gør
+  // det). Nye handler: altid 0 - Beskyttelsen er i gebyret.
   beskyttelseVedForsendelseOere: number;
   pakkestoerrelse: string | null;
   // Købers fragt (inkl. moms, øre) pr. leveringsmåde. doerOere null = ikke muligt.

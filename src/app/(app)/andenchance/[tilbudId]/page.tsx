@@ -9,6 +9,9 @@ import { hentMitTilbud } from "@/app/actions/andenchance";
 import Nedtaelling from "@/components/betaling/Nedtaelling";
 import SvarKnapper from "@/components/andenchance/SvarKnapper";
 import { dato, kroner } from "@/components/andenchance/format";
+import Ikon from "@/components/Ikon";
+import { BIDPANEL } from "@/lib/tekster/beskyttelse";
+import { koebergebyrTekst } from "@/lib/betaling/beregn";
 
 export const dynamic = "force-dynamic";
 
@@ -155,14 +158,19 @@ function TilbudVisning({ t }: { t: Extract<Awaited<ReturnType<typeof hentMitTilb
         <h2 className="text-[17px] leading-snug lg:text-lg">Det skal du betale</h2>
         <dl className="mt-3 space-y-2 text-sm">
           <Linje label="Dit bud" vaerdi={kroner(t.budOere)} />
-          <Linje label="Købergebyr" vaerdi={kroner(t.koebergebyrOere)} />
+          <Linje label={koebergebyrTekst("ny", t.beskyttelse)} vaerdi={kroner(t.koebergebyrOere)} />
           <Linje label="Fragt" vaerdi={t.fragtOere > 0 ? kroner(t.fragtOere) : "Afhentning"} />
-          {t.beskyttelseOere > 0 && <Linje label="BidHamr Beskyttelse" vaerdi={kroner(t.beskyttelseOere)} />}
           <div className="flex justify-between border-t border-kant pt-3 text-lg font-bold text-tekst">
             <dt>I alt</dt>
             <dd className="tabular-nums">{kroner(t.totalOere)}</dd>
           </div>
         </dl>
+        {t.beskyttelse && (
+          <p className="mt-3 flex items-center gap-2 text-[13px] font-medium text-groen-mork">
+            <Ikon navn="skjold" className="h-4 w-4 shrink-0 text-groen" />
+            {BIDPANEL.beskyttelseInkluderet}
+          </p>
+        )}
         <p className="mt-3 text-xs text-tekst-svag">Siger du ja, har du 48 timer til at betale.</p>
 
         <SvarKnapper tilbudId={t.id} total={kroner(t.totalOere)} />

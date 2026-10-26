@@ -1,6 +1,19 @@
 import Link from "next/link";
 import type { Udbetalingsvisning } from "@/app/actions/betaling";
 import { kroner } from "@/lib/kroner";
+import { UDBETALING_INTERVAL_DAGE } from "@/lib/betaling/beregn";
+
+// Udbetaling højst hver 14. dag (20261031010000). handel_udbetalingsstatus
+// giver tidligst_kl inkl. intervallet. Tekst låst af Filip, 26. okt. 2026.
+export function udbetalingIntervalTekst(tidligstKl: string | null): string {
+  const n = UDBETALING_INTERVAL_DAGE;
+  return (
+    `Vi samler dine salg og sender pengene til din bank højst hver ${n}. dag. ` +
+    `Har du fået en udbetaling inden for de sidste ${n} dage, kommer pengene med i den næste udbetaling` +
+    (tidligstKl ? `, tidligst ${kunDato(tidligstKl)}. ` : ". ") +
+    "Når udbetalingen er sendt, går der normalt 1-3 bankdage, før pengene står på din konto."
+  );
+}
 
 // Sælgerens udbetalingsstatus på handelssiden (betalingsmodel destination):
 // pengene sendes fra sælgerens Stripe-konto til banken, når handlen er helt
@@ -31,6 +44,7 @@ export default function UdbetalingStatusBoks({ v }: { v: Udbetalingsvisning }) {
   let titel: string;
   let tekst: string;
   let stil: string;
+  let ekstra: string | null = null;
   switch (v.status) {
     case "udbetalt":
       titel = "Pengene er sendt til din bank";
@@ -76,9 +90,8 @@ export default function UdbetalingStatusBoks({ v }: { v: Udbetalingsvisning }) {
           ? `Køberen har 14 dages fortrydelsesret efter modtagelsen. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe, når fristen er udløbet – tidligst ${kunDato(v.tidligstKl)}.`
           : `Køberen har 14 dages fortrydelsesret efter modtagelsen. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe, når fristen er udløbet.`;
       } else {
-        tekst = v.tidligstKl
-          ? `Handlen er færdig. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe – tidligst ${kunDato(v.tidligstKl)}.`
-          : `Handlen er færdig. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe inden for kort tid.`;
+        tekst = `Handlen er færdig. ${beloeb} sendes til din bankkonto af vores betalingspartner Stripe.`;
+        ekstra = udbetalingIntervalTekst(v.tidligstKl);
       }
       stil = "border-info-kant bg-info-bg text-info-tekst";
   }
@@ -86,6 +99,7 @@ export default function UdbetalingStatusBoks({ v }: { v: Udbetalingsvisning }) {
     <div className={`rounded-[14px] border p-5 text-sm sm:p-6 ${stil}`}>
       <p className="font-semibold">{titel}</p>
       <p className="mt-1">{tekst}</p>
+      {ekstra && <p className="mt-2">{ekstra}</p>}
       {(v.status === "venter_paa_bank" || v.status === "kraever_handling") && (
         <Link href="/konto#udbetaling" className="btn btn-sekundaer mt-3 inline-flex w-full sm:w-auto">
           Gå til Min konto

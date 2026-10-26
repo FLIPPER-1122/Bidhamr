@@ -297,6 +297,8 @@ export type SagDetalje = SagListeRaekke & {
     // (beregn.ts sagRefusionOere / public.sag_refusion_oere): ny prismodel =
     // kun buddet; gamle handler = alt undtagen BidHamr Beskyttelse.
     medholdRefusionOere: number | null;
+    // betalinger.prismodel (20261031010000; null før migrationen = gammel).
+    prismodel: string | null;
   } | null;
   // Konti (til "Luk konto permanent").
   koeberLukket: boolean;
@@ -783,6 +785,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
               beskyttelseOere: seBeloeb ? Number(betaling.beskyttelse_oere) : null,
               refusionOere: seBeloeb && s.refusion_oere !== null ? Number(s.refusion_oere) : null,
               medholdRefusionOere: seBeloeb ? sagRefusionOere(betaling) : null,
+              prismodel: betaling.prismodel ?? null,
             }
           : null,
         koeberLukket: lukket.get(liste.koeber.id) ?? false,
@@ -953,7 +956,7 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
               ? `Køberen er ikke refunderet herfra: ${REFUSION_KONFLIKT}`
               : r === "refusion_i_gang"
                 ? REFUSION_I_GANG
-                : "Køberen refunderes nu (alt undtagen BidHamr Beskyttelse)."
+                : "Køberen refunderes nu (nye handler: buddet, gamle handler: alt undtagen BidHamr Beskyttelse)."
           : r === "overfoersel_fejlede"
             ? "Overførslen til sælgeren fejlede. Den prøves igen automatisk."
             : "Pengene udbetales nu til sælgeren.";
@@ -1023,7 +1026,7 @@ async function refunderNu(
     return {
       besked:
         r === "refunderet" || r === "allerede_refunderet"
-          ? "Køberen er refunderet (alt undtagen BidHamr Beskyttelse)."
+          ? "Køberen er refunderet (nye handler: buddet, gamle handler: alt undtagen BidHamr Beskyttelse)."
           : "Refusionen er sendt til Stripe og afventer bekræftelse.",
     };
   } catch (err) {
@@ -1041,7 +1044,7 @@ function afgoerelsesBesked(svar: RpcSvar): string {
   const frist = fristTekst(svar);
   switch (svar.handling) {
     case "planlagt_refusion":
-      return `Køberen refunderes (alt undtagen BidHamr Beskyttelse) tidligst ${frist}, når ankefristen er udløbet. Admin kan genåbne sagen indtil da.`;
+      return `Køberen refunderes (nye handler: buddet, gamle handler: alt undtagen BidHamr Beskyttelse) tidligst ${frist}, når ankefristen er udløbet. Admin kan genåbne sagen indtil da.`;
     case "afvent_retur":
       return `Køberen skal sende varen retur. Registrér, når returpakken er afleveret. Køberen refunderes, når returpakken er afleveret og ankefristen er udløbet (tidligst ${frist}).`;
     case "planlagt_frigivelse":

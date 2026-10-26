@@ -11,7 +11,7 @@ import { afgivBud, saetMaksimum } from "@/app/actions/bud";
 import { AUTOBUD } from "@/lib/tekster/autobud";
 import { formatNedtælling, pauseTekst } from "@/lib/auctionTid";
 import { kroner } from "@/lib/kroner";
-import { fragtOere, koebergebyrOere, koeberTotalOere } from "@/lib/betaling/beregn";
+import { MAKS_BELOEB_KR, erBeskyttet, fragtOere, koebergebyrOere, koebergebyrTekst, koeberTotalOere } from "@/lib/betaling/beregn";
 import { BIDPANEL } from "@/lib/tekster/beskyttelse";
 import { ERHVERV_BIDPANEL, ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 import { BINDENDE_BUD_TEKST, mindsteNaesteBud } from "@/lib/auktionRegler";
@@ -46,7 +46,6 @@ export default function BidPanel({
   initialBud,
   mitMaksimum = null,
   mitMaksimumNaaet = false,
-  minBeskyttelse = null,
   brugerId,
   saelgerId,
   forsendelseMulig,
@@ -78,9 +77,6 @@ export default function BidPanel({
   mitMaksimum?: number | null;
   // mit_maksimum.naaet: en anden fører, og mit maksimum er nået.
   mitMaksimumNaaet?: boolean;
-  // BidHamr Beskyttelse på mit seneste bud (null = ingen bud). Fører jeg,
-  // følger mine automatiske bud den, og den kan ikke ændres via maksimum.
-  minBeskyttelse?: boolean | null;
   brugerId: string | null;
   saelgerId: string;
   forsendelseMulig: boolean;
@@ -103,8 +99,8 @@ export default function BidPanel({
   pauset?: boolean;
   // auctions.pause_resterende (Postgres-interval som tekst).
   pauseResterende?: string | null;
-  // auctions.erhverv: sælgeren er et firma. BidHamr Beskyttelse kan ikke
-  // vælges (køberen har fortrydelses- og reklamationsret efter loven).
+  // auctions.erhverv: sælgeren er et firma. Ingen BidHamr Beskyttelse
+  // (køberen har fortrydelses- og reklamationsret efter loven).
   erhvervAuktion?: boolean;
   // Den indloggede er en firmakonto: firmakonti kan kun sælge, ikke byde
   // (databasen afviser det også, BHE01).
@@ -132,8 +128,6 @@ export default function BidPanel({
   }
   const [visAlle, setVisAlle] = useState(false);
   const [beløb, setBeløb] = useState("");
-  // BidHamr Beskyttelse: ikke valgt på forhånd. Gemmes med buddet.
-  const [beskyttelse, setBeskyttelse] = useState(false);
   // Automatisk bud: brugeren skriver sit maksimum i stedet for et bud.
   // Har brugeren allerede et maksimum, åbnes panelet i den tilstand.
   const [automatisk, setAutomatisk] = useState(mitMaksimum !== null);
@@ -159,8 +153,9 @@ export default function BidPanel({
 
   // Sælgere må ikke byde på egen auktion - databasen afviser det også.
   const erSælger = Boolean(brugerId && brugerId === saelgerId);
-  // BidHamr Beskyttelse: kun med forsendelse og aldrig ved køb fra erhverv.
-  const beskyttelseMulig = forsendelseMulig && !erhvervAuktion;
+  // BidHamr Beskyttelse er inkluderet i gebyret ved forsendelse (privat) -
+  // intet valg. Afhentning og erhverv: ingen Beskyttelse.
+  const beskyttelseMulig = erBeskyttet(erhvervAuktion, forsendelseMulig);
 
   const nuværendeBudRef = useRef(nuværendeBud);
   useEffect(() => {
@@ -290,10 +285,6 @@ export default function BidPanel({
   const mindsteMaks = jegFoerer ? nuværendeBud : minimumBud;
   const mindsteGyldige = automatisk ? mindsteMaks : minimumBud;
   const maksAktivt = mitMaksimum !== null && jegFoerer && mitMaksimum >= nuværendeBud;
-  // Fører jeg, følger mine automatiske bud BidHamr Beskyttelse på mit
-  // førende bud - den kan ikke ændres via maksimum (saet_maksimum afviser).
-  const beskyttelseLaast = automatisk && jegFoerer;
-  const beskyttelseValgt = beskyttelseLaast ? minBeskyttelse === true : beskyttelse;
 
   // Fejl mens man skriver (ikke kun en deaktiveret knap).
   const skrevet = beløb.trim();
@@ -309,24 +300,23 @@ export default function BidPanel({
               ? `Du fører med ${nuværendeBud.toLocaleString("da-DK")} kr. Dit maksimum kan ikke være lavere.`
               : `Dit maksimum skal være mindst ${mindsteGyldige.toLocaleString("da-DK")} kr.`
             : `Dit bud skal være mindst ${mindsteGyldige.toLocaleString("da-DK")} kr.`
-          : null;
+          : skrevetTal > MAKS_BELOEB_KR
+            ? automatisk
+              ? `Dit maksimum kan højst være ${MAKS_BELOEB_KR.toLocaleString("da-DK")} kr.`
+              : `Det højeste tilladte bud er ${MAKS_BELOEB_KR.toLocaleString("da-DK")} kr.`
+            : null;
 
   // Kun visning: hvad vinderen kommer til at betale. Det endelige beløb
   // beregnes på serveren, når auktionen slutter.
   const budTal = Number(beløb);
   const estimatOere =
-    Number.isFinite(budTal) && budTal >= mindsteGyldige
+    Number.isFinite(budTal) && budTal >= mindsteGyldige && budTal <= MAKS_BELOEB_KR
       ? (() => {
           const budOere = Math.round(budTal * 100);
           // Ny prismodel (20261031010000): BidHamr Beskyttelse er i gebyret.
           return koeberTotalOere(budOere, erhvervAuktion, fragtOere(forsendelseMulig, fragtPakkeshopOere));
         })()
       : null;
-
-  // Kun visning: prisen for BidHamr Beskyttelse på det indtastede bud.
-  // Ny prismodel (20261031010000): intet tilkøb længere - prisen er i gebyret.
-  // TODO(frontend): fjern afkrydsningen for BidHamr Beskyttelse.
-  const beskyttelsePrisOere: number | null = null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -382,14 +372,14 @@ export default function BidPanel({
     senderRef.current = true;
 
     // Afgives paa serveren (rate limit). RLS og triggere gaelder uaendret.
-    // Kun afhentning: BidHamr Beskyttelse kan ikke tilvælges (afhentningshandler
-    // kan ikke få sager). Databasen tvinger det også til nej.
+    // BidHamr Beskyttelse vælges ikke længere (20261031010000 - databasen
+    // ignorerer valget), så der sendes altid false.
     let svar: Awaited<ReturnType<typeof afgivBud>>;
     try {
       svar = await afgivBud(
         auktionId,
         beløbTal,
-        beskyttelse && beskyttelseMulig,
+        false,
         redigeretKl,
       );
     } finally {
@@ -449,7 +439,7 @@ export default function BidPanel({
       maksSvar = await saetMaksimum(
         auktionId,
         beløbTal,
-        beskyttelseValgt && beskyttelseMulig,
+        false,
         redigeretKl,
       );
     } finally {
@@ -541,8 +531,6 @@ export default function BidPanel({
   const gyldigtBud = estimatOere !== null;
   const budOereVist = gyldigtBud ? Math.round(budTal * 100) : null;
   const gebyrOereVist = budOereVist !== null ? koebergebyrOere(budOereVist, erhvervAuktion) : null;
-  // Ny prismodel: ingen særskilt linje for BidHamr Beskyttelse (den er i gebyret).
-  const beskyttelseVist: number | null = null;
 
   // Hvad det mindste bud koster i alt - vises i budbjælken på mobil.
   const mindsteTotalOere = (() => {
@@ -811,43 +799,18 @@ export default function BidPanel({
           )}
 
           {beskyttelseMulig && (
-          <div className="flex flex-wrap items-center justify-between gap-x-3 rounded-xl border border-kant bg-white px-3">
-            <label
-              className={`flex min-h-11 flex-1 items-center gap-3 py-2 ${beskyttelseLaast ? "cursor-not-allowed" : "cursor-pointer"}`}
-            >
-              <input
-                type="checkbox"
-                checked={beskyttelseValgt}
-                disabled={beskyttelseLaast}
-                aria-describedby={beskyttelseLaast ? `besk-${auktionId}-laast` : undefined}
-                onChange={(e) => setBeskyttelse(e.target.checked)}
-                className="h-5 w-5 shrink-0 accent-groen disabled:opacity-60"
-              />
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-tekst">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 rounded-xl border border-kant bg-white px-3">
+              <p className="flex min-h-11 flex-1 items-center gap-2 py-2 text-sm font-semibold text-tekst">
                 <Ikon navn="skjold" className="h-[18px] w-[18px] shrink-0 text-groen" />
-                <span>
-                  {BIDPANEL.beskyttelseLabel}
-                  {beskyttelsePrisOere !== null && (
-                    <span className="ml-1 font-normal text-tekst-daempet">
-                      + {kroner(beskyttelsePrisOere)}
-                    </span>
-                  )}
-                </span>
-              </span>
-            </label>
-            {/* Uden for label, så et klik ikke slår afkrydsningen til/fra. */}
-            <Link
-              href={BIDPANEL.laesMereHref}
-              className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
-            >
-              {BIDPANEL.laesMere}
-            </Link>
-            {beskyttelseLaast && (
-              <p id={`besk-${auktionId}-laast`} className="w-full pb-2 text-[13px] text-tekst-daempet">
-                {AUTOBUD.beskyttelseLaast}
+                <span>{BIDPANEL.beskyttelseInkluderet}</span>
               </p>
-            )}
-          </div>
+              <Link
+                href={BIDPANEL.laesMereHref}
+                className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-groen underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+              >
+                {BIDPANEL.laesMere}
+              </Link>
+            </div>
           )}
 
           {/* Totalpris før man byder (bud + gebyr + fragt) */}
@@ -858,7 +821,7 @@ export default function BidPanel({
                 <dd className="tabular-nums">{budOereVist !== null ? kroner(budOereVist) : "–"}</dd>
               </div>
               <div className={linje}>
-                <dt>Købergebyr</dt>
+                <dt>{koebergebyrTekst(erhvervAuktion ? "erhverv" : "ny", beskyttelseMulig)}</dt>
                 <dd className="tabular-nums">{gebyrOereVist !== null ? kroner(gebyrOereVist) : "–"}</dd>
               </div>
               <div className={linje}>
@@ -870,12 +833,6 @@ export default function BidPanel({
                   )}
                 </dd>
               </div>
-              {beskyttelseVist !== null && (
-                <div className={linje}>
-                  <dt>BidHamr Beskyttelse</dt>
-                  <dd className="tabular-nums">{kroner(beskyttelseVist)}</dd>
-                </div>
-              )}
               <div className={`${linje} mt-2 border-t border-groen/20 pt-2`}>
                 <dt className="font-semibold text-tekst">
                   {automatisk ? AUTOBUD.totalLabel : "Du betaler i alt, hvis du vinder"}

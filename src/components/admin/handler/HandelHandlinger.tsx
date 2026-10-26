@@ -32,7 +32,7 @@ type Part = { id: string; navn: string };
 
 const IKKE_AFHENTET_TITEL = "Pakken blev ikke afhentet?";
 const IKKE_AFHENTET_TEKST =
-  "Brug det, når fragtfirmaet har sendt pakken retur til sælgeren, fordi køberen ikke hentede den. Handlen annulleres. Køberen får købsbeløbet tilbage minus købergebyr, BidHamr Beskyttelse og fragten begge veje (returfragten = fragten ud) – aldrig under 0 kr. Sælgeren beholder varen, betaler ikke for fragten og får intet udbetalt. Begge får besked.";
+  "Brug det, når fragtfirmaet har sendt pakken retur til sælgeren, fordi køberen ikke hentede den. Handlen annulleres. Køberen får købsbeløbet tilbage minus gebyret, evt. tilkøbt BidHamr Beskyttelse (gamle handler) og fragten begge veje (returfragten = fragten ud) – aldrig under 0 kr. Sælgeren beholder varen, betaler ikke for fragten og får intet udbetalt. Begge får besked.";
 const IKKE_AFHENTET_AARSAG = {
   label: "Begrundelse (intern)",
   placeholder: "Fx: DAO-sporing viser retur til afsender efter 7 dage i pakkeshoppen",
@@ -191,7 +191,7 @@ export default function HandelHandlinger({
                 triggerLabel="Frigiv til sælger"
                 triggerClassName={lilleKnap}
                 title="Frigiv pengene til sælgeren?"
-                description="Sælgeren afregnes (minus 5 % gebyr), som om køberen havde godkendt varen."
+                description="Sælgeren afregnes (minus sælgergebyret), som om køberen havde godkendt varen."
                 confirmLabel="Frigiv pengene"
                 action={handelFrigiv}
                 hiddenFields={{ tradeId: h.id }}
@@ -209,12 +209,12 @@ export default function HandelHandlinger({
                 triggerLabel="Refundér køber"
                 triggerClassName={fareKnap}
                 title="Refundér køberen og annullér handlen?"
-                description="Køberen får hele det betalte beløb (bud, købergebyr, fragt og evt. BidHamr Beskyttelse) tilbage via Stripe. Er handlen ikke betalt endnu, annulleres betalingen. Sælgeren får intet."
+                description="Køberen får hele det betalte beløb (bud, gebyr, fragt og evt. tilkøbt BidHamr Beskyttelse på gamle handler) tilbage via Stripe. Er handlen ikke betalt endnu, annulleres betalingen. Sælgeren får intet."
                 confirmLabel="Refundér"
                 action={handelRefunder}
                 hiddenFields={{ tradeId: h.id }}
                 fakta={[
-                  { label: "Bud", vaerdi: `${kr(h.amount)} + gebyr, fragt og evt. BidHamr Beskyttelse` },
+                  { label: "Bud", vaerdi: `${kr(h.amount)} + gebyr og fragt` },
                   { label: "Får pengene", vaerdi: `${koeber.navn} (køber)` },
                   { label: "Handel", vaerdi: titel },
                 ]}

@@ -34,10 +34,14 @@ export default function OpretSagForm({
   tradeId,
   koeberId,
   muligheder,
+  erhverv = false,
 }: {
   tradeId: string;
   koeberId: string;
   muligheder: SagMuligheder;
+  // Køb fra et firma: ingen BidHamr Beskyttelse og ingen chat - køberen har
+  // fortrydelses- og reklamationsret efter loven.
+  erhverv?: boolean;
 }) {
   const router = useRouter();
   const id = useId();
@@ -128,11 +132,22 @@ export default function OpretSagForm({
     }
   }
 
+  // Nye handler med forsendelse har altid BidHamr Beskyttelse (20261031010000),
+  // så teksten vises kun ved køb fra et firma og ved gamle handler uden tilkøb.
   const beskyttelseInfo = muligheder.kraeverBeskyttelse.length > 0 && (
     <p className="rounded-xl border border-info-kant bg-info-bg p-3 text-sm text-info-tekst">
-      Uden BidHamr Beskyttelse kan du ikke oprette en sag om{" "}
-      {muligheder.kraeverBeskyttelse.map((t) => SAG_TYPE_NAVN[t].toLowerCase()).join(" eller ")}. Skriv i stedet
-      til sælgeren i chatten herunder.{" "}
+      {erhverv ? (
+        <>
+          Køb fra et firma er ikke dækket af BidHamr Beskyttelse. Er varen gået i stykker eller ikke som beskrevet,
+          så kontakt firmaet – du har reklamationsret efter loven.{" "}
+        </>
+      ) : (
+        <>
+          Uden BidHamr Beskyttelse kan du ikke oprette en sag om{" "}
+          {muligheder.kraeverBeskyttelse.map((t) => SAG_TYPE_NAVN[t].toLowerCase()).join(" eller ")}. Skriv i stedet
+          til sælgeren i chatten herunder.{" "}
+        </>
+      )}
       <Link href="/bidhamr-beskyttelse" className="font-semibold underline">
         Læs mere
       </Link>
