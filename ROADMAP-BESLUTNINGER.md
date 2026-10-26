@@ -55,7 +55,7 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
   - Procenten regnes af slutbuddet (salgsprisen). Grænsen ligger ved præcis 7.500,00 kr. (til og med = første kolonne). Beløb rundes til hele øre.
   - **Højeste tilladte bud/startpris/maksimum: 25.000 kr.** (ned fra 500.000 kr.) – lofterne er beregnet, så BidHamr aldrig går i minus op til 25.000 kr., heller ikke ved kreditkort (Stripe 2,8 %). Hæves buddet senere, skal lofterne genberegnes.
   - **Fragt for køber (pakkeshop): Lille 42 kr., Mellem 52 kr., Stor 67 kr.** (inkl. moms). Levering til døren som før (genberegnes ved ny DAO-aftale).
-  - **Udbetaling til sælgers bank hver 14. dag** (samler flere handler i én udbetaling for at spare Stripes 5 kr. pr. udbetaling).
+  - **Udbetaling til sælgers bank hver 14. dag – også for firmaer (Filip, 26. okt. 2026)** (samler flere handler i én udbetaling for at spare Stripes 5 kr. pr. udbetaling).
   - Begrundelse: billigere end Tradera fra ca. 300 kr. og altid billigere for sælger; overskud på alle salg fra ca. 300 kr.; bevidst lille tab (ca. 2–10 kr.) på de mindste salg, indtil fragtpriserne falder ved højere volumen (DAO: ny pris over 2.500 pakker/år). Alle gebyrer vises som totalpris før buddet (EU-regler mod "drip pricing").
   - Afhentning: samme gebyrer, ingen fragt.
   - **Afklaret med Filip 26. okt. 2026:**
