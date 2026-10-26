@@ -47,6 +47,16 @@ export const ERHVERV_SIDE = {
       tekst: "Du må sælge både brugte og nye varer. Fx ting fra et dødsbo, et overskudslager eller udgåede modeller.",
     },
     {
+      // Ingen priser på den offentlige side - kun at der er et abonnement,
+      // intet gebyr af salget og en gratis første måned (Filip, 26. okt. 2026).
+      titel: "Intet gebyr af dit salg",
+      tekst: "Du betaler et fast abonnement hver måned og får hele buddet for dine varer. Den første måned er gratis.",
+    },
+    {
+      titel: "Bliv set på forsiden",
+      tekst: "Du kan købe Ugens butik. Så står dit firma øverst på forsiden i en hel uge sammen med dine auktioner.",
+    },
+    {
       titel: "Din egen oversigt",
       tekst: "Du kan se, hvad du har solgt, og hvor mange der har set dine auktioner.",
     },
@@ -100,11 +110,11 @@ export const ERHVERV_SIDE = {
     },
     {
       spoergsmaal: "Hvad koster det?",
-      svar: "Det aftaler vi med dig, når vi har talt sammen. Udfyld formularen, så kontakter vi dig.",
+      svar: "Dit firma betaler et fast abonnement hver måned. Der er intet gebyr af dine salg – du får hele buddet. Den første måned er gratis. Prisen afhænger af, hvor mange auktioner du vil have, og den får du, når vi har talt sammen. Udfyld formularen, så kontakter vi dig.",
     },
     {
       spoergsmaal: "Hvor mange auktioner kan jeg have?",
-      svar: "Det afhænger af din aftale. Du kan altid få flere auktioner om ugen senere.",
+      svar: "Det afhænger af din pakke. Antallet gælder pr. måned. Har du brugt dem alle, kan du skifte til en større pakke med det samme. En auktion kan godt være flere ting samlet, fx 8 jakker.",
     },
     {
       spoergsmaal: "Skal jeg også have en privat konto?",
@@ -116,7 +126,7 @@ export const ERHVERV_SIDE = {
     },
     {
       spoergsmaal: "Hvem sender fakturaen på varen?",
-      svar: "Det gør dit firma selv, fra dit eget regnskabsprogram. Dit firma står også for momsen af varen (eller brugtmoms). Under Salg i Firma oversigt finder du alt, du skal bruge til fakturaen: købers navn, adresse og e-mail, varen, prisen og datoen. BidHamr sender kun faktura på vores egne gebyrer og på dit abonnement.",
+      svar: "Det gør dit firma selv, fra dit eget regnskabsprogram. Dit firma står også for momsen af varen (eller brugtmoms). Under Salg i Firma oversigt finder du alt, du skal bruge til fakturaen: købers navn, adresse og e-mail, varen, prisen og datoen. BidHamr sender kun regninger på dit abonnement og på det, du køber ekstra hos os, fx Ugens butik.",
     },
     {
       spoergsmaal: "Hvilke regler gælder for mine købere?",
@@ -128,7 +138,7 @@ export const ERHVERV_SIDE = {
     },
     {
       spoergsmaal: "Hvornår får jeg pengene for et salg?",
-      svar: "Når handlen er færdig, og køberens frist for at fortryde er gået. Så sendes pengene til din bankkonto. Betalingen håndteres af vores betalingspartner Stripe.",
+      svar: "Når handlen er færdig, og køberens frist for at fortryde er gået. Du får hele buddet. Vores betalingspartner Stripe sender pengene til din bankkonto hver 14. dag, samlet for alle dine salg i perioden.",
     },
   ],
 } as const;
@@ -282,11 +292,11 @@ export const FIRMA_OVERSIGT = {
     forklaring: "De auktioner, der kører lige nu.",
     aktive: (antal: number) => (antal === 1 ? "1 auktion kører" : `${antal} auktioner kører`),
     ugensAuktioner: (brugt: number, ialt: number, naesteLedige: string) =>
-      `Du har brugt ${brugt} af ${ialt} auktioner denne uge. Næste ledige: ${naesteLedige}.`,
+      `Du har brugt ${brugt} af ${ialt} auktioner denne måned. Næste ledige: ${naesteLedige}.`,
     ledigeNu: (brugt: number, ialt: number) =>
-      `Du har brugt ${brugt} af ${ialt} auktioner denne uge.`,
+      `Du har brugt ${brugt} af ${ialt} auktioner denne måned.`,
     alleBrugt: (naesteLedige: string) =>
-      `Du har brugt alle dine auktioner denne uge. Du kan oprette en ny ${naesteLedige}. Vil du have flere om ugen, så se Abonnement.`,
+      `Du har brugt alle dine auktioner denne måned. Du kan oprette en ny ${naesteLedige}. Vil du have flere nu, kan du skifte til en større pakke under Abonnement. Det gælder med det samme.`,
     knapOpret: "Opret en auktion",
     knapSeAlle: "Se alle dine auktioner",
     tom: "Du har ingen auktioner lige nu. Tryk på \"Opret en auktion\" for at komme i gang.",
@@ -327,10 +337,12 @@ export const FIRMA_OVERSIGT = {
 
   abonnement: {
     titel: "Abonnement",
-    forklaring: "Din pakke bestemmer, hvor mange auktioner du kan oprette om ugen.",
+    forklaring:
+      "Din pakke bestemmer, hvor mange auktioner du kan oprette om måneden. Du betaler intet gebyr af dine salg. En større pakke gælder med det samme, en mindre fra næste måned.",
     dinPakke: "Din pakke",
     andrePakker: "Andre pakker",
-    auktionerPrUge: (antal: number) => (antal === 1 ? "1 auktion om ugen" : `${antal} auktioner om ugen`),
+    // Nøglen hedder stadig "PrUge", men kvoten er pr. kalendermåned (Filip, 26. okt. 2026).
+    auktionerPrUge: (antal: number) => (antal === 1 ? "1 auktion om måneden" : `${antal} auktioner om måneden`),
     prisPrMaaned: (pris: string) => `${pris} om måneden + moms`,
     knapOpgrader: "Opgradér",
     knapNedgrader: "Skift til denne pakke fra næste måned",
@@ -475,9 +487,9 @@ export const ADMIN_ERHVERV = {
     forklaring: "Pakkerne vises med priser i firmaernes Firma oversigt – aldrig på den offentlige side.",
     kunChef: "Kun chef kan oprette og ændre pakker og priser.",
     feltNavn: "Navn",
-    feltNavnPladsholder: "Fx Lille",
-    feltPris: "Pris pr. måned (kr.)",
-    feltAuktioner: "Auktioner pr. uge",
+    feltNavnPladsholder: "Fx Butik",
+    feltPris: "Pris pr. måned ekskl. moms (kr.)",
+    feltAuktioner: "Auktioner pr. måned",
     feltAktiv: "Kan vælges",
     feltAktivHjaelp: "Slå fra for at skjule pakken, så den ikke kan vælges.",
     knapNy: "Ny pakke",
@@ -488,7 +500,7 @@ export const ADMIN_ERHVERV = {
       navnMangler: "Skriv et navn.",
       prisUgyldig: "Prisen skal være et tal på 0 eller derover.",
       prisHeleKroner: "Skriv prisen i hele kroner, fx 199.",
-      auktionerUgyldigt: "Antal auktioner pr. uge skal være mindst 1.",
+      auktionerUgyldigt: "Antal auktioner pr. måned skal være mindst 1.",
       navnFindes: "Der findes allerede en pakke med det navn.",
       generisk: "Pakken blev ikke gemt. Prøv igen.",
     },
@@ -611,7 +623,7 @@ export const FIRMA_OVERSIGT_EKSTRA = {
   afhentning: (vare: string) => `Køberen skal hente ${vare}. Aftal tid og sted med køberen.`,
   knapSeHandel: "Se handlen",
   ugensTal: (brugt: number, ialt: number) => `${brugt} af ${ialt}`,
-  ugensTalLabel: "Brugt denne uge",
+  ugensTalLabel: "Brugt denne måned",
   visningerAktive: "På dine aktive auktioner",
   firmanavnLabel: "Firma",
   slutter: "Slutter",
@@ -766,7 +778,7 @@ export const FIRMA_DASHBOARD = {
     intro: "Det vigtigste lige nu.",
     tal: "Dine tal",
     aktive: "Aktive auktioner",
-    ugensKvote: "Ugens auktioner",
+    ugensKvote: "Auktioner denne måned",
     seAuktioner: "Se dine auktioner",
     seSalg: "Se dine salg",
     seUdbetalinger: "Se udbetalinger",
@@ -801,7 +813,7 @@ export const FIRMA_DASHBOARD = {
     knapSeAuktion: "Se auktionen",
     knapSeHandel: "Se handlen",
     ugeKvote: (brugt: number, max: number) =>
-      `Du har brugt ${brugt} af ${max} ${max === 1 ? "auktion" : "auktioner"} denne uge.`,
+      `Du har brugt ${brugt} af ${max} ${max === 1 ? "auktion" : "auktioner"} denne måned.`,
     oprettet: "Din auktion er oprettet og kører nu.",
     gemt: "Dine ændringer er gemt.",
   },
@@ -936,6 +948,13 @@ export const FIRMA_BETALING = {
   betalTekst: (pakke: string, pris: string) =>
     `Du har pakken ${pakke}. Du betaler ${pris} om måneden + moms. Når du har betalt, kan du oprette auktioner.`,
   betalTekstUdenPris: "Når du har betalt for din pakke, kan du oprette auktioner.",
+  // 1 måned gratis for alle nye firmaer + evt. introrabat (50 % i 6 måneder
+  // efter den gratis måned, sat manuelt i admin) - Filip, 26. okt. 2026.
+  // Nye nøgler: skal kobles på i Firma oversigt -> Abonnement.
+  gratisMaaned: (dato: string) => `Din første måned er gratis. Du betaler første gang den ${dato}.`,
+  introrabat: (procent: number, til: string) =>
+    `Du har ${procent} % rabat på dit abonnement til og med ${til}. Derefter betaler du den almindelige pris.`,
+  ingenGebyr: "Du betaler intet gebyr af dine salg. Du får hele buddet.",
   knapBetal: "Betal for din pakke",
   knapSender: "Sender dig videre …",
   stripeForklaring: "Betalingen håndteres af vores betalingspartner Stripe. Du betaler med kort.",

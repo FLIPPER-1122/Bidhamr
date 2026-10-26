@@ -1,17 +1,18 @@
-# UDKAST – ikke godkendt af advokat
+# UDKAST – skal godkendes af advokat
 
 # Vilkår for erhvervssælgere på BidHamr
 
 > **Til Filip og advokaten (fjernes, før vilkårene bruges):**
 > - Dette er et UDKAST. Det er ikke godkendt af advokat og må ikke vises eller sendes til firmaer som endelige vilkår.
+> - **Opdateret 26. oktober 2026** efter Filips nye firmaregler (`ROADMAP-BESLUTNINGER.md` "Erhvervskonti": "firmaer betaler INTET sælgergebyr", "NYE pakker og priser", "Ugens butik" og "Regler for Ugens butik"): afsnit 4.4, 5 og 6 er skrevet om, 6.4–6.17 (fremhævede auktioner og Ugens butik) er nye, og 7.4, 16.3 og 17.1 er rettet. Afsnit 5 har fået nye numre (5.12 om opsigelse er nu 5.16). Nye spørgsmål til advokaten står som `[TIL ADVOKAT: …]` i de afsnit.
 > - Skrevet 10. oktober 2026 ud fra `ROADMAP-BESLUTNINGER.md` ("Erhvervskonti", "Moms og fakturaer", "Abonnementsbetaling med Stripe Billing", "Ny betalingsmodel", "DAC7") og `jura/brugerbetingelser-udkast.md`. Hvor de strider, følger udkastet beslutningerne.
 > - `[TIL ADVOKAT: …]` = punkter, advokaten skal tage stilling til. Spørgsmålene står også i `jura/noter-til-advokat.md` (nr. 56–75 og 114 ff.).
 > - `[TODO Filip: …]` = oplysninger eller beslutninger, Filip skal udfylde.
-> - Der står bevidst ingen priser. Pakker og priser står i aftalen med firmaet og i Firma oversigt.
+> - Der står bevidst ingen priser på pakkerne. De står i aftalen med firmaet og i Firma oversigt. Undtagelse: prisen på Ugens butik (500 kr. pr. uge ekskl. moms) står i 6.9, fordi den er fast for alle firmaer. [TODO Filip: Skal prisen på Ugens butik også kun stå i Firma oversigt?]
 > - Teknisk note: siden `/betingelser` fjerner kun noter i formatet `[ADVOKAT: …]`. Skal dette dokument vises på hjemmesiden med samme kode, skal `[TIL ADVOKAT: …]` først rettes til `[ADVOKAT: …]` – ellers stopper siden med en fejl.
 > - Filips beslutninger, som ikke er bygget endnu, står med "(kommer)": "Fortryd køb" med returlabel, oplysningerne til fakturaen under Salg, og klager fra købere.
 
-**Version:** udkast 1 · **Senest opdateret:** [TODO Filip: dato ved offentliggørelse]
+**Version:** udkast 2 · **Senest opdateret:** [TODO Filip: dato ved offentliggørelse]
 
 ---
 
@@ -65,7 +66,7 @@
 
 4.3 **Nye og brugte varer.** Firmaet må sælge både brugte og nye varer, fx overskudslager, returvarer og udgåede modeller. Sælger du en ny vare, skal du vælge standen "Ny" og udfylde oplysningerne om producent og sikkerhed (se 8.3).
 
-4.4 **Antal auktioner pr. uge.** Din pakke bestemmer, hvor mange auktioner du må oprette om ugen. En uge går fra mandag kl. 00.00 (dansk tid). Alle auktioner, du opretter i ugen, tæller med – også dem, du selv annullerer.
+4.4 **Antal auktioner pr. måned.** Din pakke bestemmer, hvor mange auktioner du må oprette i en kalendermåned. Måneden starter den 1. kl. 00.00 (dansk tid). Alle auktioner, du opretter i måneden, tæller med – også dem, du selv annullerer. En auktion kan være én vare eller flere varer samlet (fx "8 jakker"). Den tæller som 1 auktion.
 
 4.5 **Mærket "Erhvervssælger".** Dine auktioner får mærket "Erhvervssælger", og købere kan med ét klik se firmaets profil med firmanavn, CVR-nummer, adresse, telefon, e-mail og oplysninger om fortrydelsesret.
 
@@ -77,41 +78,91 @@
 
 ## 5. Abonnement og pakker
 
-5.1 **Abonnement er et krav.** For at sælge skal firmaet have et aktivt abonnement. Abonnementet er en pakke med et fast antal auktioner om ugen.
+5.1 **Abonnement er et krav.** For at sælge skal firmaet have et aktivt abonnement. Abonnementet er en pakke med et fast antal auktioner pr. kalendermåned (se 4.4).
 
-5.2 **Pakken vælges i aftalen.** BidHamr sætter den pakke på kontoen, som I har aftalt. Du kan se din pakke, de andre pakker og priserne i Firma oversigt under Abonnement.
+5.2 **Pakkerne.** Der er tre pakker:
 
-5.3 **Pris og moms.** Prisen står i aftalen og i Firma oversigt. Prisen er pr. måned og uden moms. Der lægges 25 % moms oveni.
+- **Start:** 10 auktioner om måneden. Firmaprofil og Firma oversigt med salg, udbetalinger og regninger. Du kan købe Ugens butik (se 6.7 ff.).
+- **Butik:** 30 auktioner om måneden. Som Start og desuden statistik, 5 fremhævede auktioner om måneden (se 6.4 ff.) og rabat på Ugens butik (se 6.12).
+- **Pro:** Ubegrænset antal auktioner. Som Butik, men med fuld statistik, 20 fremhævede auktioner om måneden, mere rabat på Ugens butik (se 6.12) og en fast kontaktperson hos BidHamr.
 
-5.4 **Betaling.** Abonnementet betales forud for en måned ad gangen med betalingskort gennem vores betalingspartner Stripe. Beløbet trækkes automatisk hver måned, og du får en regning hver gang. Du kan skifte betalingskort og se dine regninger i Firma oversigt.
+[TODO Filip: Skal "ubegrænset" have et loft for rimelig brug, fx ved misbrug eller meget store mængder?] [TIL ADVOKAT: Er beskrivelsen af pakkerne tydelig nok efter P2B-forordningen, og skal en "fast kontaktperson" beskrives nærmere (fx svartid)?]
 
-5.5 **Første betaling.** Du kan oprette auktioner, når den første betaling er gået igennem. Har vi aftalt betaling på en anden måde, sætter BidHamr abonnementet i gang.
+5.3 **Pakken vælges i aftalen.** BidHamr sætter den pakke på kontoen, som I har aftalt. Du kan se din pakke, de andre pakker og priserne i Firma oversigt under Abonnement.
 
-5.6 **Opgradering.** Vælger du en større pakke, gælder den med det samme. Du betaler forskellen i pris for resten af den betalte periode og får en regning på det. Du får de ekstra auktioner, så snart betalingen er gået igennem.
+5.4 **Pris og moms.** Prisen står i aftalen og i Firma oversigt. Prisen er pr. måned og uden moms. Der lægges 25 % moms oveni.
 
-5.7 **Nedgradering.** Vælger du en mindre pakke, gælder den fra næste betalingsperiode. Indtil da beholder du din nuværende pakke. Du får ingen penge tilbage for den periode, du har betalt.
+5.5 **Første måned er gratis.** Nye firmaer betaler ikke for den første måned. Derefter betaler firmaet pakkens pris hver måned. [TODO Filip: Skal firmaet give et betalingskort ved start, og trækkes den første betaling automatisk, når den gratis måned slutter? Får et firma, der har haft en firmakonto før, også en gratis måned?]
 
-5.8 **Pakkeskift efter aftale.** Aftaler du et pakkeskift med BidHamr, gælder den nye pakke med det samme, og den nye pris gælder fra din næste betaling. En eventuel forskel for den periode, du er i, aftaler vi med dig.
+5.6 **Introrabat efter aftale.** BidHamr kan aftale en introrabat med et firma, fx en lavere pris i en periode efter den gratis måned. Rabatten og perioden står i aftalen og i Firma oversigt. Når perioden er slut, betaler firmaet pakkens almindelige pris. [TIL ADVOKAT: Skal det stå i vilkårene, at introrabat kun gives efter individuel aftale (ligebehandling efter P2B-forordningen)?]
 
-5.9 Du kan kun skifte pakke én gang ad gangen. Er der en ubetalt regning, skal den betales, før du kan skifte pakke.
+5.7 **Betaling.** Abonnementet betales forud for en måned ad gangen med betalingskort gennem vores betalingspartner Stripe. Beløbet trækkes automatisk hver måned, og du får en regning hver gang. Du kan skifte betalingskort og se dine regninger i Firma oversigt.
 
-5.10 **Prisændringer.** Ændrer BidHamr prisen på en pakke, beholder du din nuværende pris, indtil du skifter pakke. [TIL ADVOKAT: Må BidHamr ændre prisen på et løbende abonnement, og med hvilket varsel? (nr. 72)]
+5.8 **Start på abonnementet.** Du kan oprette auktioner, når abonnementet er sat i gang. Har vi aftalt betaling på en anden måde, sætter BidHamr abonnementet i gang. [TODO Filip: Hvornår går abonnementet i gang med den gratis måned – når kontoen oprettes, eller når firmaet har givet et betalingskort?]
 
-5.11 **Hvis betalingen ikke går igennem.** Stripe prøver at trække beløbet igen. Du kan sælge videre i 7 dage. Er betalingen stadig ikke gået igennem, bliver abonnementet sat på pause. Så kan du ikke oprette nye auktioner, men de auktioner, der kører, slutter som normalt, og handler, der er i gang, skal gennemføres. Når du betaler, kører abonnementet igen med det samme.
+5.9 **Opgradering – med det samme.** Vælger du en større pakke, gælder den med det samme – også hvis du har brugt alle månedens auktioner. Du betaler forskellen i pris for resten af den betalte periode og får en regning på det. Du får de ekstra auktioner, så snart betalingen er gået igennem.
 
-5.12 **Opsigelse fra firmaets side.** Vil du stoppe abonnementet, så skriv til erhverv@bidhamr.dk. Abonnementet stopper ved slutningen af den periode, du har betalt for. Du får ingen penge tilbage for perioden. Indtil da kan du sælge som normalt. [TIL ADVOKAT: Skal der være en bindingsperiode eller et opsigelsesvarsel? Skal firmaet selv kunne opsige i Firma oversigt? (nr. 72)]
+5.10 **Nedgradering – fra næste måned.** Vælger du en mindre pakke, gælder den fra næste betalingsperiode. Indtil da beholder du din nuværende pakke. Du får ingen penge tilbage for den periode, du har betalt.
 
-5.13 Opsiger du, mens du har bedt om en mindre pakke fra næste periode, bortfalder pakkeskiftet. Mens abonnementet er opsagt, kan du ikke skifte til en mindre pakke.
+5.11 **Pakkeskift efter aftale.** Aftaler du et pakkeskift med BidHamr, gælder den nye pakke med det samme, og den nye pris gælder fra din næste betaling. En eventuel forskel for den periode, du er i, aftaler vi med dig.
+
+5.12 Du kan kun skifte pakke én gang ad gangen. Er der en ubetalt regning, skal den betales, før du kan skifte pakke.
+
+5.13 **Prisændringer.** Ændrer BidHamr prisen på en pakke, beholder du din nuværende pris, indtil du skifter pakke. [TIL ADVOKAT: Må BidHamr ændre prisen på et løbende abonnement, og med hvilket varsel? (nr. 72)]
+
+5.14 **Hvis betalingen ikke går igennem.** Stripe prøver at trække beløbet igen. Du kan sælge videre i 7 dage. Er betalingen stadig ikke gået igennem, bliver abonnementet sat på pause. Så kan du ikke oprette nye auktioner, men de auktioner, der kører, slutter som normalt, og handler, der er i gang, skal gennemføres. Når du betaler, kører abonnementet igen med det samme.
+
+5.15 **Ingen binding.** Der er ingen bindingsperiode. Abonnementet løber én måned ad gangen, indtil det bliver opsagt. [TIL ADVOKAT: Er det nok at skrive "ingen binding", når opsigelsen gælder fra slutningen af den betalte periode (se 5.16)?]
+
+5.16 **Opsigelse fra firmaets side.** Vil du stoppe abonnementet, så skriv til erhverv@bidhamr.dk. Abonnementet stopper ved slutningen af den periode, du har betalt for. Du får ingen penge tilbage for perioden. Indtil da kan du sælge som normalt. [TIL ADVOKAT: Skal der være et opsigelsesvarsel? Skal firmaet selv kunne opsige i Firma oversigt? (nr. 72)]
+
+5.17 Opsiger du, mens du har bedt om en mindre pakke fra næste periode, bortfalder pakkeskiftet. Mens abonnementet er opsagt, kan du ikke skifte til en mindre pakke.
+
+5.18 **Firmaer med en ældre pakke.** Har dit firma en af de tidligere pakker (Basis, Plus, Pro eller Max), flytter vi dig til en af de nye: Basis bliver til Start, Plus til Butik, og Pro og Max til Pro. [TIL ADVOKAT: Hvilket varsel skal firmaer have før flytningen (P2B-forordningen: mindst 15 dage), og skal de kunne sige nej? TODO Filip: Hvilken pris får de flyttede firmaer, og fra hvilken dato?]
 
 ---
 
-## 6. Gebyrer pr. salg
+## 6. Gebyrer og tilkøb
 
-6.1 Ud over abonnementet betaler firmaet det almindelige **sælgergebyr** på 5 % af det vindende bud, når en vare bliver solgt. Gebyret trækkes fra, før pengene udbetales. Køberen betaler selv købergebyr og fragt.
+### Intet gebyr af salg
 
-6.2 BidHamrs gebyrer er inkl. moms. Firmaet får en faktura på sælgergebyret ved hvert salg.
+6.1 **Firmaet betaler intet gebyr af sine salg.** Firmaet betaler kun abonnementet og det, firmaet selv køber ekstra, fx Ugens butik. Når en vare bliver solgt, får firmaet hele det vindende bud udbetalt. Køberen betaler selv købergebyr og fragt.
+
+6.2 **Ældre handler.** Reglen i 6.1 gælder auktioner, der slutter efter [TODO Filip: datoen for opdateringen]. Handler fra auktioner, der sluttede før, følger de gamle regler: 5 % sælgergebyr af det vindende bud, som er trukket fra udbetalingen, og en faktura på gebyret.
 
 6.3 BidHamr Beskyttelse kan ikke vælges ved køb fra et firma (se 9.6).
+
+### Fremhævede auktioner
+
+6.4 **Fremhævede auktioner.** Pakken Butik giver 5 og pakken Pro 20 fremhævede auktioner om måneden. En fremhævet auktion bliver vist mere synligt for købere end andre auktioner. [TODO Filip: Hvor og hvor længe bliver en fremhævet auktion vist, og kan firmaet købe flere?]
+
+6.5 **Markeret som annonce.** En fremhævet auktion er tydeligt markeret som annonce, så købere kan se, at firmaet har betalt for at blive vist mere.
+
+6.6 **Ubrugte fremhævninger følger ikke med.** Bruger firmaet ikke alle sine fremhævninger i en måned, forsvinder de ved månedens udgang. Den 1. i måneden (dansk tid) får firmaet nye. Firmaet får ikke penge tilbage for fremhævninger, der ikke er brugt.
+
+### Ugens butik
+
+6.7 **Hvad er Ugens butik?** Ét firma ad gangen får det øverste felt på BidHamrs forside i en uge. Feltet har firmanavnet som overskrift og viser firmaets aktive auktioner. En uge går fra mandag kl. 00.00 til næste mandag kl. 00.00 (dansk tid). Har firmaet ingen aktive auktioner, bliver feltet ikke vist. [TODO Filip: Får firmaet penge tilbage, hvis feltet ikke bliver vist, fordi firmaet ingen aktive auktioner har? Det står ikke i beslutningerne.]
+
+6.8 **Markeret som annonce.** Feltet er tydeligt markeret som annonce, så købere kan se, at firmaet har betalt for pladsen.
+
+6.9 **Pris.** Ugens butik koster 500 kr. pr. uge uden moms. Der lægges 25 % moms oveni. Prisen er den samme, uanset hvornår i ugen du køber. Pladsen gælder altid til næste mandag kl. 00.00 (dansk tid), også når du køber midt i ugen. Du får en faktura fra BidHamr.
+
+6.10 **Sådan køber du.** Du køber Ugens butik i Firma oversigt. Du kan købe den uge, der er i gang, og op til 12 uger frem. Du betaler med det samme med kort gennem vores betalingspartner Stripe. Mens du betaler, holder vi ugen til dig i 30 minutter. Booker BidHamr en uge for dig efter aftale, skal den betales inden 48 timer.
+
+6.11 **Højst 4 uger i træk.** Et firma kan højst have Ugens butik 4 uger i træk. Derefter skal der gå 2 uger, før firmaet kan få pladsen igen. Har firmaet færre end 4 uger i træk, skal der ikke holdes pause.
+
+6.12 **Rabat efter pakke.** Med pakken Butik får firmaet 50 % rabat på Ugens butik de første 3 gange hvert kalenderår. Med pakken Pro får firmaet 50 % rabat op til 5 gange hvert kalenderår. Pakken Start giver ingen rabat. Året regnes efter den mandag, ugen starter, og antallet starter forfra den 1. januar. BidHamr kan aftale en anden rabat med firmaet.
+
+6.13 **Suspension, pause og lukning.** Bliver firmakontoen suspenderet, sat på pause eller lukket, mens firmaet har en betalt uge, bliver pladsen skjult. Firmaet får ikke automatisk pengene tilbage. [TIL ADVOKAT: Holder det, at der ikke refunderes automatisk – også når pausen skyldes en fejlet abonnementsbetaling, eller når BidHamr lukker kontoen uden at firmaet har gjort noget forkert (P2B-forordningen og aftaleloven § 36)?]
+
+6.14 **Kun hel refusion.** Refunderer BidHamr en uge, får firmaet hele beløbet tilbage. Der gives aldrig delvis refusion. Bliver en uge med rabat refunderet, får firmaet rabatten tilbage til en senere uge.
+
+6.15 **Betaling for sent.** Bliver en uge betalt, efter at den er slut, eller mens firmakontoen ikke er aktiv, får firmaet ikke pladsen. Så får firmaet automatisk hele beløbet tilbage.
+
+6.16 **Annullering.** Firmaet kan annullere en reserveret uge, før den er betalt. [TODO Filip: Kan firmaet selv annullere en betalt uge og få pengene tilbage – og i så fald hvor længe før ugen starter?]
+
+6.17 [TIL ADVOKAT: Skal vilkårene beskrive, hvordan betaling påvirker placeringen på BidHamr (Ugens butik og fremhævede auktioner), jf. P2B-forordningen art. 5 og DSA art. 26 om reklamer? Er "Annonce" en tydelig nok markering efter markedsføringsloven?]
 
 ---
 
@@ -123,7 +174,7 @@
 
 7.3 **Oplysninger til fakturaen.** I Firma oversigt under Salg finder du ved hvert salg de oplysninger, du skal bruge til fakturaen: købers navn, adresse og e-mail, varen, prisen og datoen (kommer). Du må kun bruge købers oplysninger til at gennemføre handlen, sende fakturaen og opfylde dine pligter efter loven – ikke til fx reklame. [TIL ADVOKAT: Er firmaet selvstændigt dataansvarligt for købers oplysninger, og skal det stå i privatlivspolitikken?]
 
-7.4 **BidHamr fakturerer kun sine egne ydelser:** abonnementet og sælgergebyret. Regningen for abonnementet kommer fra Stripe med firmaets CVR-nummer som momsnummer. Alle regninger fra BidHamr ligger i Firma oversigt.
+7.4 **BidHamr fakturerer kun sine egne ydelser:** abonnementet og det, firmaet køber ekstra, fx Ugens butik. Firmaet får ingen faktura på sine salg, fordi der ikke er noget gebyr af salget (se 6.1). Regningen for abonnementet kommer fra Stripe med firmaets CVR-nummer som momsnummer. Ugens butik og sælgergebyr fra ældre handler (se 6.2) faktureres i BidHamrs regnskabsprogram. Alle regninger fra BidHamr ligger i Firma oversigt.
 
 ---
 
@@ -258,13 +309,13 @@ Køberne er forbrugere. Derfor har de flere rettigheder, når de køber af et fi
 
 16.2 **Firmaet holder BidHamr skadesløs.** [TIL ADVOKAT: Skal firmaet holde BidHamr skadesløs, hvis BidHamr bliver mødt med krav på grund af firmaets varer eller brud på loven (fx fra købere eller myndigheder)? Formulering? (nr. 69)]
 
-16.3 **BidHamrs ansvar.** BidHamr gør sit bedste for, at BidHamr virker. Vi kan ikke love, at siden og appen altid er tilgængelige. [TIL ADVOKAT: Kan BidHamrs ansvar over for firmaet begrænses, fx til det, firmaet har betalt i abonnement og gebyrer de seneste 12 måneder, og kan ansvar for indirekte tab (fx tabt salg) udelukkes?]
+16.3 **BidHamrs ansvar.** BidHamr gør sit bedste for, at BidHamr virker. Vi kan ikke love, at siden og appen altid er tilgængelige. [TIL ADVOKAT: Kan BidHamrs ansvar over for firmaet begrænses, fx til det, firmaet har betalt i abonnement og tilkøb (fx Ugens butik) de seneste 12 måneder, og kan ansvar for indirekte tab (fx tabt salg) udelukkes?]
 
 ---
 
 ## 17. Ophør af firmakontoen
 
-17.1 **Firmaet opsiger.** Se 5.12. Firmaet kan ikke selv slette firmakontoen. Skal kontoen lukkes, så skriv til erhverv@bidhamr.dk. Den kan først lukkes, når handler, fortrydelser og udbetalinger er gjort færdige.
+17.1 **Firmaet opsiger.** Se 5.15 og 5.16. Firmaet kan ikke selv slette firmakontoen. Skal kontoen lukkes, så skriv til erhverv@bidhamr.dk. Den kan først lukkes, når handler, fortrydelser og udbetalinger er gjort færdige.
 
 17.2 **BidHamr opsiger.** BidHamr kan opsige aftalen med et varsel på [TODO Filip: antal dage]. Bryder firmaet vilkårene groft, fx ved svindel, kan BidHamr lukke kontoen med det samme. [TIL ADVOKAT: Hvilket varsel kræver P2B-forordningen (fx 30 dage) ved opsigelse af en erhvervsbruger?]
 

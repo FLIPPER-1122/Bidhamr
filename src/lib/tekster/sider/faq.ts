@@ -70,7 +70,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Får jeg en faktura?",
-          svar: "Ja, på BidHamrs gebyrer. Som køber får du en faktura på gebyret (med BidHamr Beskyttelse) og fragten. Som sælger får du en faktura på sælgergebyret. Alle beløb er inkl. moms. Du finder fakturaerne under Min konto → Fakturaer og på handelssiden.",
+          svar: "Ja, på BidHamrs gebyrer. Som køber får du en faktura på gebyret (med BidHamr Beskyttelse) og fragten. Som privat sælger får du en faktura på sælgergebyret. Firmaer betaler intet sælgergebyr. Alle beløb er inkl. moms. Du finder fakturaerne under Min konto → Fakturaer og på handelssiden.",
         },
         {
           spoergsmaal: "Får jeg en faktura på selve varen?",
@@ -260,12 +260,17 @@ export const FAQ_SIDE: Tekstside = {
           svar: "Udfyld formularen på siden Erhverv. Så kontakter vi dig, laver en aftale og opretter firmakontoen for dig. Dit firma skal have et aktivt dansk CVR-nummer og et abonnement. Du kan ikke selv oprette en firmakonto.",
         },
         {
+          // Ingen priser her - de står kun i Firma oversigt (ROADMAP-BESLUTNINGER "Erhvervskonti").
+          spoergsmaal: "Hvad koster det at sælge som firma?",
+          svar: "Dit firma betaler et fast abonnement hver måned. Der er intet gebyr af salget, så I får hele buddet. Den første måned er gratis. Prisen afhænger af, hvor mange auktioner I vil have om måneden, og den aftaler vi med jer.",
+        },
+        {
           spoergsmaal: "Hvad skal mit firma sørge for over for køberne?",
           svar: "Køberne har 14 dages fortrydelsesret og 2 års reklamationsret, og dit firma skal tage imod returvarer og behandle reklamationer. Dit firma sender selv fakturaen på varen. Sælger du en ny vare, skal du skrive producent og sikkerhedsoplysninger på auktionen. Dit firmas e-mail og telefon skal være rigtige, så køberne kan kontakte jer.",
         },
         {
           spoergsmaal: "Hvornår får mit firma pengene for et salg?",
-          svar: "Når handlen er færdig, og køberens frist for at fortryde er gået. Så sendes pengene til jeres bankkonto. Betalingen håndteres af vores betalingspartner Stripe.",
+          svar: "Når handlen er færdig, og køberens frist for at fortryde er gået. I får hele buddet. Vores betalingspartner Stripe sender pengene til jeres bankkonto hver 14. dag, samlet for alle salg i perioden.",
         },
       ],
     },

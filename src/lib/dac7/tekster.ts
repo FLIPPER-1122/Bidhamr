@@ -53,9 +53,12 @@ export const DAC7 = {
   kopiAar: (aar: number) => `Indkomståret ${aar}`,
   kvartal: (n: number) => `${n}. kvartal`,
   antalSalg: "Antal salg",
-  vederlag: "Du har fået (efter gebyr)",
-  gebyr: "Gebyr til BidHamr",
-  vederlagForklaring: "Beløbet er det, du fik for varerne, efter at BidHamrs sælgergebyr er trukket fra.",
+  // Firmaer betaler intet sælgergebyr (prismodel 'erhverv2') - så er gebyret
+  // 0 kr., og beløbet er hele salgsprisen. Teksterne skal passe til begge.
+  vederlag: "Du har fået for dine salg",
+  gebyr: "Sælgergebyr til BidHamr",
+  vederlagForklaring:
+    "Beløbet er det, du fik for varerne, efter at et eventuelt sælgergebyr er trukket fra. Firmaer betaler ikke længere sælgergebyr. For deres nye salg er gebyret 0 kr., og beløbet er hele salgsprisen.",
 
   fejl: {
     generisk: "Noget gik galt. Prøv igen om lidt.",

@@ -172,6 +172,9 @@ export async function sendSaelgerAfregning(tradeId: string, grund: FrigivGrund):
     const k = await bygKvittering(tradeId, "saelger");
     if (!k || k.rolle !== "saelger") return;
     const tekst = afregningTekst(grund, k.titel);
+    // Firmaer betaler intet sælgergebyr (prismodel 'erhverv2'): hele salgsprisen.
+    const udbetalingErTekst =
+      (k as SaelgerKvittering).saelgergebyrOere > 0 ? "salgsprisen minus sælgergebyret" : "hele salgsprisen";
     await send(b.seller_id, "udbetaling", {
       titel: tekst.titel,
       // Intet løfte om, at pengene er i banken: afregningen sendes, før
@@ -181,8 +184,8 @@ export async function sendSaelgerAfregning(tradeId: string, grund: FrigivGrund):
       // direkte til banken - evt. efter Stripes ventetid / 3 dage ved afhentning.
       tekst:
         b.pengemodel === "destination"
-          ? `${tekst.tekst} Pengene er frigivet. Udbetalingen på ${kronerFraOere(k.udbetalingOere)} kr (salgsprisen minus sælgergebyret) sendes til din bankkonto af vores betalingspartner Stripe. Vi samler dine salg og udbetaler højst hver 14. dag. Du får besked, når den er sendt. Din afregning ligger på handelssiden.`
-          : `${tekst.tekst} Pengene er frigivet. Udbetalingen på ${kronerFraOere(k.udbetalingOere)} kr (salgsprisen minus sælgergebyret) sendes til din udbetalingskonto hos vores betalingspartner Stripe. Din afregning ligger på handelssiden.`,
+          ? `${tekst.tekst} Pengene er frigivet. Udbetalingen på ${kronerFraOere(k.udbetalingOere)} kr (${udbetalingErTekst}) sendes til din bankkonto af vores betalingspartner Stripe. Vi samler dine salg og udbetaler højst hver 14. dag. Du får besked, når den er sendt. Din afregning ligger på handelssiden.`
+          : `${tekst.tekst} Pengene er frigivet. Udbetalingen på ${kronerFraOere(k.udbetalingOere)} kr (${udbetalingErTekst}) sendes til din udbetalingskonto hos vores betalingspartner Stripe. Din afregning ligger på handelssiden.`,
       link: `/mine-handler/${tradeId}`,
       data: { trade_id: tradeId },
       mail: saelgerAfregningMail(k as SaelgerKvittering, tekst.titel, tekst.tekst),

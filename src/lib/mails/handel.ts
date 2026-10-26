@@ -270,11 +270,17 @@ export function saelgerAfregningMail(
     overskriftHtml: escapeHtml(overskrift),
     afsnitHtml: [
       escapeHtml(indledning),
-      `Pengene er frigivet. Udbetalingen på ${escapeHtml(kronerFraOere(k.udbetalingOere))} kr sendes til din udbetalingskonto hos vores betalingspartner Stripe. Udbetalingen er salgsprisen minus sælgergebyret. Stripe sender pengene videre til din bankkonto hver 14. dag, samlet for alle dine salg i perioden.${
+      `Pengene er frigivet. Udbetalingen på ${escapeHtml(kronerFraOere(k.udbetalingOere))} kr sendes til din udbetalingskonto hos vores betalingspartner Stripe. ${
+        // Firmaer betaler intet sælgergebyr (prismodel 'erhverv2'): hele salgsprisen.
+        k.saelgergebyrOere > 0
+          ? "Udbetalingen er salgsprisen minus sælgergebyret."
+          : "Udbetalingen er hele salgsprisen – der er intet gebyr af salget."
+      } Stripe sender pengene videre til din bankkonto hver 14. dag, samlet for alle dine salg i perioden.${
         k.afhentning ? "" : " Fragten betaler køberen, og den går til fragtfirmaet – den indgår ikke i din udbetaling."
       }`,
       escapeHtml(kvitteringFakturaTekst(k)),
-      FAKTURA_AFSNIT,
+      // Intet sælgergebyr = ingen faktura fra BidHamr på denne handel.
+      ...(k.saelgergebyrOere > 0 ? [FAKTURA_AFSNIT] : []),
     ],
     info: kvitteringInfo(k),
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${k.handelId}`) },
