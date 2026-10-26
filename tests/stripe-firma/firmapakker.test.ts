@@ -21,7 +21,21 @@
 //      på 799 kr. + moms, og derefter fuld pris.
 //   7. Opgradering, mens abonnementet er aktivt (Butik -> Pro): forskellen
 //      trækkes på kortet med det samme, og pakken skifter.
-//   8. Hel refusion af en betalt regning med kreditnota.
+//   8. Hel refusion af en betalt regning med kreditnota - også en regning
+//      med introrabat (refund_amount = det betalte), og en refusion, hvor
+//      databasen ikke nåede at følge med, spejles bagefter (sidder ikke fast).
+//   9. Prissynk efter flytningen til de nye pakker: en gammel plan
+//      (nedgradering annulleret i databasen) frigives i Stripe, før prisen
+//      skiftes.
+//
+// Anden del (eget test clock, 20261102020000):
+//  10. Gratis måneder til et firma, der har haft en gratis periode før:
+//      lægges oven i Checkout (gratis_ekstra), dobbeltklik afvises, og de
+//      trækkes fra, når abonnementet er startet.
+//  11. Nedgradering med introrabat: rabatten følger med i planens faser og
+//      gælder til introrabattens slutdato - også på den mindre pakke.
+//  12. Firmaoplysninger (adresse og CVR) til Stripe-kunden, inkl. momsnummer.
+import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
@@ -36,6 +50,8 @@ import {
   synkFaktura,
   sikrMomssats,
   firmaPris,
+  koerAbonnementSynk,
+  synkKundeStripe,
 } from "@/lib/erhverv/betaling";
 import { skiftPakkeForBruger } from "@/lib/erhverv/pakkeskift";
 import { plusMaaneder } from "@/lib/erhverv/abonnementRegler";
@@ -192,6 +208,15 @@ describe("firmapakker mod Stripes testmiljø", () => {
     expect(s.payment_method_collection).toBe("always");
     // Første betaling i dag er 0 kr. (gratis måned).
     expect(s.amount_total).toBe(0);
+    // Introrabatten (50 % i 6 betalte måneder efter den gratis måned) er på
+    // allerede i Checkout, så Stripe viser den rigtige pris bagefter. Kuponen
+    // tæller fra oprettelsen: 1 gratis + 6 betalte = 6 måneder
+    // (introKuponMaanederCheckout - abonnementet oprettes efter sessionen).
+    expect((s.discounts ?? []).map((d) => (typeof d.coupon === "string" ? d.coupon : d.coupon?.id))).toEqual([
+      "bidhamr_intro_50_6",
+    ]);
+    expect(s.metadata).toMatchObject({ intro_kupon: "bidhamr_intro_50_6" });
+    expect(s.metadata?.intro_noegle).toBeTruthy();
     await stripe.checkout.sessions.expire(s.id);
   });
 
@@ -343,5 +368,246 @@ describe("firmapakker mod Stripes testmiljø", () => {
     expect(await refunderRegningStripe(r!.id)).toMatchObject({ status: "afvist" });
     const { data: efter } = await db.from("firma_regninger").select("status").eq("id", r!.id).single();
     expect(efter!.status).toBe("krediteret");
+  }, 120_000);
+
+  it("8b. refusion af en regning med introrabat: refund_amount = det betalte; en refusion, databasen ikke fulgte, spejles", async () => {
+    const halv = Math.round(79_900 * 0.5 * 1.25);
+    const { data: r } = await db
+      .from("firma_regninger")
+      .select("id, stripe_invoice_id, beloeb_oere")
+      .eq("firma_id", FIRMA)
+      .eq("type", "abonnement")
+      .eq("status", "betalt")
+      .eq("beloeb_oere", halv)
+      .order("oprettet_kl", { ascending: true })
+      .limit(1)
+      .single();
+    const faktura = await stripe.invoices.retrieve(r!.stripe_invoice_id!);
+    expect(faktura.amount_paid).toBe(halv);
+    expect((faktura.total_discount_amounts ?? []).reduce((a, d) => a + d.amount, 0)).toBeGreaterThan(0);
+    const svar = await refunderRegningStripe(r!.id);
+    expect(svar).toMatchObject({ status: "ok", beloebOere: halv });
+    const noter = await stripe.creditNotes.list({ invoice: r!.stripe_invoice_id!, limit: 5 });
+    expect(noter.data).toHaveLength(1);
+    expect(noter.data[0].total).toBe(halv);
+    const refunderet = (noter.data[0].refunds ?? []).reduce((a, x) => a + x.amount_refunded, 0);
+    expect(refunderet).toBe(halv);
+    // Databasen "nåede ikke at følge med" (fx fejl lige efter Stripe-kaldet):
+    // næste forsøg spejler kreditnotaen i stedet for at sidde fast.
+    await db.from("firma_regninger").update({ status: "betalt" }).eq("id", r!.id);
+    expect(await refunderRegningStripe(r!.id)).toMatchObject({ status: "ok", beloebOere: halv });
+    expect((await stripe.creditNotes.list({ invoice: r!.stripe_invoice_id!, limit: 5 })).data).toHaveLength(1);
+    const { data: efter } = await db.from("firma_regninger").select("status").eq("id", r!.id).single();
+    expect(efter!.status).toBe("krediteret");
+  }, 120_000);
+
+  it("9. prissynk efter flytningen: en gammel plan frigives i Stripe, før prisen skiftes", async () => {
+    // Firmaet planlægger en nedgradering (Pro -> Butik): Stripe-plan.
+    await db.from("firmaer").update({ pakkeskift_i_gang_kl: null, pakkeskift_laas: null }).eq("id", FIRMA);
+    const svar = await skiftPakkeForBruger(brugerId, BUTIK);
+    expect(svar).toMatchObject({ ok: true, kode: "nedgradering_planlagt" });
+    expect((await stripe.subscriptions.retrieve(subId)).schedule).toBeTruthy();
+    // Som migrationen 20261102010000: skiftet annulleres i DATABASEN, og
+    // prisen skal synkes - men planen ligger stadig i Stripe.
+    await db.from("firma_pakkeskift").update({ status: "annulleret" }).eq("firma_id", FIRMA).eq("status", "planlagt");
+    await db
+      .from("firmaer")
+      .update({ naeste_pakke_id: null, naeste_pakke_fra: null, stripe_pris_synk: true, stripe_synk_forsoegt_kl: null })
+      .eq("id", FIRMA);
+    const ud = await koerAbonnementSynk();
+    expect(ud.priser).toBeGreaterThanOrEqual(1);
+    const s = await stripe.subscriptions.retrieve(subId);
+    expect(s.schedule).toBeNull();
+    expect(s.items.data[0].price.metadata.pakke_id).toBe(PRO);
+    const f = await firma();
+    expect(f.stripe_pris_synk).toBe(false);
+    expect(f.pakke_id).toBe(PRO);
+  }, 180_000);
+});
+
+// =============================================================================
+// Anden del: eget test clock (20261102020000)
+// =============================================================================
+describe("firmapakker-rettelser mod Stripes testmiljø", () => {
+  const SAERCVR = String(90_000_000 + Math.floor(Math.random() * 9_999_999));
+  let gammeltCvr = "";
+  let rabatSlut = 0;
+
+  beforeAll(async () => {
+    // Første del er færdig: dens abonnement og test clock ryddes.
+    if (subId) await stripe.subscriptions.cancel(subId).catch(() => {});
+    if (ur) await stripe.testHelpers.testClocks.del(ur.id).catch(() => {});
+    const f = await firma();
+    gammeltCvr = String(f.cvr);
+    // Firmaet har haft en gratis periode før (fx stoppet af Stripe pga.
+    // manglende betaling) og venter nu på at betale igen - på Butik, med en
+    // introrabat på 50 % i 3 måneder fra nu.
+    const { error } = await db
+      .from("firmaer")
+      .update({
+        stripe_subscription_id: null,
+        stripe_customer_id: null,
+        stripe_abonnement_status: null,
+        abonnement_status: "afventer_betaling",
+        pauset_aarsag: null,
+        opsiges_fra: null,
+        periode_slut: null,
+        betalt_til: null,
+        proeve_maaneder: 1,
+        proeve_slut: null,
+        proeve_givet_kl: new Date(Date.now() - 90 * 86400_000).toISOString(),
+        proeve_ekstra_ventende: 0,
+        proeve_ekstra_sub: null,
+        saerpris_oere: null,
+        saerpris_pakke_id: null,
+        saerpris_aftale: null,
+        pakke_id: BUTIK,
+        naeste_pakke_id: null,
+        naeste_pakke_fra: null,
+        pakkeskift_i_gang_kl: null,
+        pakkeskift_laas: null,
+        stripe_pris_synk: false,
+      })
+      .eq("id", FIRMA);
+    if (error) throw new Error(error.message);
+    await db.from("firma_regninger").update({ status: "annulleret" }).eq("firma_id", FIRMA).eq("status", "betalt");
+    await db.from("firma_pakkeskift").update({ status: "annulleret" }).eq("firma_id", FIRMA).in("status", ["afventer_betaling", "planlagt"]);
+    expect(
+      await rpc("erhverv_firma_intro_gem", {
+        p_staff: SAELGERROLLE,
+        p_firma: FIRMA,
+        p_procent: 50,
+        p_maaneder: 3,
+        p_fra: "straks",
+        p_begrundelse: "Stripe-test: introrabat før nedgradering",
+      }),
+    ).toMatchObject({ kode: "ok" });
+
+    t0 = Math.floor(Date.now() / 1000);
+    ur = await stripe.testHelpers.testClocks.create({ frozen_time: t0, name: "BidHamr firmapakker-rettelser" });
+    const k = await stripe.customers.create({
+      name: String(f.firmanavn),
+      email: "firmapakker@test.bidhamr.dk",
+      test_clock: ur.id,
+      preferred_locales: ["da"],
+      metadata: { firma_id: FIRMA, test: "firmapakker-rettelser" },
+    });
+    kunde = k.id;
+    subId = "";
+    await db.from("firmaer").update({ stripe_customer_id: kunde }).eq("id", FIRMA);
+    const pm = await stripe.paymentMethods.attach("pm_card_visa", { customer: kunde });
+    await stripe.customers.update(kunde, { invoice_settings: { default_payment_method: pm.id } });
+  }, 120_000);
+
+  afterAll(async () => {
+    // CVR'et tilbage (hvis testen 12 stoppede halvvejs).
+    if (gammeltCvr) await db.from("firmaer").update({ cvr: gammeltCvr }).eq("id", FIRMA);
+    await db.from("firmaer").update({ proeve_ekstra_ventende: 0, proeve_ekstra_sub: null }).eq("id", FIRMA);
+  }, 60_000);
+
+  it("10a. gratis måneder til et firma, der har haft en gratis periode: venter til Checkout; dobbeltklik afvises", async () => {
+    const klik = randomUUID();
+    const args = {
+      p_staff: SAELGERROLLE,
+      p_firma: FIRMA,
+      p_maaneder: 2,
+      p_begrundelse: "Stripe-test: 2 gratis måneder igen",
+      p_stripe: false,
+      p_proeve_slut: null,
+      p_klik: klik,
+    };
+    expect(await rpc("erhverv_firma_gratis_gem", args)).toMatchObject({ kode: "ok", hvor: "ventende", gratis_maaneder_ved_start: 2 });
+    expect(await rpc("erhverv_firma_gratis_gem", args)).toMatchObject({ kode: "allerede_udfoert" });
+    expect((await firma()).proeve_ekstra_ventende).toBe(2);
+    expect(await rpc("erhverv_staff_klik_brugt", { p_klik: klik })).toBe(true);
+
+    // Checkout: 2 gratis måneder (ingen velkomstperiode - den er brugt).
+    expect(await startBetaling(brugerId, "https://test.bidhamr.dk")).toMatchObject({ ok: true });
+    const sessioner = await stripe.checkout.sessions.list({ customer: kunde, status: "open", limit: 5 });
+    expect(sessioner.data).toHaveLength(1);
+    const s = sessioner.data[0];
+    expect(s.metadata).toMatchObject({ firma_id: FIRMA, pakke_id: BUTIK, gratis_maaneder: "2", gratis_ekstra: "2" });
+    expect(s.amount_total).toBe(0);
+    await stripe.checkout.sessions.expire(s.id);
+  });
+
+  it("10b. abonnementet starter med de ventende måneder: de trækkes fra (én gang)", async () => {
+    // Som Checkout: trial_end + metadata gratis_ekstra (her 1 dag, så
+    // nedgraderingen herunder kan testes på et betalt abonnement).
+    const sub = await stripe.subscriptions.create({
+      customer: kunde,
+      items: [{ price: await firmaPris({ id: FIRMA, saerpris_oere: null, saerpris_pakke_id: null }, BUTIK), quantity: 1 }],
+      default_tax_rates: [await sikrMomssats()],
+      trial_end: t0 + 86_400,
+      metadata: { firma_id: FIRMA, pakke_id: BUTIK, gratis_ekstra: "2" },
+    });
+    subId = sub.id;
+    await spol(t0 + 3600);
+    await spejlAlt();
+    await spejlAlt();
+    const f = await firma();
+    expect(f).toMatchObject({ abonnement_status: "aktiv", proeve_ekstra_ventende: 0, proeve_ekstra_sub: subId, intro_status: "aktiv" });
+    const s = await stripe.subscriptions.retrieve(subId, { expand: ["discounts"] });
+    const d = s.discounts[0] as Stripe.Discount;
+    expect(d.end).toBeTruthy();
+    rabatSlut = d.end!;
+  }, 120_000);
+
+  it("11a. nedgradering Butik -> Start: introrabatten ligger i begge faser af planen", async () => {
+    // Den gratis dag er slut: første betaling (Butik med 50 %).
+    await spol(t0 + 86_400 + 3600);
+    await spejlAlt();
+    expect((await firma()).abonnement_status).toBe("aktiv");
+    await db.from("firmaer").update({ pakkeskift_i_gang_kl: null, pakkeskift_laas: null }).eq("id", FIRMA);
+    const svar = await skiftPakkeForBruger(brugerId, START);
+    expect(svar).toMatchObject({ ok: true, kode: "nedgradering_planlagt" });
+    const s = await stripe.subscriptions.retrieve(subId, { expand: ["discounts"] });
+    const rabat = (s.discounts[0] as Stripe.Discount).id;
+    const plan = await stripe.subscriptionSchedules.retrieve(String(typeof s.schedule === "string" ? s.schedule : s.schedule?.id));
+    expect(plan.phases).toHaveLength(2);
+    for (const fase of plan.phases) {
+      expect(fase.discounts.map((x) => (typeof x.discount === "string" ? x.discount : x.discount?.id))).toContain(rabat);
+    }
+  }, 120_000);
+
+  it("11b. fakturaerne efter nedgraderingen: Start med 50 % til introrabattens slutdato, derefter fuld pris", async () => {
+    const forsteBetalt = t0 + 86_400;
+    for (const m of [2, 4]) await spol(plusMaaneder(forsteBetalt, m) + 3600);
+    await spejlAlt();
+    const cyklus = (await fakturaer()).filter((x) => x.billing_reason === "subscription_cycle");
+    // Første cyklus-faktura er Butik (ved trial_end); resten er Start.
+    const startFakturaer = cyklus.filter((x) => x.created > forsteBetalt + 7200);
+    expect(startFakturaer.length).toBeGreaterThanOrEqual(3);
+    const halv = Math.round(49_900 * 0.5 * 1.25);
+    const fuld = Math.round(49_900 * 1.25);
+    for (const x of startFakturaer) {
+      expect(x.status).toBe("paid");
+      expect(x.total).toBe(x.created < rabatSlut ? halv : fuld);
+    }
+    // Rabatten gjaldt på Start (mindst én), og den sluttede (mindst én fuld).
+    expect(startFakturaer.filter((x) => x.total === halv).length).toBeGreaterThanOrEqual(1);
+    expect(startFakturaer.filter((x) => x.total === fuld).length).toBeGreaterThanOrEqual(1);
+    const f = await firma();
+    expect(f.pakke_id).toBe(START);
+  }, 600_000);
+
+  it("12. firmaoplysninger til Stripe-kunden: adresse og CVR (momsnummeret byttes ud)", async () => {
+    await db.from("firmaer").update({ cvr: SAERCVR, adresse: "Testvej 12" }).eq("id", FIRMA);
+    const f = await firma();
+    expect(Number(f.stripe_kunde_version)).toBeGreaterThan(Number(f.stripe_kunde_synket_version));
+    expect(await synkKundeStripe(FIRMA, Number(f.stripe_kunde_version))).toBe("ok");
+    const k = (await stripe.customers.retrieve(kunde)) as Stripe.Customer;
+    expect(k.address?.line1).toBe("Testvej 12");
+    expect(k.metadata.cvr).toBe(SAERCVR);
+    const moms = (await stripe.customers.listTaxIds(kunde, { limit: 10 })).data.filter((t) => t.type === "eu_vat");
+    expect(moms.map((t) => t.value)).toEqual([`DK${SAERCVR}`]);
+    expect((await firma()).stripe_kunde_synket_version).toBe(f.stripe_kunde_version);
+
+    // CVR tilbage: det gamle momsnummer erstatter det nye.
+    await db.from("firmaer").update({ cvr: gammeltCvr }).eq("id", FIRMA);
+    const igen = await firma();
+    expect(await synkKundeStripe(FIRMA, Number(igen.stripe_kunde_version))).toBe("ok");
+    const moms2 = (await stripe.customers.listTaxIds(kunde, { limit: 10 })).data.filter((t) => t.type === "eu_vat");
+    expect(moms2.map((t) => t.value)).toEqual([`DK${gammeltCvr}`]);
   }, 120_000);
 });

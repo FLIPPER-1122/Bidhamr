@@ -39,6 +39,9 @@ På det **eksisterende** endpoint `https://bidhamr.dk/api/webhooks/stripe` (samm
 - `invoice.payment_failed`
 - `invoice.voided` – regningen → "annulleret"; en ventende opgradering på fakturaen annulleres
 - `invoice.marked_uncollectible` – regningen → "mislykket"
+- `customer.updated` – kortet kan være skiftet i kundeportalen: mærke, sidste 4 cifre og udløb spejles
+- `payment_method.attached` – nyt kort på kunden: spejles
+- `payment_method.automatically_updated` – banken har opdateret kortet: spejles
 
 ## Nye pakker (26. okt. 2026, migration `20261102010000_firmapakker.sql`)
 - **Pakker:** Start 499 kr. (10 auktioner/md), Butik 999 kr. (30/md, 5 fremhævninger, Ugens butik 50 % x 3), Pro 1.999 kr. (ubegrænset, 20 fremhævninger, Ugens butik 50 % x 5). Basis/Plus/Pro/Max er arkiveret ("<navn> (gammel)"); firmaer med abonnement får prisen skiftet i Stripe af betalings-cron'en (`koerAbonnementSynk`, fra næste betaling, ingen proration).
@@ -80,3 +83,12 @@ På det **eksisterende** endpoint `https://bidhamr.dk/api/webhooks/stripe` (samm
 5. **Dobbelt abonnement** (to Checkout-betalinger på samme tid): det nye abonnement stoppes automatisk + drift-alarm; betalingen skal refunderes manuelt.
 6. **Live-skift (fase 6):** fjern test-nøgle-tjekket i `betaling.ts` (`stripe()`), og tjek at priser/Tax Rate/portal oprettes i live.
 7. Kunden har ikke selv adgang til at ændre navn/adresse i portalen; ændres firmaoplysninger i admin, opdateres Stripe-kunden ikke automatisk endnu.
+
+## Rettelser efter review (27. okt. 2026, migration `20261102020000_firmapakker_rettelser.sql`)
+- **Introrabat i Checkout:** en aftalt introrabat sættes på allerede i Checkout-sessionen (`discounts: [{ coupon }]`), så Stripe viser prisen med rabat efter den gratis periode. Kuponens varighed regnes fra abonnementets oprettelse (`introKuponMaanederCheckout`: gratis måneder + N - 1). Aftalens nøgle står i abonnementets metadata (`intro_noegle`, `intro_kupon`), så webhooken kun spejler rabatten og ikke sætter en ny på.
+- **Nedgradering beholder introrabatten:** Subscription Schedule-faserne får abonnementets rabatter med (`phases[].discounts: [{ discount }]` - genbruger den eksisterende rabat, samme slutdato). Uden dem arver en fase kun kundens rabatter. Testet med test clock.
+- **Gratis måneder uden abonnement:** et firma, der har haft en gratis periode før, får staff-givne måneder oven i næste Checkout (`firmaer.proeve_ekstra_ventende`, metadata `gratis_ekstra`). Kan firmaet ikke starte et abonnement (fx opsagt), afvises handlingen, og der sendes ingen mail.
+- **Dobbeltklik:** staff-hurtighandlingerne tager et valgfrit `klikId` (UUID fra formularen). Det er idempotency key i Stripe og unik nøgle i `erhverv_staff_klik`.
+- **Prissynk efter flytningen:** cron'en frigiver en gammel plan og annullerer åbne opgraderingsfakturaer i Stripe, før prisen skiftes - kun når databasen ikke har et nyt ventende skift. Kandidaterne tages efter seneste forsøg (`stripe_synk_forsoegt_kl`).
+- **Refusion:** findes kreditnotaen allerede (`metadata.regning_id`), spejles den. `refund_amount` = Stripes forhåndsberegnede kreditnota (`creditNotes.preview`), så rabatter regnes rigtigt. Testet med en faktura med introrabat.
+- **Firmaoplysninger til Stripe:** ændres navn, CVR, adresse, telefon eller e-mail, opdaterer cron'en Stripe-kunden og bytter momsnummeret (`eu_vat` DK+CVR) ud (`synkKundeStripe`). En fejl i Stripe vælter aldrig databaseopdateringen.

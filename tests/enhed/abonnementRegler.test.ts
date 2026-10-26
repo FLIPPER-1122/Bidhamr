@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   gyldigBegrundelse,
   introKuponMaaneder,
+  introKuponMaanederCheckout,
   introResterende,
   nyGratisSlut,
   plusMaaneder,
@@ -99,6 +100,31 @@ describe("introrabat: præcis N betalte fakturaer efter den gratis måned", () =
     const k2 = introKuponMaaneder({ nuSek: senere, naesteFakturaSek: nyNaeste, maaneder: 4, fra: "efter_gratis" });
     expect(rabatFakturaer(senere, k2, nyNaeste)).toEqual([0, 1, 2, 3]);
     expect(introResterende({ naesteFakturaSek: trialEnd, rabatSlutSek: null })).toBe(0);
+  });
+});
+
+describe("introkupon allerede i Checkout", () => {
+  it("abonnementet oprettes op til 24 timer efter sessionen: stadig præcis N betalte fakturaer", () => {
+    for (const [nu, gratis, n] of [
+      ["2026-10-27T10:00:00Z", 1, 6],
+      ["2026-01-31T23:30:00Z", 1, 6],
+      ["2026-03-15T08:00:00Z", 3, 2],
+      ["2026-12-31T12:00:00Z", 2, 1],
+    ] as const) {
+      const nuSek = sek(nu);
+      const trialEnd = plusMaaneder(nuSek, gratis);
+      const k = introKuponMaanederCheckout({ nuSek, trialEndSek: trialEnd, maaneder: n, fra: "efter_gratis" });
+      for (const forsinkelse of [1, 3600, 86_399]) {
+        expect(rabatFakturaer(nuSek + forsinkelse, k, trialEnd)).toEqual(Array.from({ length: n }, (_, i) => i));
+      }
+    }
+  });
+
+  it("uden gratis periode og ved 'straks' tæller den fra oprettelsen", () => {
+    const nuSek = sek("2026-10-27T10:00:00Z");
+    expect(introKuponMaanederCheckout({ nuSek, trialEndSek: null, maaneder: 6, fra: "efter_gratis" })).toBe(6);
+    expect(introKuponMaanederCheckout({ nuSek, trialEndSek: plusMaaneder(nuSek, 1), maaneder: 6, fra: "straks" })).toBe(6);
+    expect(rabatFakturaer(nuSek + 60, 6, nuSek + 60)).toEqual([0, 1, 2, 3, 4, 5]);
   });
 });
 

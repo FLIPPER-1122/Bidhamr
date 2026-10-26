@@ -1173,7 +1173,11 @@ export const ADMIN_FIRMA_ABONNEMENT = {
         ? `Firmaet har fået ${maaneder === 1 ? "1 gratis måned" : `${maaneder} gratis måneder`}. Gratis til ${til}.`
         : `Firmaet har fået ${maaneder === 1 ? "1 gratis måned" : `${maaneder} gratis måneder`}. De gælder, når firmaet starter abonnementet.`,
     forLang: "Den gratis periode kan højst vare 2 år i alt.",
+    kanIkkeStarte:
+      "Firmaet har intet aktivt abonnement og kan ikke starte et nyt lige nu (fx fordi abonnementet er opsagt eller lige er stoppet i Stripe). De gratis måneder er ikke givet, og firmaet har ikke fået en mail.",
   },
+  // Samme formular er sendt to gange (dobbeltklik).
+  alleredeUdfoert: "Det er allerede gjort. Opdater siden for at se ændringen.",
   intro: {
     ugyldig: "Rabatten skal være 1-100 % i 1-24 måneder.",
     sat: (procent: number, maaneder: number, stripe: boolean) =>

@@ -57,6 +57,32 @@ export function introKuponMaaneder(input: {
   return m + maaneder - 1;
 }
 
+// Introkuponen sat på allerede i Stripe Checkout (så Checkout viser den
+// rigtige pris efter den gratis periode). Kuponens måneder tæller fra, når
+// ABONNEMENTET oprettes (når firmaet gennemfører Checkout) - det er efter
+// sessionen (nuSek) og højst ~24 timer senere (sessionens levetid), mens
+// trialEnd er låst i sessionen. Med m = det mindste antal måneder, så
+// nuSek + m >= trialEnd, dækker K = m + N - 1 præcis N betalte fakturaer
+// (trialEnd + 0..N-1 måneder), når abonnementet oprettes i (nuSek, nuSek + 1
+// måned). Uden gratis periode (første faktura ved oprettelsen) eller 'straks'
+// er K = N.
+export function introKuponMaanederCheckout(input: {
+  nuSek: number;
+  trialEndSek: number | null;
+  maaneder: number;
+  fra: IntroFra;
+}): number {
+  const { nuSek, trialEndSek, maaneder, fra } = input;
+  if (!Number.isInteger(maaneder) || maaneder < 1) throw new Error("Ugyldigt antal måneder");
+  if (fra === "straks" || trialEndSek == null || trialEndSek <= nuSek) return maaneder;
+  let m = 1;
+  while (plusMaaneder(nuSek, m) < trialEndSek) {
+    m++;
+    if (m > 400) throw new Error("Gratis periode for lang");
+  }
+  return m + maaneder - 1;
+}
+
 // Hvor mange BETALTE fakturaer har en kørende introrabat tilbage? Fakturaerne
 // kommer ved naesteFaktura + 0, 1, 2 ... måneder; kuponen gælder fakturaer før
 // dens slut (discount.end).

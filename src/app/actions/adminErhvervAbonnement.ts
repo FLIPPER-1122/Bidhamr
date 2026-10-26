@@ -12,6 +12,13 @@
 // (src/lib/erhverv/betaling.ts) - databasen spejler bagefter.
 //
 // Svar: { ok: true, besked } | { fejl } (som resten af adminErhverv).
+//
+// Dobbeltklik (20261102020000): hurtighandlingerne tager et valgfrit klikId
+// (UUID, som formularen danner, når den vises - fx crypto.randomUUID()). Det
+// bruges som idempotency key i Stripe og som unik nøgle i databasen
+// (erhverv_staff_klik), så samme klik aldrig giver dobbelt effekt, dobbelt
+// log eller dobbelt mail. Et brugt klikId afvises med T.alleredeUdfoert.
+// Uden klikId virker handlingerne som før.
 
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
@@ -61,6 +68,28 @@ async function koer(navn: string, fn: () => Promise<Svar>): Promise<Svar> {
 function tjekUuid(v: unknown): string {
   if (typeof v !== "string" || !UUID.test(v)) throw new BrugerFejl("Ugyldigt id.");
   return v;
+}
+
+// Valgfrit klik-id: et UUID eller null. Noget andet afvises.
+function tjekKlik(v: unknown): string | null {
+  if (v === undefined || v === null || v === "") return null;
+  if (typeof v !== "string" || !UUID.test(v)) throw new BrugerFejl("Ugyldigt klik-id. Opdater siden.");
+  return v.toLowerCase();
+}
+
+// Før Stripe kaldes: er klik-id'et allerede brugt (formularen er sendt før)?
+async function afvisBrugtKlik(admin: Admin, klik: string | null): Promise<void> {
+  if (!klik) return;
+  const { data, error } = await admin.rpc("erhverv_staff_klik_brugt", { p_klik: klik });
+  // PGRST202: migrationen 20261102020000 er ikke kørt - så ingen klik-tjek.
+  if (error && error.code !== "PGRST202") throw new Error(`erhverv_staff_klik_brugt: ${error.message}`);
+  if (data === true) throw new BrugerFejl(T.alleredeUdfoert);
+}
+
+// Klik-id'et sendes kun til databasen, når det findes (ellers kan en server
+// med ny kode kalde en database uden migrationen 20261102020000).
+function medKlik(args: Record<string, unknown>, klik: string | null): Record<string, unknown> {
+  return klik ? { ...args, p_klik: klik } : args;
 }
 
 function tjekBegrundelse(v: unknown): string {
@@ -120,6 +149,8 @@ const DB_FEJL: Record<string, string> = {
   pakke_skiftet: T.saerpris.pakkeSkiftet,
   for_lang: T.gratis.forLang,
   allerede: "Det er allerede gjort. Opdater siden.",
+  allerede_udfoert: T.alleredeUdfoert,
+  kan_ikke_starte: T.gratis.kanIkkeStarte,
 };
 
 async function rpc(admin: Admin, navn: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -160,33 +191,52 @@ function dato(iso: string | null | undefined): string | null {
 
 // +1-3 gratis måneder. Har firmaet et abonnement, forlænges den gratis periode
 // i Stripe (trial_end) - eller de gratis måneder lægges efter den betalte
-// periode. Ellers gælder de, når firmaet starter abonnementet.
-export async function givFirmaGratisPeriode(input: { firmaId: string; maaneder: number; begrundelse: string }): Promise<Svar> {
+// periode. Ellers gælder de, når firmaet starter abonnementet i Checkout:
+// velkomstperioden for et nyt firma, ellers oven i (proeve_ekstra_ventende -
+// også for et firma, hvis abonnement Stripe stoppede pga. manglende betaling).
+// Kan firmaet ikke starte et abonnement (fx opsagt), afviser databasen
+// ('kan_ikke_starte'): intet gives, og der sendes ingen mail.
+export async function givFirmaGratisPeriode(input: {
+  firmaId: string;
+  maaneder: number;
+  begrundelse: string;
+  klikId?: string | null;
+}): Promise<Svar> {
   return koer("givFirmaGratisPeriode", async () => {
     const { admin, userId } = await adgang();
     const firmaId = tjekUuid(input?.firmaId);
     const maaneder = input.maaneder;
     if (!Number.isInteger(maaneder) || maaneder < 1 || maaneder > GRATIS_MAANEDER_MAKS) throw new BrugerFejl(T.gratis.ugyldig);
     const begrundelse = tjekBegrundelse(input.begrundelse);
+    const klik = tjekKlik(input.klikId);
     const f = await hentFirma(admin, firmaId);
+    await afvisBrugtKlik(admin, klik);
 
-    const stripeSvar = await givGratisPeriodeStripe(firmaId, maaneder);
+    const stripeSvar = await givGratisPeriodeStripe(firmaId, maaneder, klik);
     if (stripeSvar.status !== "ok" && stripeSvar.status !== "ingen_stripe") stripeAfvist(stripeSvar);
     const iStripe = stripeSvar.status === "ok";
     const til = iStripe ? (stripeSvar.proeveSlut ?? null) : null;
     try {
-      await rpc(admin, "erhverv_firma_gratis_gem", {
-        p_staff: userId,
-        p_firma: firmaId,
-        p_maaneder: maaneder,
-        p_begrundelse: begrundelse,
-        p_stripe: iStripe,
-        p_proeve_slut: til,
-      });
+      await rpc(
+        admin,
+        "erhverv_firma_gratis_gem",
+        medKlik(
+          {
+            p_staff: userId,
+            p_firma: firmaId,
+            p_maaneder: maaneder,
+            p_begrundelse: begrundelse,
+            p_stripe: iStripe,
+            p_proeve_slut: til,
+          },
+          klik,
+        ),
+      );
     } catch (err) {
       // Stripe ER ændret: spejlet fanges af webhooken (customer.subscription.updated);
-      // loggen mangler - alarm, så det kan skrives på.
-      if (iStripe) {
+      // loggen mangler - alarm, så det kan skrives på. (Ikke ved et
+      // dobbeltklik - så er det første klik logget.)
+      if (iStripe && !(err instanceof BrugerFejl && err.message === T.alleredeUdfoert)) {
         await logDriftFejl({
           kilde: "action",
           hvor: "adminErhvervAbonnement.gratis-log",
@@ -216,6 +266,7 @@ export async function saetFirmaIntrorabat(input: {
   maaneder: number;
   fra?: IntroFra;
   begrundelse: string;
+  klikId?: string | null;
 }): Promise<Svar> {
   return koer("saetFirmaIntrorabat", async () => {
     const { admin, userId } = await adgang();
@@ -229,19 +280,27 @@ export async function saetFirmaIntrorabat(input: {
       throw new BrugerFejl(T.intro.ugyldig);
     }
     const begrundelse = tjekBegrundelse(input.begrundelse);
+    const klik = tjekKlik(input.klikId);
     const f = await hentFirma(admin, firmaId);
 
     // Aftalen gemmes ('planlagt'), og Stripe-delen sætter kuponen på. Fejler
     // Stripe, prøver betalings-cron'en igen (koerAbonnementSynk) - aftalen
-    // går ikke tabt.
-    await rpc(admin, "erhverv_firma_intro_gem", {
-      p_staff: userId,
-      p_firma: firmaId,
-      p_procent: procent,
-      p_maaneder: maaneder,
-      p_fra: fra,
-      p_begrundelse: begrundelse,
-    });
+    // går ikke tabt. Et brugt klik-id afvises af databasen, FØR Stripe kaldes.
+    await rpc(
+      admin,
+      "erhverv_firma_intro_gem",
+      medKlik(
+        {
+          p_staff: userId,
+          p_firma: firmaId,
+          p_procent: procent,
+          p_maaneder: maaneder,
+          p_fra: fra,
+          p_begrundelse: begrundelse,
+        },
+        klik,
+      ),
+    );
     const stripeSvar = await introTilStripe(firmaId);
     let besked: string;
     if (stripeSvar.status === "ok") besked = T.intro.sat(procent, maaneder, true);
@@ -262,23 +321,36 @@ export async function saetFirmaIntrorabat(input: {
   });
 }
 
-export async function fjernFirmaIntrorabat(input: { firmaId: string; begrundelse: string }): Promise<Svar> {
+export async function fjernFirmaIntrorabat(input: {
+  firmaId: string;
+  begrundelse: string;
+  klikId?: string | null;
+}): Promise<Svar> {
   return koer("fjernFirmaIntrorabat", async () => {
     const { admin, userId } = await adgang();
     const firmaId = tjekUuid(input?.firmaId);
     const begrundelse = tjekBegrundelse(input.begrundelse);
+    const klik = tjekKlik(input.klikId);
     const f = await hentFirma(admin, firmaId);
     if (f.intro_procent == null) throw new BrugerFejl(T.intro.ingen);
-    const stripeSvar = await fjernIntroStripe(firmaId);
+    await afvisBrugtKlik(admin, klik);
+    const stripeSvar = await fjernIntroStripe(firmaId, klik);
     if (stripeSvar.status !== "ok" && stripeSvar.status !== "ingen_stripe") stripeAfvist(stripeSvar);
-    await rpc(admin, "erhverv_firma_intro_gem", {
-      p_staff: userId,
-      p_firma: firmaId,
-      p_procent: null,
-      p_maaneder: null,
-      p_fra: null,
-      p_begrundelse: begrundelse,
-    });
+    await rpc(
+      admin,
+      "erhverv_firma_intro_gem",
+      medKlik(
+        {
+          p_staff: userId,
+          p_firma: firmaId,
+          p_procent: null,
+          p_maaneder: null,
+          p_fra: null,
+          p_begrundelse: begrundelse,
+        },
+        klik,
+      ),
+    );
     const sendt = await sendMail(
       f,
       { emne: M.intro.fjernetEmne, overskrift: M.intro.fjernetOverskrift, afsnit: M.intro.fjernetTekst(f.firmanavn) },
@@ -300,6 +372,7 @@ export async function saetFirmaSaerpris(input: {
   maanedsprisEksklMoms: number | null;
   fra?: "naeste_betaling" | "straks";
   aftale: string;
+  klikId?: string | null;
 }): Promise<Svar> {
   return koer("saetFirmaSaerpris", async () => {
     const { admin, userId } = await adgang();
@@ -308,10 +381,12 @@ export async function saetFirmaSaerpris(input: {
     if (pris !== null && (!Number.isInteger(pris) || pris < 1 || pris > 1_000_000)) throw new BrugerFejl(T.saerpris.ugyldig);
     const fra = input.fra === "straks" ? "straks" : "naeste_betaling";
     const aftale = tjekBegrundelse(input.aftale);
+    const klik = tjekKlik(input.klikId);
     const f = await hentFirma(admin, firmaId);
     const oere = pris === null ? null : pris * 100;
+    await afvisBrugtKlik(admin, klik);
 
-    const stripeSvar = await saetSaerprisStripe(firmaId, f.pakke_id, oere, fra);
+    const stripeSvar = await saetSaerprisStripe(firmaId, f.pakke_id, oere, fra, klik);
     if (stripeSvar.status !== "ok" && stripeSvar.status !== "ingen_stripe") {
       if (stripeSvar.status === "fejl") {
         await logDriftFejl({ kilde: "action", hvor: "adminErhvervAbonnement.saerpris", fejl: `Firma ${firmaId}: ${stripeSvar.fejl}`, brugerId: userId });
@@ -320,16 +395,26 @@ export async function saetFirmaSaerpris(input: {
       stripeAfvist(stripeSvar);
     }
     try {
-      await rpc(admin, "erhverv_firma_saerpris_gem", {
-        p_staff: userId,
-        p_firma: firmaId,
-        p_oere: oere,
-        p_pakke: f.pakke_id,
-        p_aftale: aftale,
-        p_fra: fra,
-      });
+      await rpc(
+        admin,
+        "erhverv_firma_saerpris_gem",
+        medKlik(
+          {
+            p_staff: userId,
+            p_firma: firmaId,
+            p_oere: oere,
+            p_pakke: f.pakke_id,
+            p_aftale: aftale,
+            p_fra: fra,
+          },
+          klik,
+        ),
+      );
     } catch (err) {
-      if (stripeSvar.status === "ok") await saetSaerprisTilbage(stripeSvar, firmaId);
+      // Dobbeltklik: det første klik har sat (og gemt) præcis samme pris -
+      // den må ikke sættes tilbage.
+      const dobbelt = err instanceof BrugerFejl && err.message === T.alleredeUdfoert;
+      if (stripeSvar.status === "ok" && !dobbelt) await saetSaerprisTilbage(stripeSvar, firmaId);
       throw err;
     } finally {
       if (stripeSvar.status === "ok") await frigivPakkeskiftLaas(firmaId, stripeSvar.laas);
@@ -360,11 +445,9 @@ export async function saetFirmaSaerpris(input: {
 
 // --- Ekstra auktioner og fremhævninger (indeværende måned) -------------------------
 
-async function givEkstra(
-  navn: string,
-  input: { firmaId: string; antal: number; begrundelse: string },
-  hvad: "auktioner" | "fremhaevninger",
-): Promise<Svar> {
+type EkstraInput = { firmaId: string; antal: number; begrundelse: string; klikId?: string | null };
+
+async function givEkstra(navn: string, input: EkstraInput, hvad: "auktioner" | "fremhaevninger"): Promise<Svar> {
   return koer(navn, async () => {
     const { admin, userId } = await adgang();
     const firmaId = tjekUuid(input?.firmaId);
@@ -372,13 +455,21 @@ async function givEkstra(
     const maks = hvad === "auktioner" ? 1000 : 100;
     if (!Number.isInteger(antal) || antal === 0 || Math.abs(antal) > maks) throw new BrugerFejl(T.ekstra.ugyldig);
     const begrundelse = tjekBegrundelse(input.begrundelse);
-    const svar = await rpc(admin, "erhverv_firma_ekstra_giv", {
-      p_staff: userId,
-      p_firma: firmaId,
-      p_auktioner: hvad === "auktioner" ? antal : 0,
-      p_fremhaevninger: hvad === "fremhaevninger" ? antal : 0,
-      p_begrundelse: begrundelse,
-    });
+    const klik = tjekKlik(input.klikId);
+    const svar = await rpc(
+      admin,
+      "erhverv_firma_ekstra_giv",
+      medKlik(
+        {
+          p_staff: userId,
+          p_firma: firmaId,
+          p_auktioner: hvad === "auktioner" ? antal : 0,
+          p_fremhaevninger: hvad === "fremhaevninger" ? antal : 0,
+          p_begrundelse: begrundelse,
+        },
+        klik,
+      ),
+    );
     revalidatePath("/admin/erhverv");
     const iAlt = Number(svar[hvad] ?? 0);
     return { ok: true, besked: hvad === "auktioner" ? T.ekstra.auktioner(iAlt) : T.ekstra.fremhaevninger(iAlt) };
@@ -386,11 +477,11 @@ async function givEkstra(
 }
 
 // antal: lægges til månedens ekstra (et negativt tal trækker fra, aldrig under 0).
-export async function givFirmaEkstraAuktioner(input: { firmaId: string; antal: number; begrundelse: string }): Promise<Svar> {
+export async function givFirmaEkstraAuktioner(input: EkstraInput): Promise<Svar> {
   return givEkstra("givFirmaEkstraAuktioner", input, "auktioner");
 }
 
-export async function givFirmaEkstraFremhaevninger(input: { firmaId: string; antal: number; begrundelse: string }): Promise<Svar> {
+export async function givFirmaEkstraFremhaevninger(input: EkstraInput): Promise<Svar> {
   return givEkstra("givFirmaEkstraFremhaevninger", input, "fremhaevninger");
 }
 
