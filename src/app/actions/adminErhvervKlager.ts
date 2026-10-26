@@ -6,6 +6,10 @@
 // handlet med firmaet eller er køberen) tjekkes i databasen. Alle ændringer
 // logges i moderation_log af databasen. Fejl RETURNERES som { fejl }.
 //
+// Købers e-mail i en klage vises for chef og saelger (Filip, 26. okt. 2026),
+// men ikke ved inhabilitet. Hver visning logges af databasen
+// (erhverv_klage_detalje, handling erhverv_klage_koeber_email_vist).
+//
 // Lukning af en firmakonto sker IKKE her: 3 advarsler giver et forslag under
 // Kontolukninger, som kun chefen og sælger-rollen kan godkende
 // (bruger_luk_konto_permanent svarer 'kun_erhverv' for firmakonti).

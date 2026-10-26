@@ -31,7 +31,8 @@ function Felt({ navn, children }: { navn: string; children: React.ReactNode }) {
 }
 
 // Admin → Erhverv → Klager → én klage. Kun chef og saelger. Købers e-mail
-// vises kun for chef (som firma_faktura_salg).
+// vises for chef og saelger (Filip, 26. okt. 2026), men ikke ved
+// inhabilitet; databasen logger hver visning (moderation_log).
 export default async function ErhvervKlageSide({ params }: { params: Promise<{ id: string }> }) {
   await kraevErhvervSide();
   const { id } = await params;
@@ -173,7 +174,6 @@ export default async function ErhvervKlageSide({ params }: { params: Promise<{ i
               </>
             )}
           </p>
-          {!d.er_chef && <p className="text-xs text-neutral-500">{A.koeberEmailKunChef}</p>}
         </section>
       </div>
 
