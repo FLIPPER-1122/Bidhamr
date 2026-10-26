@@ -388,7 +388,7 @@ Baggrund og research: `ERHVERV-OVERBLIK.md`. Lovspørgsmålene er sendt til advo
 - **"Ugens butik" – betalt forsideplads for firmaer (Filip, 26. okt. 2026):** ét firma ad gangen pr. uge (mandag–søndag, dansk tid) får det øverste felt på forsiden med **firmanavnet som overskrift** og sine aktive auktioner. Pris **500 kr. pr. uge + moms** (BidHamrs egen omsætning, faktura). Pladsen markeres tydeligt som betalt ("Annonce"/"Sponsoreret", markedsføringsloven). Har firmaet ingen aktive auktioner, vises feltet ikke.
   - **Regler for Ugens butik (Filip, 26. okt. 2026):**
     - Den **igangværende uge kan også købes**. Prisen er altid den samme, uanset hvornår i ugen man køber, og pladsen ophører ved starten af næste uge (mandag kl. 00, dansk tid).
-    - **Højst 4 uger i træk** pr. firma. Efter 4 uger i træk skal der gå **2 uger**, før firmaet kan få pladsen igen.
+    - **Højst 4 uger i træk** pr. firma. Efter 4 uger i træk skal der gå **2 uger**, før firmaet kan få pladsen igen. Det er det eneste loft (Filip bekræftet 26. okt. 2026): fx 3 uger + 1 uges pause + 3 uger er tilladt.
     - Bliver et firma suspenderet, sat på pause eller lukket med en betalt uge, **skjules pladsen, og der refunderes ikke automatisk**.
     - Refusion er **hel eller ingen** (ingen delvis refusion).
     - Sælger-rollen kan refundere Ugens butik ligesom chefen (se "Sælger-rollen kan lige så meget som chefen").
