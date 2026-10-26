@@ -124,7 +124,6 @@ export const KLAGE_ADMIN = {
   handel: "Handlen",
   firma: "Firmaet",
   koeber: "Køberen",
-  koeberEmailKunChef: "E-mail vises kun for chefen.",
   beskrivelse: "Køberens beskrivelse",
   billeder: "Køberens billeder",
   ingenBilleder: "Ingen billeder.",
