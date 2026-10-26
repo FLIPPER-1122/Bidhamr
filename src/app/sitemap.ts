@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { IKKE_KUNST_AFVENTER, manglerKunstSkema } from "@/lib/kunstSkema";
 import { kategorier } from "@/lib/kategorier";
-import { seoIndeksering, sideUrl, TEKSTSIDER } from "@/lib/seo";
+import { SEO_FOER_LANCERING, seoFoerLancering, seoIndeksering, sideUrl, TEKSTSIDER } from "@/lib/seo";
 
 // sitemap.xml: forside, alle auktioner, kategorier, aktive auktioner og
 // tekstsiderne. Tom, indtil SEO_INDEKSERING=true (se src/lib/seo.ts), så
@@ -12,6 +12,15 @@ const MAKS_AUKTIONER = 5000;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   await connection();
+  // Før lancering (kun produktion, src/lib/seo.ts): kun de få indekserbare sider.
+  if (seoFoerLancering()) {
+    const base = sideUrl();
+    return SEO_FOER_LANCERING.map((s) => ({
+      url: `${base}${s.sti}`,
+      changeFrequency: s.frekvens,
+      priority: s.prioritet,
+    }));
+  }
   if (!seoIndeksering()) return [];
 
   const base = sideUrl();

@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { visLukketUdgave } from "@/lib/lukketUdgave";
+import { linkTilladtILukketUdgave } from "@/lib/lukketUdgaveRegler";
 import Ikon, { type IkonNavn } from "@/components/Ikon";
 import { DSA_KONTAKT_EMAIL } from "@/lib/dsa/regler";
 import { FIRMA, FIRMA_ADRESSE } from "@/lib/firmaoplysninger";
+import { robotsFoerLancering } from "@/lib/seo";
 
 // Kontaktpunkt og forklaring efter EU's forordning om digitale tjenester
 // (DSA art. 11, 12, 16, 17 og 20). Teksten er foreslået af Claude og skal
@@ -13,6 +16,9 @@ export const metadata: Metadata = {
   title: "Ulovligt indhold og DSA",
   description:
     "Sådan anmelder du ulovligt indhold på BidHamr, sådan følger du din anmeldelse, og sådan klager du over en afgørelse.",
+  alternates: { canonical: "/dsa" },
+  // Før lancering må kontaktpunktet indekseres (src/lib/seo.ts).
+  ...robotsFoerLancering("/dsa"),
 };
 
 const h2 = "text-[20px] leading-tight font-semibold text-tekst sm:text-[22px]";
@@ -57,7 +63,10 @@ const HANDLINGER: Handling[] = [
   },
 ];
 
-export default function DsaSide() {
+export default async function DsaSide() {
+  // Før lancering (lukket udgave, src/lib/lukketUdgave.ts) sender Min konto og
+  // Forbudte varer til /coming-soon - de knapper og links vises ikke dér.
+  const lukket = await visLukketUdgave();
   return (
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
       <div className="max-w-3xl">
@@ -80,12 +89,14 @@ export default function DsaSide() {
               {h.titel}
             </h2>
             <p className="mt-1.5 flex-1 text-sm leading-relaxed text-tekst-daempet">{h.tekst}</p>
-            <Link
-              href={h.href}
-              className={`btn mt-4 w-full ${h.primaer ? "btn-primaer" : "btn-sekundaer"}`}
-            >
-              {h.knap}
-            </Link>
+            {(!lukket || linkTilladtILukketUdgave(h.href)) && (
+              <Link
+                href={h.href}
+                className={`btn mt-4 w-full ${h.primaer ? "btn-primaer" : "btn-sekundaer"}`}
+              >
+                {h.knap}
+              </Link>
+            )}
           </li>
         ))}
       </ul>
@@ -152,9 +163,13 @@ export default function DsaSide() {
               brugerbetingelserne
             </Link>{" "}
             og på listen over{" "}
-            <Link href="/forbudte-varer" className="font-semibold text-groen hover:underline">
-              forbudte varer
-            </Link>
+            {lukket ? (
+              "forbudte varer"
+            ) : (
+              <Link href="/forbudte-varer" className="font-semibold text-groen hover:underline">
+                forbudte varer
+              </Link>
+            )}
             . Sådan behandler vi oplysningerne i en anmeldelse:{" "}
             <Link href="/privatliv#afsnit-3" className="font-semibold text-groen hover:underline">
               privatlivspolitikken

@@ -3,12 +3,15 @@ import Link from "next/link";
 import ErhvervFormular from "@/components/erhverv/ErhvervFormular";
 import { ERHVERV_FORMULAR, ERHVERV_SIDE_EKSTRA } from "@/lib/tekster/erhverv";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
+import { robotsFoerLancering } from "@/lib/seo";
 
 // Erhvervsformularen. Offentlig (også før lancering og uden login). Sendes
 // via /api/offentlig/erhverv-henvendelse -> sendErhvervHenvendelse.
 export const metadata: Metadata = {
   title: ERHVERV_SIDE_EKSTRA.formularMetaTitel,
   alternates: { canonical: "/erhverv/formular" },
+  // Formularen indekseres ikke (følg links dog) - /erhverv er siden i Google.
+  ...robotsFoerLancering(null),
 };
 
 export default function ErhvervFormularSide() {

@@ -5,15 +5,22 @@ import FavoritterProvider from "@/components/FavoritterProvider";
 import MitIDResultatBoks from "@/components/mitid/MitIDResultatBoks";
 import VilkaarVindue from "@/components/vilkaar/VilkaarVindue";
 import BetaFejlKnap from "@/components/betafejl/BetaFejlKnap";
+import LukketHeader from "@/components/lukket/LukketHeader";
+import LukketFooter from "@/components/lukket/LukketFooter";
+import { visLukketUdgave } from "@/lib/lukketUdgave";
 
-export default function AppLayout({
+export default async function AppLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Før lancering ser besøgende uden adgang til den lukkede app kun erhverv og
+  // de lovpligtige sider - i en minimal udgave uden menu og footer-links
+  // (src/lib/lukketUdgave.ts). Efter lancering returnerer den straks false.
+  const lukket = await visLukketUdgave();
   return (
     <FavoritterProvider>
-      <Header />
+      {lukket ? <LukketHeader /> : <Header />}
       {/* Mål for "Spring til indhold" i topbaren. På mobil fylder indholdet
           mindst skærmhøjden, så footeren ikke hopper inde i billedet, når en
           side skifter fra indlæsning (skelet) til det rigtige indhold (CLS). */}
@@ -24,16 +31,18 @@ export default function AppLayout({
         </Suspense>
         {children}
       </div>
-      <Footer />
+      {lukket ? <LukketFooter className="mt-16" /> : <Footer />}
       {/* Blokerende vindue med brugerbetingelserne (kun logget ind, ikke
           accepteret den aktuelle version) - efter cookie-banneret. */}
       <Suspense fallback={null}>
         <VilkaarVindue />
       </Suspense>
       {/* "Meld fejl" til beta-testere og staff før lancering (ellers intet). */}
-      <Suspense fallback={null}>
-        <BetaFejlKnap />
-      </Suspense>
+      {!lukket && (
+        <Suspense fallback={null}>
+          <BetaFejlKnap />
+        </Suspense>
+      )}
     </FavoritterProvider>
   );
 }

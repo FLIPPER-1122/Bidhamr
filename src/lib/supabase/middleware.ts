@@ -63,8 +63,7 @@ import { toTrinMaksTimer } from "@/lib/staffToTrinRegler";
 // kun proxyen, hvis forespørgslen har en krop eller en Next-Action-header
 // (matcher i src/proxy.ts) - og så gælder gaten herunder.
 // /signup, /tjek-indbakke og /konto-slettet er offentlige, fordi man ikke er
-// logget ind dér. /cookies (cookiepolitikken) skal kunne læses af alle, også
-// før login, fordi cookie-banneret linker til den. /signup lukker selv, så længe tilmeldingen er lukket
+// logget ind dér. /signup lukker selv, så længe tilmeldingen er lukket
 // (src/lib/tilmelding.ts) - undtagen for inviterede, mens beta er åben (BETA).
 // /dsa (kontaktpunkt, anmeld ulovligt indhold, status og klage) og /api/dsa
 // (appens anmeldelse) skal kunne nås af alle, også før lancering og uden login
@@ -74,11 +73,14 @@ import { toTrinMaksTimer } from "@/lib/staffToTrinRegler";
 // DSA-anmeldelse og -klage) - se src/app/api/offentlig/[handling]/route.ts.
 // /erhverv (info-siden og /erhverv/formular) skal virke før lancering, så
 // firmaer kan skrive til os. Formularen sendes via /api/offentlig.
+// Før lancering må besøgende KUN se coming soon, erhverv og de lovpligtige
+// sider (Filip, 26. okt. 2026) - /bidhamr-beskyttelse og /cookies er derfor
+// ikke længere offentlige før lancering (se SIDER_MED_ADGANG_FOER_LANCERING
+// og AABNE_SIDER_EFTER_LANCERING). Cookie-banneret, der linkede til /cookies,
+// vises ikke før lancering for dem (src/lib/lukketUdgave.ts).
 const OFFENTLIGE_RUTER = [
   "/erhverv",
   "/coming-soon",
-  "/bidhamr-beskyttelse",
-  "/cookies",
   "/login",
   "/signup",
   "/tjek-indbakke",
@@ -135,6 +137,8 @@ const OFFENTLIGE_LAESESIDER = ["/betingelser", "/privatliv", "/bekraeft"];
 // besøgende uden login kun /coming-soon og de offentlige ruter ovenfor.
 const AABNE_SIDER_EFTER_LANCERING = [
   "/auktioner",
+  "/bidhamr-beskyttelse",
+  "/cookies",
   "/saadan-virker-det",
   "/faq",
   "/pakkeguide",
@@ -150,6 +154,18 @@ const AABNE_MOENSTRE_EFTER_LANCERING = [
   new RegExp(`^/profil/[0-9a-fA-F-]{36}/?$`),
   /^\/erhvervssaelger\/[^/]+\/?$/,
 ];
+
+// Før lancering må firmakonti stadig læse disse to sider (som før de blev
+// fjernet fra OFFENTLIGE_RUTER); staff og beta-testere kommer alligevel ind.
+const SIDER_MED_ADGANG_FOER_LANCERING = ["/bidhamr-beskyttelse", "/cookies"];
+
+function erSideMedAdgangFoerLancering(pathname: string) {
+  return SIDER_MED_ADGANG_FOER_LANCERING.some((rute) => pathname === rute || pathname === `${rute}/`);
+}
+
+function erForside(pathname: string) {
+  return pathname === "/";
+}
 
 function erAabenEfterLancering(pathname: string) {
   if (pathname === "/") return true;
@@ -434,6 +450,18 @@ export async function updateSession(
   };
   let supabaseResponse = naeste();
 
+  // Før lancering vises coming soon DIREKTE på forsiden "/" (rewrite, ikke
+  // redirect), så Google indekserer bidhamr.dk/ (Filip, 26. okt. 2026).
+  // Session-cookies (evt. fornyet) følger med.
+  const comingSoonPaaForside = () => {
+    const headers = new Headers(request.headers);
+    for (const [k, v] of Object.entries(ekstraHeadere)) headers.set(k, v);
+    const res = NextResponse.rewrite(new URL("/coming-soon", request.url), { request: { headers } });
+    for (const c of supabaseResponse.cookies.getAll()) res.cookies.set(c);
+    return res;
+  };
+  const erLaesning = request.method === "GET" || request.method === "HEAD";
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     offentligNoegle(),
@@ -506,6 +534,7 @@ export async function updateSession(
       }
       return new NextResponse("Log ind først", { status: 401 });
     }
+    if (erForside(pathname) && erLaesning) return comingSoonPaaForside();
     return NextResponse.redirect(new URL("/coming-soon", request.url));
   }
 
@@ -550,7 +579,9 @@ export async function updateSession(
       const laesning = request.method === "GET" || request.method === "HEAD";
       if (erDataEksport(pathname, request.method)) return medCookie(supabaseResponse);
       if (!laesning) return new NextResponse("Ingen adgang", { status: 403 });
-      if (erFirmaSti(pathname) || erStatiskFil(pathname, request.method)) return medCookie(supabaseResponse);
+      if (erFirmaSti(pathname) || erStatiskFil(pathname, request.method) || erSideMedAdgangFoerLancering(pathname)) {
+        return medCookie(supabaseResponse);
+      }
       return medCookie(NextResponse.redirect(firmaRedirectUrl(request, firmaOmdirigering(pathname, session.brugerId) ?? "/firma")));
     }
     // Beta-tester: hele den private del af siden, men aldrig admin.
@@ -563,6 +594,7 @@ export async function updateSession(
       }
       return medCookie(supabaseResponse);
     }
+    if (erForside(pathname) && erLaesning) return medCookie(comingSoonPaaForside());
     return medCookie(NextResponse.redirect(new URL("/coming-soon", request.url)));
   }
 
@@ -580,7 +612,7 @@ export async function updateSession(
     rolle === "saelger" &&
     pathname !== "/admin/erhverv" &&
     !pathname.startsWith("/admin/erhverv/") &&
-    (erAdminSti || (lukket && !erStatiskFil(pathname, request.method)));
+    (erAdminSti || (lukket && !erStatiskFil(pathname, request.method) && !erSideMedAdgangFoerLancering(pathname)));
   if (saelgerUdenforErhverv) {
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new NextResponse("Ingen adgang", { status: 403 });

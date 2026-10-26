@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ERHVERV_SIDE, ERHVERV_SIDE_EKSTRA } from "@/lib/tekster/erhverv";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
 import { E_KNAP_PRIMAER } from "@/components/erhverv/stil";
+import { delingMetadata, robotsFoerLancering } from "@/lib/seo";
 
 // Siden "Erhverv" (ROADMAP fase 7). Offentlig - også før lancering og uden
 // login (OFFENTLIGE_RUTER i src/lib/supabase/middleware.ts). Ingen priser her.
@@ -12,6 +13,9 @@ export const metadata: Metadata = {
   title: ERHVERV_SIDE.titel,
   description: ERHVERV_SIDE.metabeskrivelse,
   alternates: { canonical: "/erhverv" },
+  ...delingMetadata("/erhverv", `${ERHVERV_SIDE.titel} | BidHamr Erhverv`, ERHVERV_SIDE.metabeskrivelse),
+  // Før lancering en af de få sider, Google må indeksere (src/lib/seo.ts).
+  ...robotsFoerLancering("/erhverv"),
 };
 
 function FormularKnap() {

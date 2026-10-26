@@ -1,7 +1,7 @@
 # Huskeliste til Filip
 
 ## Lancering – slå den rigtige forside til
-I dag viser bidhamr.dk `/coming-soon` for alle uden staff-rolle. Den rigtige forside og resten af siden åbnes med **én kontakt**:
+I dag viser bidhamr.dk coming soon direkte på forsiden `/` for alle uden adgang (staff, beta-testere og firmakonti ser siden som før). Besøgende kan kun se coming soon, `/erhverv` (+ formularen) og `/privatliv`, `/betingelser` og `/dsa` – i en minimal udgave uden menu og uden cookie-banner. Google må allerede nu indeksere netop de sider (kun i Vercels *Production* mod produktionsdatabasen – ingen variabel at sætte; se `src/lib/seo.ts`). Den rigtige forside og resten af siden åbnes med **én kontakt**:
 - **Vercel → Project → Settings → Environment Variables → `LANCERET` = `1`** (kun miljøet *Production*), og **deploy igen** (Deployments → Redeploy). Variablen virker først efter en ny deploy.
 - Hvad sker der: besøgende uden login ser forsiden, søgning, auktioner, offentlige profiler og tekstsiderne. Alt andet (Min konto, Mine handler, Opret auktion, beskeder ...) sender til login. Indloggede brugere kommer ind overalt, firmakonti får hele siden, og `/coming-soon` sender videre til forsiden. Admin er stadig kun for staff.
 - Fail closed: alt andet end præcis `1` (eller `true`) holder siden lukket. Fortryder du, så slet variablen og deploy igen.

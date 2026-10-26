@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import JuraSide from "@/components/jura/JuraSide";
 import { hentBrugerbetingelser } from "@/lib/jura/juraDokument";
-import { seoIndeksering } from "@/lib/seo";
+import { robotsFoerLancering } from "@/lib/seo";
 import { PRIVATLIV_STI } from "@/lib/vilkaar";
 
 // Brugerbetingelser (jura/brugerbetingelser-udkast.md). Offentlig side
@@ -11,7 +11,8 @@ export const metadata: Metadata = {
   title: "Brugerbetingelser",
   description:
     "BidHamrs brugerbetingelser og handelsbetingelser: auktioner, bud, gebyrer, betaling, forsendelse, sager og BidHamr Beskyttelse.",
-  ...(seoIndeksering() ? {} : { robots: { index: false, follow: false } }),
+  ...robotsFoerLancering("/betingelser"),
+  alternates: { canonical: "/betingelser" },
 };
 
 export default function BetingelserSide() {
