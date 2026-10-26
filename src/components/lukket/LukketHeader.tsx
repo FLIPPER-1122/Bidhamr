@@ -8,7 +8,7 @@ export default function LukketHeader() {
     <header className="border-b border-kant bg-white">
       <div className="mx-auto flex max-w-[1280px] items-center px-4 py-4 sm:px-6 lg:px-8">
         <Link
-          href="/coming-soon"
+          href="/"
           aria-label="BidHamr – til forsiden"
           className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
         >

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import AnmeldFormular from "@/components/dsa/AnmeldFormular";
+import { visLukketUdgave } from "@/lib/lukketUdgave";
 
 // Anmeld ulovligt indhold med et link (footeren: "Anmeld ulovligt indhold").
 // Virker uden login.
@@ -19,6 +20,8 @@ export default async function AnmeldSide() {
   const {
     data: { user },
   } = await hentLoggetIndBruger(supabase);
+  // Før lancering findes kundeservice-siden ikke for besøgende (lukket udgave).
+  const lukket = await visLukketUdgave();
 
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:py-12">
@@ -40,11 +43,17 @@ export default async function AnmeldSide() {
         <Link href="/dsa" className="font-medium text-groen hover:underline">
           Læs mere om ulovligt indhold og dine rettigheder
         </Link>
-        . Har du brug for hjælp til en handel, så{" "}
-        <Link href="/kontakt" className="font-medium text-groen hover:underline">
-          kontakt kundeservice
-        </Link>
         .
+        {!lukket && (
+          <>
+            {" "}
+            Har du brug for hjælp til en handel, så{" "}
+            <Link href="/kontakt" className="font-medium text-groen hover:underline">
+              kontakt kundeservice
+            </Link>
+            .
+          </>
+        )}
       </p>
     </main>
   );
