@@ -525,7 +525,7 @@ export const ERHVERVSSAELGER = {
   ],
   // BidHamr Beskyttelse gælder ikke ved køb fra erhverv.
   ingenBeskyttelse:
-    "BidHamr Beskyttelse kan ikke vælges, når du køber af et firma. Du har i stedet fortrydelsesret og reklamationsret efter loven.",
+    "BidHamr Beskyttelse gælder ikke, når du køber af et firma. Du har i stedet fortrydelsesret og reklamationsret efter loven.",
   seAuktioner: "Se firmaets profil og auktioner",
   // Når firmaet selv ser sin firmaprofil (linker til /firma/auktioner).
   seEgneAuktioner: "Se dine auktioner",
@@ -535,7 +535,7 @@ export const ERHVERVSSAELGER = {
 // Budpanelet på en erhvervsauktion.
 export const ERHVERV_BIDPANEL = {
   prisLinje:
-    "Vinder du, betaler du dit bud + købergebyr + fragt. Du ser den samlede pris i kroner, før du betaler, og har 48 timer til at betale. Alle beløb er inkl. moms.",
+    "Vinder du, betaler du dit bud + gebyr + fragt. Du ser den samlede pris i kroner, før du byder, og har 48 timer til at betale. Alle beløb er inkl. moms.",
   firmakontoTitel: "En firmakonto kan kun sælge",
   firmakontoTekst: "Vil du købe noget, skal du bruge en privat konto.",
 } as const;

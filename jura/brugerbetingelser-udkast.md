@@ -8,12 +8,13 @@
 > - Opdateret 7. oktober 2026: auktionen er helt låst efter første bud – intet kan ændres, tilføjes, slettes eller annulleres af sælgeren (4.7, Filips beslutning 7. oktober 2026).
 > - Opdateret 10. oktober 2026: køb fra erhvervssælgere (nyt afsnit 29 – fortrydelsesret, reklamation, ingen BidHamr Beskyttelse, hvem man klager til), firmakonti i 1.1, 1.4, 2.3, 2.4, 5.5 og 17, og BidHamrs firmaoplysninger i 1.2 og 30. Kontakt er flyttet fra 29 til 30. Vilkårene for firmaerne selv står i `jura/erhvervsvilkaar-udkast.md`.
 > - Opdateret 15. oktober 2026: kunst er en forbudt vare (4.6, Filips beslutning 14. oktober 2026). Ny version 0.2 (VILKAAR_VERSION og vilkaar_aktuel_version() i 20261023010000_kunst_forbudt.sql): alle accepterer igen.
+> - Opdateret 26. oktober 2026: ny prismodel (ROADMAP-BESLUTNINGER afsnit 3 og 4, Filips beslutning 26. oktober 2026). Gebyrtabel i 5.1, fragt i 5.2, BidHamr Beskyttelse er altid med i købers gebyr ved forsendelse og er ikke længere et tilvalg (2.2, 5.3, 5.4, 12.4, 14), højeste bud 25.000 kr (5.7), udbetaling hver 14. dag (6.5), erhvervsgebyrer (29.2). Ændringen kræver en ny version af betingelserne (VILKAAR_VERSION), hvis den går live efter, at brugerne har accepteret 0.2.
 > - `[TODO Filip: …]` = oplysninger eller beslutninger, Filip skal udfylde.
 > - `[ADVOKAT: …]` = juridiske spørgsmål, advokaten skal tage stilling til. Alle spørgsmål er samlet i `jura/noter-til-advokat.md`.
 > - Udkastet er ikke et juridisk løfte. Intet her må vises som endelige betingelser, før advokaten har godkendt det.
 > - Siden skal ligge på `/betingelser` (linket findes allerede i footeren). Brugeren skal acceptere betingelserne ved oprettelse af konto (ROADMAP fase 3).
 
-**Version:** udkast 3 · **Senest opdateret:** [TODO Filip: dato ved offentliggørelse]
+**Version:** udkast 4 · **Senest opdateret:** [dato indsættes ved lancering] · **Gælder fra:** [dato indsættes ved lancering]
 
 ---
 
@@ -52,7 +53,7 @@
 
 - markedspladsen (auktioner, bud, beskeder, bedømmelser)
 - hjælp, når noget går galt, gennem sager (se afsnit 12–14)
-- BidHamr Beskyttelse, hvis køberen vælger den (se afsnit 14)
+- BidHamr Beskyttelse, som altid er med, når køberen køber af en privatperson, og varen bliver sendt (se afsnit 14)
 - fragtlabel og sporing, når det er en del af handlen (se afsnit 8)
 
 For BidHamrs egne ydelser betaler du gebyrer (se afsnit 5).
@@ -139,26 +140,35 @@ For BidHamrs egne ydelser betaler du gebyrer (se afsnit 5).
 
 ## 5. Priser, gebyrer og moms
 
-5.1 BidHamr tager et gebyr fra både køber og sælger, når en vare bliver solgt:
+5.1 BidHamr tager et gebyr fra både køber og sælger, når en vare bliver solgt. Gebyret regnes af det vindende bud (salgsprisen):
 
-- **Købergebyr:** 5 % af det vindende bud. Lægges oven i prisen.
-- **Sælgergebyr:** 5 % af det vindende bud. Trækkes fra, før pengene udbetales til sælgeren. Sælgergebyret beregnes kun af buddet – ikke af fragten.
+| Gebyr | Salgspris op til og med 7.500 kr | Salgspris over 7.500 kr |
+|---|---|---|
+| **Køber** (gebyret indeholder BidHamr Beskyttelse) | 7 % + 5 kr, højst 300 kr | 3 % + 15 kr, højst 650 kr |
+| **Sælger** | 5 % + 5 kr, højst 95 kr | 2 % + 15 kr, højst 450 kr |
 
-Der er intet mindste- eller højeste gebyr.
+- Købers gebyr lægges oven i prisen.
+- Sælgers gebyr trækkes fra, før pengene udbetales til sælgeren. Det beregnes kun af buddet – ikke af fragten.
+- Beløbene rundes til hele øre.
+- Køber du af en erhvervssælger, gælder andre gebyrer (se 29.2).
 
-5.2 **Fragt.** Køberen betaler fragten. Fragtprisen står på auktionen, før du byder. Kan varen kun hentes, er der ingen fragt. [TODO Filip: fragten er i dag fast 35 kr pr. handel, indtil prisen er aftalt med fragtfirmaet. Skal beløbet stå her?]
+5.2 **Fragt.** Køberen betaler fragten. Til en pakkeshop koster den 42 kr (Lille, op til 1 kg), 52 kr (Mellem, op til 5 kg) eller 67 kr (Stor, op til 15 kg). Levering til døren koster mere, og prisen står på betalingssiden. Fragtprisen står på auktionen, før du byder. Henter køberen varen hos sælgeren, er der ingen fragt, men gebyret er det samme.
 
-5.3 **BidHamr Beskyttelse** er et frivilligt tilvalg for køberen. Den koster 5 % af buddet, dog mindst 25 kr og højst 250 kr (se afsnit 14).
+5.3 **BidHamr Beskyttelse** er altid med i købers gebyr, når varen bliver sendt. Den koster ikke ekstra, og den kan ikke vælges til eller fra. Henter køberen varen hos sælgeren, gælder BidHamr Beskyttelse ikke (se afsnit 14).
 
-5.4 **Samlet pris.** Før du byder, kan du se, hvad du skal betale i alt, hvis du vinder: dit bud + købergebyr + fragt + evt. BidHamr Beskyttelse.
+5.4 **Samlet pris.** Før du byder, kan du se, hvad du skal betale i alt, hvis du vinder: dit bud + gebyr + fragt. Ved budfeltet står beløbene i kroner.
 
-5.5 **Moms.** Alle beløb, du ser på BidHamr, er inkl. moms. Sælges varen af en privatperson, er der ingen moms på den. Sælges varen af en erhvervssælger, er prisen inkl. moms, og det står ved prisen. Momsen af varen er firmaets. BidHamr betaler moms af sine egne gebyrer og af BidHamr Beskyttelse. Du betaler aldrig moms oveni.
+5.5 **Moms.** Alle beløb, du ser på BidHamr, er inkl. moms. Sælges varen af en privatperson, er der ingen moms på den. Sælges varen af en erhvervssælger, er prisen inkl. moms, og det står ved prisen. Momsen af varen er firmaets. BidHamr betaler moms af sine egne gebyrer. Du betaler aldrig moms oveni.
 
-5.6 **Kvittering og faktura.** Køber og sælger får en kvittering for handlen. På BidHamrs egne gebyrer (købergebyr, sælgergebyr og BidHamr Beskyttelse) får du en faktura med moms, som du også kan se på din profil. [TODO Filip: fakturaerne laves endnu ikke automatisk – regnskabsprogram afventer revisor.] Køber du af en erhvervssælger (et firma), sender firmaet selv fakturaen på varen til dig. Firmaet står for momsen af varen (eller brugtmoms) – ikke BidHamr. BidHamr fakturerer kun sine egne gebyrer. [ADVOKAT: Erhvervsvilkårene skal sige, at firmaet selv udsteder faktura på varen og håndterer moms/brugtmoms; BidHamr stiller købers navn, adresse, e-mail, vare, pris og dato til rådighed i Firma oversigt.]
+5.6 **Kvittering og faktura.** Køber og sælger får en kvittering for handlen. På BidHamrs egne gebyrer (købers gebyr med BidHamr Beskyttelse og sælgers gebyr) får du en faktura med moms, som du også kan se på din profil. [TODO Filip: fakturaerne laves endnu ikke automatisk – regnskabsprogram afventer revisor.] Køber du af en erhvervssælger (et firma), sender firmaet selv fakturaen på varen til dig. Firmaet står for momsen af varen (eller brugtmoms) – ikke BidHamr. BidHamr fakturerer kun sine egne gebyrer. [ADVOKAT: Erhvervsvilkårene skal sige, at firmaet selv udsteder faktura på varen og håndterer moms/brugtmoms; BidHamr stiller købers navn, adresse, e-mail, vare, pris og dato til rådighed i Firma oversigt.]
 
-**Eksempel:** Du vinder en auktion med et bud på 1.000 kr og har valgt BidHamr Beskyttelse. Du betaler 1.000 kr + 50 kr i købergebyr + 35 kr i fragt + 50 kr for BidHamr Beskyttelse = **1.135 kr**. Sælgeren får 1.000 kr − 50 kr i sælgergebyr = **950 kr**.
+**Eksempel 1:** Du vinder en auktion med et bud på 1.000 kr, og varen sendes i en lille pakke til en pakkeshop. Du betaler 1.000 kr + 75 kr i gebyr + 42 kr i fragt = **1.117 kr**. Sælgeren får 1.000 kr − 55 kr i gebyr = **945 kr**.
 
-[ADVOKAT: Gebyrerne og BidHamr Beskyttelse er BidHamrs egne ydelser over for forbrugere. Hvilke forbrugerregler gælder for dem (fx oplysningspligt, prisoplysning, fortrydelsesret på BidHamrs egen ydelse)? Opfylder visningen af den samlede pris kravene?]
+**Eksempel 2:** Du vinder en auktion med et bud på 10.000 kr, og varen sendes i en mellem pakke til en pakkeshop. Du betaler 10.000 kr + 315 kr i gebyr + 52 kr i fragt = **10.367 kr**. Sælgeren får 10.000 kr − 215 kr i gebyr = **9.785 kr**.
+
+5.7 **Højeste beløb.** En startpris, et bud og et maksimum ved automatisk bud kan højst være 25.000 kr.
+
+[ADVOKAT: Gebyrerne og BidHamr Beskyttelse er BidHamrs egne ydelser over for forbrugere. Hvilke forbrugerregler gælder for dem (fx oplysningspligt, prisoplysning, fortrydelsesret på BidHamrs egen ydelse)? Opfylder visningen af den samlede pris kravene? Nyt fra 26. oktober 2026: BidHamr Beskyttelse er nu en fast del af købers gebyr og ikke et tilvalg. Ved afhentning betaler køberen samme gebyr, selvom Beskyttelsen ikke gælder – er det i orden, og er det tydeligt nok?]
 
 ---
 
@@ -172,7 +182,7 @@ Der er intet mindste- eller højeste gebyr.
 
 6.4 **Gemt kort (tilvalg).** Du kan gemme et kort under Min konto. Når du har vundet, betaler du altid selv på betalingssiden, og dit gemte kort er valgt på forhånd. Kortet bliver kun trukket, når du selv trykker Betal – vi trækker aldrig penge automatisk. Du kan byde uden at gemme et kort, og du kan altid slette kortet under Min konto.
 
-6.5 **Hvor er pengene?** Beløbet bliver hos Stripe, indtil handlen er afsluttet. Først derefter overføres sælgerens andel til sælgerens udbetalingskonto hos Stripe (se afsnit 10). Stripe udbetaler til sælgerens bank – som regel dagligt. Nye udbetalingskonti har en ventetid hos Stripe på ca. 7 dage.
+6.5 **Hvor er pengene?** Beløbet bliver hos Stripe, indtil handlen er afsluttet. Først derefter overføres sælgerens andel til sælgerens udbetalingskonto hos Stripe (se afsnit 10). Stripe udbetaler til sælgerens bank hver 14. dag. Har sælgeren solgt flere ting i perioden, kommer pengene samlet i én udbetaling. Nye udbetalingskonti har en ventetid hos Stripe på ca. 7 dage.
 
 [ADVOKAT: Teknisk betaler køberen til BidHamrs platformskonto hos Stripe ("separate charges and transfers"), og beløbet holdes, til handlen er afsluttet. Er formuleringen i 6.1 og 6.5 korrekt og ikke vildledende? Kræver opsætningen tilladelse (betalingstjeneste/e-penge)? Se noterne om Stripes svar og "funds segregation".]
 
@@ -201,7 +211,7 @@ Der er intet mindste- eller højeste gebyr.
 
 8.1 Kan varen sendes, får sælgeren en fragtlabel eller QR-kode gennem BidHamr, når køberen har betalt. Sporingen kommer automatisk. [TODO Filip: fragtintegrationen (GLS, evt. Shipmondo) er ikke i drift endnu. Ret afsnittet, når det er på plads – fx hvilket fragtfirma, pakkeshop, størrelser og vægt.]
 
-8.2 **Sælger skal sende inden 5 dage.** Sælgeren skal sende varen og markere den som sendt på handelssiden senest 5 dage efter, at køberen har betalt. Sker det ikke, bliver handlen annulleret automatisk, og køberen får alle pengene tilbage – også fragt og BidHamr Beskyttelse.
+8.2 **Sælger skal sende inden 5 dage.** Sælgeren skal sende varen og markere den som sendt på handelssiden senest 5 dage efter, at køberen har betalt. Sker det ikke, bliver handlen annulleret automatisk, og køberen får alle pengene tilbage – også gebyr og fragt.
 
 8.3 **Pakkebilleder.** Når sælgeren markerer pakken som sendt, skal sælgeren tage billeder med kameraet direkte i appen eller på siden (ikke fra kamerarullen):
 
@@ -277,12 +287,14 @@ Billederne viser, hvordan varen er pakket. De bruges, hvis der bliver oprettet e
 
 12.4 **Hvornår hjælper BidHamr?**
 
-| Hvad er der sket? | Uden BidHamr Beskyttelse | Med BidHamr Beskyttelse |
-|---|---|---|
-| Pakken er ikke kommet frem (bortkommet) | Ja, vi hjælper | Ja, vi hjælper |
-| Åbenlys svindel: tom pakke, helt anden vare, falsk kopi solgt som ægte, eller varen er aldrig sendt | Ja, du kan altid oprette en sag | Ja, du kan altid oprette en sag |
-| Varen er gået i stykker under forsendelsen | Nej – køber og sælger må selv blive enige. Varen kan ikke sendes retur gennem BidHamr | Ja – du kan oprette en sag og sende varen retur |
-| Varen er ikke som beskrevet | Nej – køber og sælger må selv blive enige | Ja – BidHamr håndterer sagen for dig |
+| Hvad er der sket? | Hjælper BidHamr? |
+|---|---|
+| Pakken er ikke kommet frem (bortkommet) | Ja, vi hjælper |
+| Åbenlys svindel: tom pakke, helt anden vare, falsk kopi solgt som ægte, eller varen er aldrig sendt | Ja, du kan altid oprette en sag |
+| Varen er gået i stykker under forsendelsen | Ja, med BidHamr Beskyttelse – du kan oprette en sag og sende varen retur |
+| Varen er ikke som beskrevet | Ja, med BidHamr Beskyttelse – BidHamr håndterer sagen for dig |
+
+BidHamr Beskyttelse er altid med, når du køber af en privatperson, og varen bliver sendt (se afsnit 14). Henter du varen hos sælgeren, kan du ikke oprette en sag bagefter (se 9.3). Køber du af en erhvervssælger, gælder afsnit 29.
 
 12.5 **Bortkommet pakke.** Er pakken ikke kommet frem 7 dage efter, at sælgeren har sendt den, kan køberen melde den bortkommet. Vi tjekker sporingen hos fragtfirmaet, før vi afgør sagen.
 
@@ -290,7 +302,7 @@ Billederne viser, hvordan varen er pakket. De bruges, hvis der bliver oprettet e
 
 12.7 **Ord mod ord.** Står det ord mod ord, og viser sporingen, at pakken er leveret, får sælgeren pengene. Mener køberen at være snydt, kan køberen anmelde det til politiet.
 
-12.8 **Medhold til køberen.** Får køberen medhold, får køberen alt tilbage undtagen prisen for BidHamr Beskyttelse – altså buddet, købergebyret og fragten. BidHamr Beskyttelse er brugt, fordi vi har håndteret sagen.
+12.8 **Medhold til køberen.** Får køberen medhold, får køberen buddet og fragten tilbage. [TODO Filip: før fik køberen købergebyret tilbage, men ikke prisen for BidHamr Beskyttelse. Nu er Beskyttelsen en del af gebyret. Afklar, om gebyret refunderes helt, delvist eller slet ikke ved medhold, og ret 12.8 og 14.7.]
 
 12.9 **Retur af varen.** Er varen gået i stykker eller ikke som beskrevet, skal køberen sende den retur til sælgeren for egen regning, før pengene bliver refunderet. Returfragten bliver ikke refunderet. Pengene refunderes, når returpakken er afleveret til fragtfirmaet. Sender køberen ikke varen retur, kan sagen tidligst afgøres til sælgerens fordel 7 dage efter, at køberen har fået besked om at sende den.
 
@@ -298,7 +310,7 @@ Billederne viser, hvordan varen er pakket. De bruges, hvis der bliver oprettet e
 
 12.11 **Ingen ekstra regning.** Hverken køber eller sælger skal betale ekstra penge til hinanden eller til BidHamr som følge af en sag.
 
-[ADVOKAT: Er der en pligt for platformen til at gribe ind ved åbenlys svindel (ROADMAP-BESLUTNINGER afsnit 4, NOTE)? Er reglen om "ord mod ord" og afslag på hjælp uden BidHamr Beskyttelse rimelig over for forbrugere?]
+[ADVOKAT: Er der en pligt for platformen til at gribe ind ved åbenlys svindel (ROADMAP-BESLUTNINGER afsnit 4, NOTE)? Er reglen om "ord mod ord" rimelig over for forbrugere?]
 
 ---
 
@@ -320,11 +332,11 @@ Billederne viser, hvordan varen er pakket. De bruges, hvis der bliver oprettet e
 
 ## 14. BidHamr Beskyttelse
 
-14.1 BidHamr Beskyttelse er en frivillig ekstra ydelse fra BidHamr, som du kan vælge, når du byder. Den er ikke valgt på forhånd.
+14.1 BidHamr Beskyttelse er en ydelse fra BidHamr, som altid er med, når du køber en vare af en privatperson, og varen bliver sendt. Du skal ikke vælge den, og du kan ikke fravælge den.
 
-14.2 **Pris.** 5 % af buddet, dog mindst 25 kr og højst 250 kr, inkl. moms. Prisen indgår i det beløb, du betaler på betalingssiden, hvis du vinder.
+14.2 **Pris.** BidHamr Beskyttelse er en del af købers gebyr (se 5.1). Den koster ikke ekstra.
 
-14.3 **Valget følger buddet.** Du vælger BidHamr Beskyttelse, når du byder. Valget kan ikke ændres bagefter.
+14.3 **Afhentning.** Henter du varen hos sælgeren, betaler du det samme gebyr, men BidHamr Beskyttelse gælder kun pakker, der bliver sendt. Ved afhentning ser du varen, før du viser koden (se afsnit 9).
 
 14.4 **Det får du med BidHamr Beskyttelse:**
 
@@ -332,7 +344,7 @@ Billederne viser, hvordan varen er pakket. De bruges, hvis der bliver oprettet e
 - Er varen ikke som beskrevet, håndterer BidHamr sagen for dig.
 - Sælgerens pakkebilleder bruges til at vurdere, om varen var pakket ordentligt.
 
-14.5 **Det får du altid – også uden BidHamr Beskyttelse:** hjælp, hvis pakken ikke kommer frem, og en sag ved åbenlys svindel (se 12.4).
+14.5 **Det hjælper BidHamr altid med:** hjælp, hvis pakken ikke kommer frem, og en sag ved åbenlys svindel (se 12.4).
 
 14.6 **Det dækker BidHamr Beskyttelse ikke:**
 
@@ -341,11 +353,11 @@ Billederne viser, hvordan varen er pakket. De bruges, hvis der bliver oprettet e
 - sager, der er oprettet efter fristen eller uden billeder
 - returfragten, når du sender en vare retur
 
-14.7 **Refusion af prisen.** Bliver handlen annulleret, før varen er sendt (fx fordi sælgeren ikke sendte inden 5 dage), får du prisen for BidHamr Beskyttelse tilbage. Får du medhold i en sag, får du den ikke tilbage, fordi ydelsen er brugt.
+14.7 **Refusion.** Bliver handlen annulleret, før varen er sendt (fx fordi sælgeren ikke sendte inden 5 dage), får du alle pengene tilbage – også gebyret. Hvad du får tilbage, hvis du får medhold i en sag, står i 12.8.
 
 14.8 BidHamr Beskyttelse er hjælp fra BidHamr til at løse sagen og en mulighed for at få pengene tilbage gennem BidHamr. Den giver ikke erstatning ud over det, du har betalt.
 
-[ADVOKAT: Er BidHamr Beskyttelse et forsikringsprodukt eller en garanti i lovens forstand (fx lov om forsikringsdistribution/finansiel virksomhed)? Hvordan skal ydelsen beskrives, så den ikke bliver det? Er "ydelsen er brugt" ved medhold rimeligt over for forbrugere?]
+[ADVOKAT: Er BidHamr Beskyttelse et forsikringsprodukt eller en garanti i lovens forstand (fx lov om forsikringsdistribution/finansiel virksomhed)? Hvordan skal ydelsen beskrives, så den ikke bliver det? Ændrer det vurderingen, at den nu er en fast del af købers gebyr og ikke et tilvalg (26. oktober 2026)? Hvad må vi beholde af gebyret, når køberen får medhold i en sag?]
 
 ---
 
@@ -499,7 +511,7 @@ Vi vælger et indgreb, der står i forhold til overtrædelsen.
 
 23.4 Vi gør vores bedste for, at BidHamr altid virker. Vi kan ikke love, at siden og appen altid er tilgængelige, fx ved nedbrud eller vedligeholdelse. Er BidHamr nede i slutningen af en auktion, kan vi forlænge auktionen eller sætte den op igen. [TODO Filip: er det noget, vi vil gøre? Ellers fjern sætningen.]
 
-23.5 BidHamrs samlede ansvar over for dig i forbindelse med en handel er begrænset til de gebyrer og den pris for BidHamr Beskyttelse, du har betalt til BidHamr for den handel – medmindre loven siger andet, eller vi har handlet groft uagtsomt eller forsætligt. [ADVOKAT: Skabelonens "under ingen omstændigheder ansvarlig" er fjernet. Er denne begrænsning gyldig over for forbrugere, og passer den med sager, svindel-undtagelsen og BidHamr Beskyttelse? Skal ansvar for indirekte tab nævnes?]
+23.5 BidHamrs samlede ansvar over for dig i forbindelse med en handel er begrænset til de gebyrer, du har betalt til BidHamr for den handel – medmindre loven siger andet, eller vi har handlet groft uagtsomt eller forsætligt. [ADVOKAT: Skabelonens "under ingen omstændigheder ansvarlig" er fjernet. Er denne begrænsning gyldig over for forbrugere, og passer den med sager, svindel-undtagelsen og BidHamr Beskyttelse? Skal ansvar for indirekte tab nævnes?]
 
 ---
 
@@ -555,11 +567,11 @@ Vi behandler dine personoplysninger efter privatlivspolitikken (`/privatliv`). V
 
 28.1 Betingelserne følger dansk ret.
 
-28.2 **Uenighed mellem køber og sælger** bliver først behandlet i en sag på BidHamr (afsnit 12–13), når det handler om pengene på BidHamr. Uden for sagerne – fx hvis varen er gået i stykker, og du ikke har BidHamr Beskyttelse – må køber og sælger selv finde en løsning. Køber og sælger kan altid gå til domstolene.
+28.2 **Uenighed mellem køber og sælger** bliver først behandlet i en sag på BidHamr (afsnit 12–13), når det handler om pengene på BidHamr. Uden for sagerne – fx hvis du har hentet varen hos sælgeren og bagefter finder en fejl – må køber og sælger selv finde en løsning. Køber og sælger kan altid gå til domstolene.
 
 28.3 **Klage over BidHamr.** Er du utilfreds med BidHamr, så skriv til support@bidhamr.dk. Vi svarer så hurtigt som muligt. [TODO Filip: vil du love en svartid?]
 
-28.4 Er du forbruger og utilfreds med BidHamrs egne ydelser (gebyrer og BidHamr Beskyttelse), kan du klage til Nævnenes Hus, Forbrugerklagenævnet, Toldboden 2, 8800 Viborg, via forbrug.dk. [ADVOKAT: Bekræft henvisningen og adressen. Bemærk: EU's ODR-platform (Online Dispute Resolution) er lukket i juli 2025, så den er ikke medtaget – bekræft, at den ikke længere skal nævnes. Handler mellem to private hører ikke under Forbrugerklagenævnet – bekræft.]
+28.4 Er du forbruger og utilfreds med BidHamrs egne ydelser (gebyrer, herunder BidHamr Beskyttelse), kan du klage til Nævnenes Hus, Forbrugerklagenævnet, Toldboden 2, 8800 Viborg, via forbrug.dk. [ADVOKAT: Bekræft henvisningen og adressen. Bemærk: EU's ODR-platform (Online Dispute Resolution) er lukket i juli 2025, så den er ikke medtaget – bekræft, at den ikke længere skal nævnes. Handler mellem to private hører ikke under Forbrugerklagenævnet – bekræft.]
 
 28.5 En tvist med BidHamr afgøres ved de danske domstole. Er du forbruger, kan du altid anlægge sagen ved retten, hvor du bor. [ADVOKAT: værneting og formulering.]
 
@@ -569,11 +581,11 @@ Vi behandler dine personoplysninger efter privatlivspolitikken (`/privatliv`). V
 
 29.1 **Hvem er erhvervssælgere?** Nogle auktioner er oprettet af et firma med et aktivt dansk CVR-nummer, som BidHamr har godkendt. De har mærket "Erhvervssælger". Med ét klik kan du se firmaets profil med firmanavn, CVR-nummer, adresse, telefon og e-mail. Køber du af et firma, er købsaftalen mellem dig og firmaet, og du handler som forbruger.
 
-29.2 **Pris og faktura.** Prisen på en erhvervsauktion er inkl. moms. Du betaler købergebyr og fragt som ved andre køb og ser den samlede pris, før du betaler. Firmaet sender selv fakturaen på varen til dig. BidHamr sender kun faktura på sine egne gebyrer.
+29.2 **Pris og faktura.** Prisen på en erhvervsauktion er inkl. moms. Du betaler et gebyr på 5 % af det vindende bud og fragt, og du ser den samlede pris, før du byder. Gebyret indeholder ikke BidHamr Beskyttelse (se 29.4). Højeste bud er 25.000 kr som ved andre auktioner. Firmaet sender selv fakturaen på varen til dig. BidHamr sender kun faktura på sine egne gebyrer.
 
 29.3 **14 dages fortrydelsesret.** Køber du af et firma, kan du fortryde købet inden for 14 dage efter, at du har fået varen. Vi bruger leveringsdatoen fra sporingen. Du fortryder med knappen "Fortryd køb" på handelssiden og får en returlabel gennem BidHamr. Du får pengene tilbage gennem vores betalingspartner Stripe, når firmaet har fået varen retur. [ADVOKAT: Bekræft fortrydelsesretten ved netauktion (nr. 56), hvad der refunderes – også købergebyr og fragt – og hvem der betaler returfragten (nr. 57). Gælder fortrydelsesretten også ved afhentning hos firmaet (nr. 114)?]
 
-29.4 **Ingen BidHamr Beskyttelse.** BidHamr Beskyttelse kan ikke vælges, når du køber af et firma. Du har i stedet fortrydelsesret og reklamationsret efter loven. [ADVOKAT: Hvilke sager kan køberen oprette ved køb fra et firma – fx bortkommet pakke og åbenlys svindel som i 12.4 (nr. 115)? Er forklaringen om, at BidHamr Beskyttelse ikke kan vælges, tilstrækkelig og ikke vildledende (nr. 62)?]
+29.4 **Ingen BidHamr Beskyttelse.** BidHamr Beskyttelse gælder ikke, når du køber af et firma. Du har i stedet fortrydelsesret og reklamationsret efter loven. [ADVOKAT: Hvilke sager kan køberen oprette ved køb fra et firma – fx bortkommet pakke og åbenlys svindel som i 12.4 (nr. 115)? Er forklaringen om, at BidHamr Beskyttelse ikke kan vælges, tilstrækkelig og ikke vildledende (nr. 62)?]
 
 29.5 **Fejl ved varen (reklamation).** Har varen en fejl, kan du klage til firmaet i 2 år efter, at du har fået den. Det kaldes reklamationsret. Firmaet skal behandle din reklamation efter købeloven, fx med reparation, en ny vare, afslag i prisen eller pengene tilbage. Når firmaet har fået pengene udbetalt, kan BidHamr ikke trække dem tilbage. [ADVOKAT: Har BidHamr noget ansvar, hvis firmaet ikke betaler eller er gået konkurs (nr. 63)?]
 

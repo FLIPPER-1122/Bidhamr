@@ -162,8 +162,8 @@ export default function ComingSoonPage() {
               Sælg det, du ikke bruger, og byd på andres ting. Du ser altid
               totalprisen — bud, gebyr og fragt — før du byder. Betalingen håndteres af vores
               betalingspartner Stripe, og sælgeren får først pengene, når
-              køberen har godkendt varen. Vil du være ekstra
-              dækket, kan du tilkøbe BidHamr Beskyttelse.
+              køberen har godkendt varen. Sendes varen, er BidHamr
+              Beskyttelse altid med i gebyret.
             </p>
 
             <div className="mt-8 max-w-md rounded-xl bg-white p-5 text-tekst">
@@ -274,7 +274,7 @@ export default function ComingSoonPage() {
                 {
                   titel: "Totalprisen står frem",
                   tekst:
-                    "Bud, købergebyr og fragt vises hver for sig — og summen nederst, før du byder.",
+                    "Bud, gebyr og fragt vises hver for sig — og summen nederst, før du byder.",
                 },
                 {
                   titel: "App og hjemmeside",

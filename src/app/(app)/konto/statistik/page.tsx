@@ -173,7 +173,7 @@ export default async function StatistikSide({
               </div>
             </dl>
             <p className="mt-3 text-[13px] text-tekst-daempet">
-              Tallene dækker solgte varer, som køberen har betalt: buddet minus sælgergebyret på 5 %.
+              Tallene dækker solgte varer, som køberen har betalt: buddet minus sælgergebyret.
               Fragt er ikke med. &quot;På vej til dig&quot; er betalt, men endnu ikke sendt til din
               udbetalingskonto – fx fordi køberen ikke har godkendt varen endnu. Det kan ændre sig, hvis
               en handel ender i en sag. Betalingen håndteres af vores betalingspartner Stripe.{" "}

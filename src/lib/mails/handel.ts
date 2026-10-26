@@ -74,7 +74,7 @@ export function koeberVandtMail(
     preheader: `Betal ${kronerFraOere(totalOere)} kr senest ${fristTekst(betalSenest)}.`,
     overskriftHtml: "Tillykke, du vandt",
     afsnitHtml: [
-      `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>. Beløbet nedenfor er inkl. købergebyr, eventuel fragt og BidHamr Beskyttelse, hvis du valgte den.`,
+      `Du har vundet auktionen <strong>${escapeHtml(titel)}</strong>. Beløbet nedenfor er inkl. gebyr og eventuel fragt.`,
       "Gå til betalingssiden inden for 48 timer. Skal varen sendes, vælger du levering der – til en pakkeshop eller hjem, hvis pakken kan det. Prisen kan ændre sig lidt efter dit valg, og du ser den samlede pris, før du betaler. Du kan betale med fx kort, MobilePay, Apple Pay eller Google Pay.",
       "Betaler du ikke til tiden, bliver handlen annulleret.",
       STRIPE_KOEBER,
@@ -156,7 +156,7 @@ export function saelgerSolgtMail(titel: string, buddetOere: number, tradeId: str
     afsnitHtml: [
       `<strong>${escapeHtml(titel)}</strong> er solgt.`,
       "Køberen har 48 timer til at betale. Vent med at sende varen, til vi giver dig besked om, at køberen har betalt.",
-      "Du får pengene, når køberen har bekræftet at have modtaget varen, eller når fristen for at oprette en sag er udløbet. Udbetalingen er salgsprisen minus 5 % i sælgergebyr. Betalingen håndteres af vores betalingspartner Stripe.",
+      "Du får pengene, når køberen har bekræftet at have modtaget varen, eller når fristen for at oprette en sag er udløbet. Udbetalingen er salgsprisen minus sælgergebyret. Betalingen håndteres af vores betalingspartner Stripe, som sender pengene til din bankkonto hver 14. dag.",
     ],
     info: [vare(titel), beloeb("Solgt for", buddetOere, true)],
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },
@@ -270,7 +270,7 @@ export function saelgerAfregningMail(
     overskriftHtml: escapeHtml(overskrift),
     afsnitHtml: [
       escapeHtml(indledning),
-      `Pengene er frigivet. Udbetalingen på ${escapeHtml(kronerFraOere(k.udbetalingOere))} kr sendes til din udbetalingskonto hos vores betalingspartner Stripe. Udbetalingen er salgsprisen minus 5 % i sælgergebyr.${
+      `Pengene er frigivet. Udbetalingen på ${escapeHtml(kronerFraOere(k.udbetalingOere))} kr sendes til din udbetalingskonto hos vores betalingspartner Stripe. Udbetalingen er salgsprisen minus sælgergebyret. Stripe sender pengene videre til din bankkonto hver 14. dag, samlet for alle dine salg i perioden.${
         k.afhentning ? "" : " Fragten betaler køberen, og den går til fragtfirmaet – den indgår ikke i din udbetaling."
       }`,
       escapeHtml(kvitteringFakturaTekst(k)),
@@ -332,7 +332,7 @@ export function andenchanceTilbudMail(
     preheader: `Køb varen til dit eget højeste bud. Svar senest ${fristTekst(udloeber)}.`,
     overskriftHtml: "Du får tilbudt varen",
     afsnitHtml: [
-      `Handlen om <strong>${escapeHtml(titel)}</strong> blev ikke gennemført, og sælgeren tilbyder dig nu varen til dit eget højeste bud. Dertil kommer købergebyr, fragt og evt. BidHamr Beskyttelse.`,
+      `Handlen om <strong>${escapeHtml(titel)}</strong> blev ikke gennemført, og sælgeren tilbyder dig nu varen til dit eget højeste bud. Dertil kommer gebyr og eventuel fragt.`,
       "Du har 24 timer til at svare. Siger du ja, har du 48 timer til at betale. Siger du nej, koster det dig ingenting.",
     ],
     info: [
@@ -418,7 +418,7 @@ export function koeberAndenchanceBetalMail(
     preheader: `Betal ${kronerFraOere(totalOere)} kr senest ${fristTekst(betalSenest)}.`,
     overskriftHtml: "Betal for din vare",
     afsnitHtml: [
-      `Du har sagt ja til at købe <strong>${escapeHtml(titel)}</strong>. Beløbet nedenfor er inkl. købergebyr og fragt samt BidHamr Beskyttelse, hvis du valgte den.`,
+      `Du har sagt ja til at købe <strong>${escapeHtml(titel)}</strong>. Beløbet nedenfor er inkl. gebyr og eventuel fragt.`,
       "Betal inden for 48 timer, fx med kort, MobilePay, Apple Pay eller Google Pay. Betaler du ikke til tiden, bliver handlen annulleret.",
       STRIPE_KOEBER,
     ],
@@ -633,7 +633,7 @@ export type IkkeAfhentetBeloeb = {
 // Køberen: pakken er sendt retur, og handlen er annulleret.
 export function koeberIkkeAfhentetMail(titel: string, b: IkkeAfhentetBeloeb, tradeId: string) {
   const fradrag = [
-    "købergebyret",
+    "gebyret",
     ...(b.beskyttelseOere > 0 ? ["BidHamr Beskyttelse"] : []),
     "fragten begge veje (ud og retur)",
   ];
@@ -641,7 +641,7 @@ export function koeberIkkeAfhentetMail(titel: string, b: IkkeAfhentetBeloeb, tra
   const info: InfoRaekke[] = [
     vare(titel),
     beloeb("Du betalte", b.totalOere),
-    beloeb("Købergebyr", -b.koebergebyrOere),
+    beloeb("Gebyr", -b.koebergebyrOere),
     ...(b.beskyttelseOere > 0 ? [beloeb("BidHamr Beskyttelse", -b.beskyttelseOere)] : []),
     beloeb("Fragt", -b.fragtOere),
     // Højst det, der er tilbage af købsbeløbet - resten dækker BidHamr.

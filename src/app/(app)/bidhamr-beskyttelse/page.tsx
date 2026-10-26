@@ -4,6 +4,8 @@ import {
   FAQ,
   FAQ_OVERSKRIFT,
   INTRO,
+  MAERKE_ALTID,
+  MAERKE_MED,
   METABESKRIVELSE,
   SEKTION_ALTID,
   SEKTION_MED,
@@ -72,8 +74,8 @@ export default function BeskyttelsePage() {
       </header>
 
       <div className="mt-8 grid gap-5 md:grid-cols-2 lg:gap-6">
-        <Kolonne sektion={SEKTION_ALTID} maerke="Altid" />
-        <Kolonne sektion={SEKTION_MED} maerke="Med BidHamr Beskyttelse" fremhaevet />
+        <Kolonne sektion={SEKTION_ALTID} maerke={MAERKE_ALTID} />
+        <Kolonne sektion={SEKTION_MED} maerke={MAERKE_MED} fremhaevet />
       </div>
 
       <div className="mt-8 flex flex-col gap-5 lg:gap-6">

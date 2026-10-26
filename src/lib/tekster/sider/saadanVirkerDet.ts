@@ -38,7 +38,7 @@ export const SAADAN_VIRKER_DET: Tekstside = {
         {
           titel: "Byd på en auktion",
           tekst:
-            "Før du byder, ser du den samlede pris med gebyr og fragt. Dit bud er bindende og kan ikke trækkes tilbage. Vil du have BidHamr Beskyttelse, sætter du flueben, når du byder.",
+            "Før du byder, ser du den samlede pris med gebyr og fragt. Dit bud er bindende og kan ikke trækkes tilbage. Sendes varen, er BidHamr Beskyttelse altid med i gebyret – du skal ikke vælge noget.",
         },
         {
           titel: "Vind auktionen",
@@ -99,7 +99,7 @@ export const SAADAN_VIRKER_DET: Tekstside = {
         {
           titel: "Få dine penge",
           tekst:
-            "Pengene udbetales, når køberen har godkendt varen, eller når køberen ikke har oprettet en sag inden for 48 timer. Ved afhentning udbetales de, så snart du har tastet koden. Udbetalingen sker via Stripe til din bankkonto.",
+            "Pengene bliver frigivet til dig, når køberen har godkendt varen, eller når køberen ikke har oprettet en sag inden for 48 timer. Ved afhentning bliver de frigivet, så snart du har tastet koden. Vores betalingspartner Stripe sender pengene til din bankkonto hver 14. dag. Har du solgt flere ting i den periode, kommer de samlet i én udbetaling.",
         },
       ],
       note: "Nye udbetalingskonter har typisk en ventetid hos Stripe på cirka 7 dage før den første udbetaling.",
@@ -112,17 +112,20 @@ export const SAADAN_VIRKER_DET: Tekstside = {
       id: "gebyrer",
       overskrift: "Hvad koster det?",
       tekst: [
-        "Det er gratis at oprette en auktion. Vi tager kun et gebyr, når en vare bliver solgt.",
+        "Det er gratis at oprette en auktion. Vi tager kun et gebyr, når en vare bliver solgt. Gebyret regnes af det bud, varen bliver solgt for.",
       ],
       punkter: [
-        "Køber betaler et gebyr på 5 % af buddet.",
-        "Sælger betaler et gebyr på 5 % af buddet. Det trækkes fra, før pengene udbetales.",
-        "Fragt betales af køberen: til en pakkeshop fra 40 kr. og levering hjem fra 60 kr., alt efter pakkens størrelse (Lille op til 1 kg, Mellem op til 5 kg, Stor op til 15 kg – kun pakkeshop). Varer over 15 kg kan kun afhentes, og så er der ingen fragt.",
-        "BidHamr Beskyttelse er et frivilligt tilvalg for køberen: 5 % af buddet, mindst 25 kr. og højst 250 kr.",
-        "Alle priser er inkl. moms. Der kommer ikke noget oveni.",
-        "Både køber og sælger får en faktura fra BidHamr på gebyrerne under Min konto → Fakturaer. Selve varen handles mellem jer, så på den får du en kvittering. Køber du af en erhvervssælger, sender firmaet selv fakturaen på varen.",
+        "Sælges varen for op til 7.500 kr.: køber betaler 7 % + 5 kr. (højst 300 kr.), og sælger betaler 5 % + 5 kr. (højst 95 kr.).",
+        "Sælges varen for mere end 7.500 kr.: køber betaler 3 % + 15 kr. (højst 650 kr.), og sælger betaler 2 % + 15 kr. (højst 450 kr.).",
+        "Købers gebyr indeholder altid BidHamr Beskyttelse, når varen sendes. Den koster ikke ekstra og skal ikke vælges.",
+        "Sælgers gebyr trækkes fra, før pengene udbetales.",
+        "Fragt betales af køberen. Til en pakkeshop koster det 42 kr. (Lille, op til 1 kg), 52 kr. (Mellem, op til 5 kg) eller 67 kr. (Stor, op til 15 kg). Levering hjem koster fra 60 kr. Store pakker kan kun sendes til en pakkeshop. Varer over 15 kg kan kun afhentes.",
+        "Henter du varen hos sælgeren, er der ingen fragt. Gebyret er det samme.",
+        "Det højeste bud og den højeste startpris er 25.000 kr.",
+        "Alle priser er inkl. moms. Der kommer ikke noget oveni. Ved auktionen ser du gebyret i kroner og den samlede pris, før du byder.",
+        "Både køber og sælger får en faktura fra BidHamr på gebyrerne under Min konto → Fakturaer. Selve varen handles mellem jer, så på den får du en kvittering. Køber du af en erhvervssælger, gælder andre gebyrer, og firmaet sender selv fakturaen på varen.",
       ],
-      note: "Eksempel: Du vinder en vare til 200 kr., som skal sendes. Du betaler 200 kr. + 10 kr. i gebyr + 40 kr. i fragt (lille pakke til en pakkeshop) = 250 kr. Sælgeren får 190 kr.",
+      note: "Eksempel: Du vinder en vare til 200 kr., som skal sendes. Du betaler 200 kr. + 19 kr. i gebyr + 42 kr. i fragt (lille pakke til en pakkeshop) = 261 kr. Sælgeren betaler 15 kr. i gebyr og får 185 kr.",
     },
     {
       id: "betaling",
@@ -136,13 +139,13 @@ export const SAADAN_VIRKER_DET: Tekstside = {
       id: "beskyttelse",
       overskrift: "BidHamr Beskyttelse",
       tekst: [
-        "Du handler med en anden privatperson. Derfor er der ingen fortrydelsesret, og et køb kan ikke fortrydes. Til gengæld kan du som køber vælge BidHamr Beskyttelse, når du byder.",
+        "Du handler med en anden privatperson. Derfor er der ingen fortrydelsesret, og et køb kan ikke fortrydes. Til gengæld er BidHamr Beskyttelse altid med i købers gebyr, når varen sendes.",
       ],
       punkter: [
-        "Altid, også uden BidHamr Beskyttelse: vi hjælper, hvis pakken ikke kommer frem, og ved åbenlys svindel, fx en tom pakke, en helt anden vare, en falsk kopi solgt som ægte eller en vare, der aldrig blev sendt.",
-        "Med BidHamr Beskyttelse: vi tager også sagen, hvis varen er gået i stykker under forsendelsen eller ikke er som beskrevet.",
-        "Uden BidHamr Beskyttelse: går varen i stykker undervejs, eller er den ikke som beskrevet, må du og sælgeren selv blive enige.",
+        "Altid: vi hjælper, hvis pakken ikke kommer frem, og ved åbenlys svindel, fx en tom pakke, en helt anden vare, en falsk kopi solgt som ægte eller en vare, der aldrig blev sendt.",
+        "Når varen sendes: vi tager også sagen, hvis varen er gået i stykker under forsendelsen eller ikke er som beskrevet.",
         "Den dækker ikke, at du fortryder købet, og den gælder ikke ved afhentning, hvor du ser varen, før du viser koden.",
+        "Køber du af et firma, gælder BidHamr Beskyttelse ikke. Så har du i stedet fortrydelsesret og reklamationsret efter loven.",
       ],
       links: [{ tekst: "Læs mere om BidHamr Beskyttelse", href: "/bidhamr-beskyttelse" }],
     },
