@@ -39,10 +39,12 @@ export function langDato(iso: string): string {
   return new Date(iso).toLocaleDateString("da-DK", { timeZone: TZ, day: "numeric", month: "long", year: "numeric" });
 }
 
-// Hvornår kan næste auktion oprettes, når ugens auktioner er brugt?
-// (erhverv_kvote: naeste_ledige er nu, når der er plads, ellers næste mandag.)
+// Hvornår kan næste auktion oprettes, når månedens auktioner er brugt?
+// (erhverv_kvote: naeste_ledige er nu, når der er plads, ellers den 1. i
+// næste måned, dansk tid.) "lørdag den 1. november"
 export function naesteLedigeTekst(k: Ugekvote): string {
-  return ugedagDato(k.brugt < k.max && k.naeste_ledige ? k.naeste_ledige : k.naeste_uge);
+  const plads = k.max == null || k.brugt < k.max;
+  return ugedagDato(plads && k.naeste_ledige ? k.naeste_ledige : (k.naeste_maaned ?? k.naeste_uge));
 }
 
 // Hele kroner -> "1.250 kr."

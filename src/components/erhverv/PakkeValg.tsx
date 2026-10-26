@@ -10,8 +10,8 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import type { SkiftPakkeSvar } from "@/app/actions/erhverv";
 import { kaldOffentligHandling } from "@/lib/offentligHandling";
-import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA as X } from "@/lib/tekster/erhverv";
-import type { ErhvervPakke } from "@/lib/erhverv/regler";
+import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA as X, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
+import { erStoerrePakke, type ErhvervPakke } from "@/lib/erhverv/regler";
 import { kr } from "@/lib/erhverv/visning";
 import { E_KNAP_PRIMAER, E_KNAP_SEKUNDAER, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
 import { erStripeAdresse } from "@/components/erhverv/StripeKnap";
@@ -22,7 +22,15 @@ export function PakkeInfo({ pakke }: { pakke: ErhvervPakke }) {
   return (
     <>
       <p className="text-[22px] font-semibold text-tekst">{pakke.navn}</p>
-      <p className={E_TEKST}>{A.auktionerPrUge(pakke.auktioner_pr_uge)}</p>
+      <p className={E_TEKST}>{FIRMA_PAKKER.auktionerPrMaaned(pakke.auktioner_pr_maaned)}</p>
+      {pakke.fremhaevninger_pr_maaned > 0 && (
+        <p className={E_TEKST}>{FIRMA_PAKKER.fremhaevningerPrMaaned(pakke.fremhaevninger_pr_maaned)}</p>
+      )}
+      {pakke.statistik !== "ingen" && <p className={E_TEKST}>{FIRMA_PAKKER.statistik[pakke.statistik]}</p>}
+      {pakke.ugens_butik_rabat_procent > 0 && pakke.ugens_butik_rabat_antal > 0 && (
+        <p className={E_TEKST}>{FIRMA_PAKKER.ugensButikRabat(pakke.ugens_butik_rabat_procent, pakke.ugens_butik_rabat_antal)}</p>
+      )}
+      {pakke.fast_kontaktperson && <p className={E_TEKST}>{FIRMA_PAKKER.fastKontaktperson}</p>}
       <p className={E_TEKST}>{pakke.maanedspris == null ? X.prisIkkeSat : A.prisPrMaaned(kr(pakke.maanedspris))}</p>
       {pakke.beskrivelse && <p className={`mt-1 ${E_TEKST_DAEMPET}`}>{pakke.beskrivelse}</p>}
     </>
@@ -99,7 +107,7 @@ export default function PakkeValg({
       {andre.length > 0 && <h3 className="font-sans text-[20px] font-semibold text-tekst">{A.andrePakker}</h3>}
       <ul className="space-y-4">
         {andre.map((p) => {
-          const op = p.auktioner_pr_uge > nuvaerende.auktioner_pr_uge;
+          const op = erStoerrePakke(p, nuvaerende);
           const erAaben = aaben === p.id;
           const afventer = afventerId === p.id;
           return (

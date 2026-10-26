@@ -4,6 +4,14 @@ import Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
+import {
+  introKuponMaaneder,
+  introResterende,
+  nyGratisSlut,
+  plusMaaneder,
+  TRIAL_MAKS_DAGE,
+  type IntroFra,
+} from "@/lib/erhverv/abonnementRegler";
 
 // Betaling af erhvervsabonnementer med Stripe Billing (bygget 8. okt. 2026 i
 // Stripes TESTMILJØ efter Filips ønske; Niels gennemgår - se
@@ -75,6 +83,16 @@ export const idempotensNoegle = {
   opgraderingMetadataRyd: (skiftId: string) => `opgradering-metadata-ryd:${skiftId}`,
   opgraderingRefusion: (skiftId: string) => `opgradering-refusion:${skiftId}`,
   opgraderingTilbage: (skiftId: string) => `opgradering-tilbage:${skiftId}`,
+  gratisSkift: (skiftId: string) => `gratis-skift:${skiftId}`,
+  // Staff-handlinger på et firma (20261102010000): ny nøgle pr. klik.
+  gratisPeriode: (firmaId: string, klik: string) => `gratis-periode:${firmaId}:${klik}`,
+  intro: (firmaId: string, subId: string, noegle: string, k: number) => `intro:${firmaId}:${subId}:${noegle}:${k}`,
+  introFlyt: (firmaId: string, subId: string, klik: string) => `intro-flyt:${firmaId}:${subId}:${klik}`,
+  introFjern: (firmaId: string, klik: string) => `intro-fjern:${firmaId}:${klik}`,
+  kupon: (kuponId: string) => `kupon:${kuponId}`,
+  saerpris: (firmaId: string, klik: string) => `saerpris:${firmaId}:${klik}`,
+  prisSynk: (firmaId: string, prisId: string) => `pris-synk:${firmaId}:${prisId}`,
+  regningRefusion: (regningId: string) => `regning-refusion:${regningId}`,
   nedgradering: (skiftId: string) => `nedgradering:${skiftId}`,
   nedgraderingPlan: (skiftId: string) => `nedgradering-plan:${skiftId}`,
   opsigelse: (firmaId: string, klik: string) => `opsigelse:${firmaId}:${klik}`,
@@ -101,7 +119,8 @@ export const idempotensNoegle = {
 
 export type BetalingsStatus =
   | { status: "afventer_betaling"; besked: string }
-  | { status: "betalt" }
+  // straks: skiftet er gennemført med det samme (i den gratis periode).
+  | { status: "betalt"; straks?: true }
   | { status: "kraever_handling"; url: string }
   // rulletTilbage: databasen er sat tilbage til før skiftet (Stripe fejlede,
   // før abonnementet blev ændret). betalFoerst: abonnementet er ikke aktivt.
@@ -182,10 +201,22 @@ type FirmaRaekke = {
   stripe_subscription_id: string | null;
   stripe_abonnement_status: string | null;
   opsiges_fra: string | null;
+  // 20261102010000: gratis periode, introrabat og særpris.
+  proeve_maaneder: number;
+  proeve_givet_kl: string | null;
+  intro_procent: number | null;
+  intro_maaneder: number | null;
+  intro_fra: IntroFra | null;
+  intro_status: "planlagt" | "aktiv" | null;
+  intro_noegle: string | null;
+  intro_coupon_id: string | null;
+  saerpris_oere: number | string | null;
+  saerpris_pakke_id: string | null;
 };
 
 const FIRMA_FELTER =
-  "id, bruger_id, firmanavn, cvr, adresse, postnummer, bynavn, telefon, kontakt_email, pakke_id, abonnement_status, pauset_aarsag, naeste_pakke_id, stripe_customer_id, stripe_subscription_id, stripe_abonnement_status, opsiges_fra";
+  "id, bruger_id, firmanavn, cvr, adresse, postnummer, bynavn, telefon, kontakt_email, pakke_id, abonnement_status, pauset_aarsag, naeste_pakke_id, stripe_customer_id, stripe_subscription_id, stripe_abonnement_status, opsiges_fra, " +
+  "proeve_maaneder, proeve_givet_kl, intro_procent, intro_maaneder, intro_fra, intro_status, intro_noegle, intro_coupon_id, saerpris_oere, saerpris_pakke_id";
 
 async function hentFirma(kolonne: "id" | "bruger_id" | "stripe_customer_id", vaerdi: string): Promise<FirmaRaekke | null> {
   const { data, error } = await createAdminClient()
@@ -253,48 +284,105 @@ export async function sikrPris(pakkeId: string): Promise<string> {
   if (!Number.isInteger(oere) || oere <= 0) throw new PrisIkkeSat("Pakken har ingen gyldig pris.");
   if (p.stripe_price_id && Number(p.stripe_price_oere) === oere) return p.stripe_price_id;
 
-  const s = stripe();
-  const lookupKey = `erhverv_pakke_${p.id}_${oere}`;
-  let prisId: string | null = null;
-  const fundet = await s.prices.list({ lookup_keys: [lookupKey], active: true, limit: 1 });
-  if (fundet.data[0]) {
-    prisId = fundet.data[0].id;
-  } else {
-    const produktId = `bidhamr_erhverv_${p.id.replace(/-/g, "")}`;
-    try {
-      await s.products.retrieve(produktId);
-    } catch (err) {
-      if (!(err instanceof Stripe.errors.StripeInvalidRequestError) || err.code !== "resource_missing") throw err;
-      await s.products.create(
-        {
-          id: produktId,
-          name: `BidHamr erhvervsabonnement – ${p.navn}`,
-          metadata: { pakke_id: p.id },
-        },
-        { idempotencyKey: idempotensNoegle.produkt(produktId) },
-      );
-    }
-    const pris = await s.prices.create(
-      {
-        product: produktId,
-        currency: "dkk",
-        unit_amount: oere,
-        recurring: { interval: "month" },
-        tax_behavior: "exclusive",
-        lookup_key: lookupKey,
-        nickname: `${p.navn} – ${oere / 100} kr./md. ekskl. moms`,
-        metadata: { pakke_id: p.id },
-      },
-      { idempotencyKey: idempotensNoegle.pris(lookupKey) },
-    );
-    prisId = pris.id;
-  }
+  const prisId = await findEllerOpretPris(p, oere, `erhverv_pakke_${p.id}_${oere}`, `${p.navn} – ${oere / 100} kr./md. ekskl. moms`, {
+    pakke_id: p.id,
+  });
   const { error: gemFejl } = await admin
     .from("erhverv_pakker")
     .update({ stripe_price_id: prisId, stripe_price_oere: oere })
     .eq("id", p.id);
   if (gemFejl) throw new Error(`erhverv_pakker.stripe_price_id: ${gemFejl.message}`);
   return prisId;
+}
+
+// En månedlig Stripe-pris (DKK, ekskl. moms) på pakkens produkt, fundet på
+// lookup_key eller oprettet (idempotent). Produktet laves første gang.
+async function findEllerOpretPris(
+  p: { id: string; navn: string },
+  oere: number,
+  lookupKey: string,
+  nickname: string,
+  metadata: Record<string, string>,
+): Promise<string> {
+  const s = stripe();
+  const fundet = await s.prices.list({ lookup_keys: [lookupKey], active: true, limit: 1 });
+  if (fundet.data[0]) return fundet.data[0].id;
+  const produktId = `bidhamr_erhverv_${p.id.replace(/-/g, "")}`;
+  try {
+    await s.products.retrieve(produktId);
+  } catch (err) {
+    if (!(err instanceof Stripe.errors.StripeInvalidRequestError) || err.code !== "resource_missing") throw err;
+    await s.products.create(
+      {
+        id: produktId,
+        name: `BidHamr erhvervsabonnement – ${p.navn}`,
+        metadata: { pakke_id: p.id },
+      },
+      { idempotencyKey: idempotensNoegle.produkt(produktId) },
+    );
+  }
+  const pris = await s.prices.create(
+    {
+      product: produktId,
+      currency: "dkk",
+      unit_amount: oere,
+      recurring: { interval: "month" },
+      tax_behavior: "exclusive",
+      lookup_key: lookupKey,
+      nickname,
+      metadata,
+    },
+    { idempotencyKey: idempotensNoegle.pris(lookupKey) },
+  );
+  return pris.id;
+}
+
+// Særpris: firmaets egen Stripe-pris på pakkens produkt (lookup_key
+// erhverv_firma_<firma>_<pakke>_<øre>, metadata pakke_id + firma_id), så alt,
+// der kender pakken på prisen (metadata.pakke_id), virker uændret. En egen
+// pris er mere robust end en rabat: den kan ikke udløbe eller stables forkert
+// med introrabatten (som er en kupon), og fakturaen viser den rigtige pris.
+export async function sikrFirmaPris(firmaId: string, pakkeId: string, oere: number): Promise<string> {
+  if (!Number.isInteger(oere) || oere < 100 || oere % 100 !== 0) throw new PrisIkkeSat("Særprisen er ugyldig.");
+  const { data: p, error } = await createAdminClient()
+    .from("erhverv_pakker")
+    .select("id, navn")
+    .eq("id", pakkeId)
+    .maybeSingle<{ id: string; navn: string }>();
+  if (error) throw new Error(`erhverv_pakker: ${error.message}`);
+  if (!p) throw new PrisIkkeSat("Pakken findes ikke.");
+  return findEllerOpretPris(
+    p,
+    oere,
+    `erhverv_firma_${firmaId}_${pakkeId}_${oere}`,
+    `${p.navn} – særpris ${oere / 100} kr./md. ekskl. moms (firma ${firmaId})`,
+    { pakke_id: pakkeId, firma_id: firmaId, saerpris: "ja" },
+  );
+}
+
+// Den pris, firmaet skal betale for en pakke: særprisen, hvis den gælder netop
+// den pakke, ellers pakkens pris.
+export function firmaetsSaerpris(f: Pick<FirmaRaekke, "saerpris_oere" | "saerpris_pakke_id">, pakkeId: string): number | null {
+  if (f.saerpris_oere == null || f.saerpris_pakke_id !== pakkeId) return null;
+  const oere = Number(f.saerpris_oere);
+  return Number.isInteger(oere) && oere > 0 ? oere : null;
+}
+
+export async function firmaPris(f: Pick<FirmaRaekke, "id" | "saerpris_oere" | "saerpris_pakke_id">, pakkeId: string): Promise<string> {
+  const saer = firmaetsSaerpris(f, pakkeId);
+  return saer ? sikrFirmaPris(f.id, pakkeId, saer) : sikrPris(pakkeId);
+}
+
+// Forventet månedspris i øre for firmaet på pakken (til pristjekket).
+async function forventetOere(f: Pick<FirmaRaekke, "saerpris_oere" | "saerpris_pakke_id">, pakkeId: string): Promise<number | null> {
+  const saer = firmaetsSaerpris(f, pakkeId);
+  if (saer) return saer;
+  const { data: pakke } = await createAdminClient()
+    .from("erhverv_pakker")
+    .select("maanedspris")
+    .eq("id", pakkeId)
+    .maybeSingle<{ maanedspris: number | string | null }>();
+  return pakke?.maanedspris == null ? null : Math.round(Number(pakke.maanedspris) * 100);
 }
 
 // Firmaets Stripe-kunde (oprettes første gang, med CVR som momsnummer).
@@ -368,6 +456,21 @@ export function kanStarteAbonnement(f: Pick<FirmaRaekke, "abonnement_status" | "
   return f.abonnement_status === "afventer_betaling" || (f.abonnement_status === "pauset" && f.pauset_aarsag === "betaling");
 }
 
+// Får firmaet en gratis periode, når abonnementet starter? Kun et nyt firma:
+// det har aldrig haft en gratis periode og aldrig betalt for abonnementet.
+async function faarGratisPeriode(f: Pick<FirmaRaekke, "id" | "proeve_givet_kl" | "proeve_maaneder">): Promise<boolean> {
+  if (f.proeve_givet_kl || !(f.proeve_maaneder > 0)) return false;
+  const { count, error } = await createAdminClient()
+    .from("firma_regninger")
+    .select("id", { count: "exact", head: true })
+    .eq("firma_id", f.id)
+    .eq("type", "abonnement")
+    .eq("status", "betalt")
+    .gt("beloeb_oere", 0);
+  if (error) throw new Error(`firma_regninger: ${error.message}`);
+  return !count;
+}
+
 // "Betal for din pakke": Stripe Checkout for firmaets pakke. base = sidens
 // egen adresse (fra den kontrollerede Origin).
 export async function startBetaling(brugerId: string, base: string): Promise<LinkSvar> {
@@ -383,7 +486,7 @@ export async function startBetaling(brugerId: string, base: string): Promise<Lin
   }
   let prisId: string;
   try {
-    prisId = await sikrPris(f.pakke_id);
+    prisId = await firmaPris(f, f.pakke_id);
   } catch (err) {
     if (err instanceof PrisIkkeSat) {
       return { fejl: "Din pakke har ingen pris endnu. Skriv til erhverv@bidhamr.dk.", kode: "pris_ikke_sat" };
@@ -394,10 +497,24 @@ export async function startBetaling(brugerId: string, base: string): Promise<Lin
   const kunde = await sikrKunde(f);
   const moms = await sikrMomssats();
 
-  // Genbrug en åben betaling for samme pris (fx når firmaet trykker igen);
-  // andre åbne betalinger lukkes, så der ikke kan betales for to abonnementer.
+  // 1 måned gratis for alle nye firmaer (+ evt. ekstra gratis måneder fra
+  // staff): kortet gemmes i Checkout, men der trækkes 0 kr. nu, og første
+  // betaling er ved trial_end. Kun første gang - et firma, der starter igen
+  // efter en mislykket betaling, får ikke en ny gratis periode.
+  const gratisMaaneder = (await faarGratisPeriode(f)) ? Math.max(0, Math.min(f.proeve_maaneder, 24)) : 0;
+  const nuSek = Math.floor(Date.now() / 1000);
+  const trialEnd = gratisMaaneder > 0 ? Math.min(plusMaaneder(nuSek, gratisMaaneder), nuSek + (TRIAL_MAKS_DAGE - 1) * 86400) : null;
+
+  // Genbrug en åben betaling for samme pris og gratis periode (fx når firmaet
+  // trykker igen); andre åbne betalinger lukkes, så der ikke kan betales for
+  // to abonnementer.
   for await (const sess of s.checkout.sessions.list({ customer: kunde, status: "open", limit: 20 })) {
-    if (sess.metadata?.firma_id === f.id && sess.metadata?.pris_id === prisId && sess.url) {
+    if (
+      sess.metadata?.firma_id === f.id &&
+      sess.metadata?.pris_id === prisId &&
+      sess.metadata?.gratis_maaneder === String(gratisMaaneder) &&
+      sess.url
+    ) {
       return { ok: true, url: sess.url };
     }
     await s.checkout.sessions.expire(sess.id).catch(() => {});
@@ -409,16 +526,19 @@ export async function startBetaling(brugerId: string, base: string): Promise<Lin
       customer: kunde,
       line_items: [{ price: prisId, quantity: 1 }],
       payment_method_types: ["card"],
+      // Kortet gemmes altid - også når der trækkes 0 kr. i den gratis periode.
+      payment_method_collection: "always",
       locale: "da",
       subscription_data: {
         default_tax_rates: [moms],
         metadata: { firma_id: f.id, pakke_id: f.pakke_id },
+        ...(trialEnd ? { trial_end: trialEnd } : {}),
       },
-      metadata: { firma_id: f.id, pakke_id: f.pakke_id, pris_id: prisId },
+      metadata: { firma_id: f.id, pakke_id: f.pakke_id, pris_id: prisId, gratis_maaneder: String(gratisMaaneder) },
       success_url: `${base}/firma/abonnement?betaling=ok&session={CHECKOUT_SESSION_ID}`,
       cancel_url: `${base}/firma/abonnement?betaling=afbrudt`,
     },
-    { idempotencyKey: idempotensNoegle.checkout(f.id, prisId, Math.floor(Date.now() / 60_000)) },
+    { idempotencyKey: idempotensNoegle.checkout(f.id, `${prisId}:${gratisMaaneder}`, Math.floor(Date.now() / 60_000)) },
   );
   if (!session.url) throw new Error("Checkout uden url");
   return { ok: true, url: session.url };
@@ -660,13 +780,15 @@ export async function startOpgradering(
 
     const s = stripe();
     let sub = await s.subscriptions.retrieve(f.stripe_subscription_id);
+    // I den gratis periode er der intet at betale: skiftet sker med det samme.
+    if (sub.status === "trialing") return await skiftIGratisPeriode(f, skift, sub, tilbagerul, laas);
     if (sub.status !== "active") {
       const r = tilbagerul
         ? await rulTilbage(f.id, skift.id, tilbagerul, true, true, `abonnementet er ${sub.status}`, laas)
         : "fejl";
       return { status: "fejl", fejl: `Abonnementet er ${sub.status}`, ...tilbagerulFelter(r), betalFoerst: true };
     }
-    const prisId = await sikrPris(skift.til_pakke_id);
+    const prisId = await firmaPris(f, skift.til_pakke_id);
 
     planFrigivet = await frigivPlan(sub);
     if (sub.pending_update) annulleret = await annullerGamleOpgraderinger(f.id);
@@ -753,6 +875,66 @@ export async function startOpgradering(
   }
 }
 
+// Pakkeskift i den gratis periode (begge retninger): prisen skiftes i Stripe
+// uden proration (perioden er gratis, så der er intet at afregne), og skiftet
+// gennemføres i databasen med det samme (firma_pakkeskift_uden_betaling) -
+// flere auktioner med det samme ved en opgradering. Første betaling (ved
+// trial_end) er den nye pakkes pris. Fejler Stripe, før prisen er skiftet,
+// rulles databasen tilbage.
+async function skiftIGratisPeriode(
+  f: FirmaRaekke,
+  skift: SkiftRaekke,
+  sub: Stripe.Subscription,
+  tilbagerul: Tilbagerul | null,
+  laas: string | null,
+): Promise<BetalingsStatus> {
+  const s = stripe();
+  let aendret = false;
+  let planFrigivet = false;
+  try {
+    const prisId = await firmaPris(f, skift.til_pakke_id);
+    planFrigivet = await frigivPlan(sub);
+    const frisk = planFrigivet ? await s.subscriptions.retrieve(sub.id) : sub;
+    const item = frisk.items.data[0];
+    if (!item) throw new Error(`Abonnement ${sub.id} har ingen linjer`);
+    if (item.price.id !== prisId) {
+      try {
+        await s.subscriptions.update(
+          sub.id,
+          { items: [{ id: item.id, price: prisId, quantity: 1 }], proration_behavior: "none" },
+          { idempotencyKey: idempotensNoegle.gratisSkift(skift.id) },
+        );
+      } catch (err) {
+        const tjek = await s.subscriptions.retrieve(sub.id).catch(() => null);
+        if (tjek?.items.data[0]?.price.id === prisId) aendret = true;
+        throw err;
+      }
+    }
+    aendret = true;
+    const svar = await rpc("firma_pakkeskift_uden_betaling", {
+      p_skift: skift.id,
+      p_note: "Skiftet i den gratis periode (ingen betaling)",
+    });
+    if (svar.kode !== "ok" && svar.kode !== "allerede_registreret") {
+      throw new Error(`firma_pakkeskift_uden_betaling svarede ${String(svar.kode)}`);
+    }
+    return { status: "betalt", straks: true };
+  } catch (err) {
+    if (!aendret && tilbagerul) {
+      const r = await rulTilbage(f.id, skift.id, tilbagerul, !planFrigivet, true, `skift i gratis periode: ${fejltekst(err)}`, laas);
+      return { status: "fejl", fejl: fejltekst(err), ...tilbagerulFelter(r) };
+    }
+    // Prisen ER skiftet i Stripe, men databasen fulgte ikke med: alarm (staff
+    // gennemfører skiftet i admin - prisen i Stripe er allerede den nye).
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "erhverv/gratis-skift",
+      fejl: `Pakkeskift ${skift.id} for firma ${f.id}: prisen er skiftet i Stripe (${sub.id}), men databasen kunne ikke opdateres - skift pakken i admin: ${fejltekst(err)}`,
+    });
+    return { status: "fejl", fejl: fejltekst(err) };
+  }
+}
+
 function stopHvisOpsagt(sub: Stripe.Subscription): void {
   if (sub.cancel_at_period_end || sub.cancel_at) {
     throw new Error(`Abonnement ${sub.id} er opsagt - nedgraderingen er stoppet`);
@@ -783,7 +965,9 @@ export async function startNedgradering(
     if (sub.status === "canceled" || sub.status === "incomplete_expired") {
       throw new Error(`Abonnementet er ${sub.status}`);
     }
-    const prisId = await sikrPris(skift.til_pakke_id);
+    // I den gratis periode skiftes med det samme (ingen plan).
+    if (sub.status === "trialing") return await skiftIGratisPeriode(f, skift, sub, tilbagerul, laas);
+    const prisId = await firmaPris(f, skift.til_pakke_id);
     const moms = await sikrMomssats();
     annulleret = await annullerGamleOpgraderinger(f.id);
     // Frisk lige før planen laves: er abonnementet opsagt i mellemtiden
@@ -966,7 +1150,7 @@ export async function skiftPrisAdmin(firmaId: string, pakkeId: string): Promise<
       await frigivPakkeskiftLaas(firmaId, laas);
       return { status: "ingen_stripe" };
     }
-    prisId = await sikrPris(pakkeId);
+    prisId = await firmaPris(f, pakkeId);
   } catch (err) {
     await frigivPakkeskiftLaas(firmaId, laas);
     throw err;
@@ -1430,7 +1614,22 @@ export async function synkAbonnement(sub: Stripe.Subscription, slettet = false):
     p_periode_slut: tid(item?.current_period_end),
     p_slettet: slettet || sub.status === "canceled" || sub.status === "incomplete_expired",
     p_aarsag: sub.cancellation_details?.reason ?? null,
+    p_proeve_slut: tid(sub.trial_end),
   });
+
+  if (svar.kode === "ok") {
+    // En aftalt introrabat sættes på, så snart abonnementet findes (fx lige
+    // efter Checkout). Kortet spejles (mærke, sidste 4, udløb). Fejl her må
+    // ikke stoppe spejlingen - cron'en prøver introrabatten igen.
+    if (f.intro_status === "planlagt" && f.intro_noegle && (sub.status === "trialing" || sub.status === "active")) {
+      await anvendIntro(f, sub).catch((err) =>
+        logDriftFejl({ kilde: "webhook", hvor: "erhverv/intro", fejl: `Firma ${f.id}: ${fejltekst(err)}` }),
+      );
+    }
+    await synkKort(f.id, sub).catch((err) =>
+      logDriftFejl({ kilde: "webhook", hvor: "erhverv/kort", fejl: `Firma ${f.id}: ${fejltekst(err)}` }),
+    );
+  }
 
   if (svar.kode === "andet_abonnement" && sub.status !== "canceled" && sub.status !== "incomplete_expired") {
     // Firmaet har allerede et abonnement (fx to betalinger på samme tid):
@@ -1638,19 +1837,14 @@ async function tjekAbonnementsPris(firmaId: string, faktura: Stripe.Invoice): Pr
         .select("id", { count: "exact", head: true })
         .eq("firma_id", nu.id)
         .in("status", ["afventer_betaling", "planlagt"]);
-      const { data: pakke } = await createAdminClient()
-        .from("erhverv_pakker")
-        .select("maanedspris")
-        .eq("id", nu.pakke_id)
-        .maybeSingle<{ maanedspris: number | string | null }>();
-      const dbOere = pakke?.maanedspris == null ? null : Math.round(Number(pakke.maanedspris) * 100);
+      const dbOere = await forventetOere(nu, nu.pakke_id);
       const item = sub.items.data[0];
       if (sub.schedule || sub.pending_update || count || !item) {
         hvorfor = "abonnementet har en plan/ventende ændring - kun alarm";
       } else if (dbOere == null || pris.unit_amount == null || dbOere > pris.unit_amount) {
         hvorfor = "databasens pakke er dyrere end prisen i Stripe - kun alarm (firmaet skal ikke trækkes for mere automatisk)";
       } else {
-        const ny = await sikrPris(nu.pakke_id);
+        const ny = await firmaPris(nu, nu.pakke_id);
         await s.subscriptions.update(
           sub.id,
           { items: [{ id: item.id, price: ny, quantity: 1 }], proration_behavior: "none" },
@@ -1798,7 +1992,7 @@ async function refunderOpgradering(f: FirmaRaekke, skiftId: string, faktura: Str
       } else {
         await s.subscriptions.update(
           sub.id,
-          { items: [{ id: item.id, price: await sikrPris(nu.pakke_id), quantity: 1 }], proration_behavior: "none" },
+          { items: [{ id: item.id, price: await firmaPris(nu, nu.pakke_id), quantity: 1 }], proration_behavior: "none" },
           { idempotencyKey: idempotensNoegle.opgraderingTilbage(skiftId) },
         );
         prisTekst = "prisen er sat tilbage";
@@ -1816,4 +2010,458 @@ async function refunderOpgradering(f: FirmaRaekke, skiftId: string, faktura: Str
       fejl: `Refusion af opgradering ${skiftId} (faktura ${faktura.id}) fejlede - refundér manuelt: ${fejltekst(err)}`,
     });
   }
+}
+
+// =============================================================================
+// Staff-handlinger på abonnementet (20261102010000): introrabat, gratis periode,
+// særpris, kort og refusion af en regning. Chef og sælger-rollen (server
+// actions i src/app/actions/adminErhvervAbonnement.ts). Stripe er sandheden:
+// Stripe ændres FØRST, databasen spejler bagefter. Hver handling tager
+// pakkeskift-låsen, så den aldrig kører samtidig med et pakkeskift.
+// =============================================================================
+
+const INTRO_METADATA = "intro";
+
+export type AbonnementHandlingSvar =
+  | { status: "ok"; proeveSlut?: string | null; introTil?: string | null }
+  // Firmaet har intet abonnement i Stripe endnu: kun databasen (gælder, når
+  // abonnementet starter).
+  | { status: "ingen_stripe" }
+  | { status: "afvist"; kode: "i_gang" | "opsagt" | "ikke_aktiv" | "skift_venter" | "for_lang"; fejl: string }
+  | { status: "fejl"; fejl: string };
+
+function erIntroRabat(d: string | Stripe.Discount): d is Stripe.Discount {
+  if (typeof d === "string") return false;
+  const k = d.source?.coupon;
+  return !!k && typeof k !== "string" && k.metadata?.bidhamr === INTRO_METADATA;
+}
+
+async function hentAbonnement(subId: string): Promise<Stripe.Subscription> {
+  return stripe().subscriptions.retrieve(subId, { expand: ["discounts", "discounts.source.coupon"] });
+}
+
+// Kupon "Introrabat X %" med duration 'repeating' i K måneder (genbruges af
+// alle firmaer med samme procent og varighed - en kupon er en skabelon).
+async function sikrIntroKupon(procent: number, maaneder: number): Promise<string> {
+  const kuponId = `bidhamr_intro_${procent}_${maaneder}`;
+  const s = stripe();
+  try {
+    const k = await s.coupons.retrieve(kuponId);
+    if (!k.valid) throw new Error(`Kuponen ${kuponId} er ikke længere gyldig i Stripe`);
+    return k.id;
+  } catch (err) {
+    if (!(err instanceof Stripe.errors.StripeInvalidRequestError) || err.code !== "resource_missing") throw err;
+  }
+  await s.coupons.create(
+    {
+      id: kuponId,
+      name: `Introrabat ${procent} %`,
+      percent_off: procent,
+      duration: "repeating",
+      duration_in_months: maaneder,
+      metadata: { bidhamr: INTRO_METADATA, procent: String(procent), maaneder: String(maaneder) },
+    },
+    { idempotencyKey: idempotensNoegle.kupon(kuponId) },
+  );
+  return kuponId;
+}
+
+function naesteFaktura(sub: Stripe.Subscription): number {
+  if (sub.status === "trialing" && sub.trial_end) return sub.trial_end;
+  return sub.items.data[0]?.current_period_end ?? Math.floor(Date.now() / 1000);
+}
+
+// Sæt firmaets aftalte introrabat (status 'planlagt') på abonnementet.
+// Idempotent: nøglen er aftalens intro_noegle + varigheden, og databasen
+// spejler kun, hvis aftalen ikke er ændret imens (firma_intro_spejl).
+async function anvendIntro(f: FirmaRaekke, sub: Stripe.Subscription): Promise<string | null> {
+  if (!f.intro_procent || !f.intro_maaneder || !f.intro_noegle) return null;
+  const nuSek = Math.floor(Date.now() / 1000);
+  const k = introKuponMaaneder({
+    nuSek,
+    naesteFakturaSek: naesteFaktura(sub),
+    maaneder: f.intro_maaneder,
+    fra: f.intro_fra ?? "efter_gratis",
+  });
+  const kupon = await sikrIntroKupon(f.intro_procent, k);
+  const opdateret = await stripe().subscriptions.update(
+    sub.id,
+    { discounts: [{ coupon: kupon }], expand: ["discounts", "discounts.source.coupon"] },
+    { idempotencyKey: idempotensNoegle.intro(f.id, sub.id, f.intro_noegle, k) },
+  );
+  const rabat = opdateret.discounts.find(erIntroRabat);
+  const til = tid(rabat?.end ?? null);
+  await rpc("firma_intro_spejl", { p_firma: f.id, p_noegle: f.intro_noegle, p_status: "aktiv", p_coupon: kupon, p_til: til });
+  return til;
+}
+
+// Fjern introrabatten fra abonnementet (kun vores egen kupon fjernes).
+async function fjernIntroFraAbonnement(firmaId: string, sub: Stripe.Subscription, klik: string): Promise<void> {
+  const andre = sub.discounts.filter((d) => !erIntroRabat(d));
+  if (andre.length === sub.discounts.length) return;
+  await stripe().subscriptions.update(
+    sub.id,
+    { discounts: andre.length ? andre.map((d) => ({ discount: typeof d === "string" ? d : d.id })) : "" },
+    { idempotencyKey: idempotensNoegle.introFjern(firmaId, klik) },
+  );
+}
+
+async function medLaas(
+  firmaId: string,
+  fn: () => Promise<AbonnementHandlingSvar>,
+): Promise<AbonnementHandlingSvar> {
+  const laas = await tagPakkeskiftLaas(firmaId);
+  if (!laas) return { status: "afvist", kode: "i_gang", fejl: PAKKESKIFT_I_GANG };
+  try {
+    return await fn();
+  } finally {
+    await frigivPakkeskiftLaas(firmaId, laas);
+  }
+}
+
+// Kan abonnementet ændres af staff lige nu? (Ikke opsagt, ingen planlagt
+// nedgradering eller ventende opgradering - de skal afgøres først.)
+function tjekAendring(sub: Stripe.Subscription): Extract<AbonnementHandlingSvar, { status: "afvist" }> | null {
+  if (sub.status !== "trialing" && sub.status !== "active") {
+    return { status: "afvist", kode: "ikke_aktiv", fejl: `Abonnementet er ${sub.status} i Stripe. Løs betalingen først.` };
+  }
+  if (sub.cancel_at_period_end || sub.cancel_at) {
+    return { status: "afvist", kode: "opsagt", fejl: "Abonnementet er opsagt. Fortryd opsigelsen først." };
+  }
+  if (sub.schedule || sub.pending_update) {
+    return {
+      status: "afvist",
+      kode: "skift_venter",
+      fejl: "Firmaet har et pakkeskift, der venter. Skift pakken med det samme i admin (eller vent), og prøv igen.",
+    };
+  }
+  return null;
+}
+
+// Introrabat sat/ændret i databasen (erhverv_firma_intro_gem -> 'planlagt'):
+// sæt den på abonnementet nu, hvis det findes.
+export async function introTilStripe(firmaId: string): Promise<AbonnementHandlingSvar> {
+  try {
+    const f = await hentFirma("id", firmaId);
+    if (!f?.stripe_subscription_id || !stripeTilgaengelig()) return { status: "ingen_stripe" };
+    const subId = f.stripe_subscription_id;
+    return await medLaas(firmaId, async () => {
+      const sub = await hentAbonnement(subId);
+      if (erAfsluttet(sub)) return { status: "ingen_stripe" };
+      const afvist = tjekAendring(sub);
+      if (afvist) return afvist;
+      return { status: "ok", introTil: await anvendIntro(f, sub) };
+    });
+  } catch (err) {
+    return { status: "fejl", fejl: fejltekst(err) };
+  }
+}
+
+// Fjern introrabatten: Stripe først, så databasen.
+export async function fjernIntroStripe(firmaId: string): Promise<AbonnementHandlingSvar> {
+  try {
+    const f = await hentFirma("id", firmaId);
+    if (!f?.stripe_subscription_id || !stripeTilgaengelig()) return { status: "ingen_stripe" };
+    const subId = f.stripe_subscription_id;
+    return await medLaas(firmaId, async () => {
+      const sub = await hentAbonnement(subId);
+      if (erAfsluttet(sub)) return { status: "ingen_stripe" };
+      await fjernIntroFraAbonnement(firmaId, sub, randomUUID());
+      return { status: "ok" };
+    });
+  } catch (err) {
+    return { status: "fejl", fejl: fejltekst(err) };
+  }
+}
+
+// Gratis periode +N måneder: trial_end forlænges (i den gratis periode) eller
+// sættes til slutningen af den betalte periode + N måneder (proration 'none' -
+// firmaet beholder det betalte og får N måneder gratis oven i). En kørende
+// introrabat flyttes, så firmaet stadig får de resterende rabatmåneder på
+// betalte fakturaer.
+export async function givGratisPeriodeStripe(firmaId: string, maaneder: number): Promise<AbonnementHandlingSvar> {
+  try {
+    const f = await hentFirma("id", firmaId);
+    if (!f?.stripe_subscription_id || !stripeTilgaengelig()) return { status: "ingen_stripe" };
+    const subId = f.stripe_subscription_id;
+    return await medLaas(firmaId, async () => {
+      const s = stripe();
+      const sub = await hentAbonnement(subId);
+      if (erAfsluttet(sub)) return { status: "ingen_stripe" };
+      const afvist = tjekAendring(sub);
+      if (afvist) return afvist;
+      const nuSek = Math.floor(Date.now() / 1000);
+      const item = sub.items.data[0];
+      if (!item) throw new Error(`Abonnement ${sub.id} har ingen linjer`);
+      const nyTrial = nyGratisSlut({
+        status: sub.status,
+        trialEndSek: sub.trial_end,
+        periodeSlutSek: item.current_period_end,
+        nuSek,
+        maaneder,
+      });
+      if (nyTrial - nuSek > (TRIAL_MAKS_DAGE - 1) * 86400) {
+        return { status: "afvist", kode: "for_lang", fejl: "Den gratis periode kan højst vare 2 år i alt (Stripes grænse)." };
+      }
+      // Resterende introrabat (på betalte fakturaer) FØR ændringen.
+      const intro = sub.discounts.find(erIntroRabat);
+      const rest = intro ? introResterende({ naesteFakturaSek: naesteFaktura(sub), rabatSlutSek: intro.end }) : 0;
+      const kuponObj = intro && typeof intro.source.coupon !== "string" ? intro.source.coupon : null;
+      const procent = kuponObj?.percent_off ?? null;
+
+      const klik = randomUUID();
+      const opdateret = await s.subscriptions.update(
+        sub.id,
+        { trial_end: nyTrial, proration_behavior: "none" },
+        { idempotencyKey: idempotensNoegle.gratisPeriode(firmaId, klik) },
+      );
+      let introTil: string | null = null;
+      if (intro && rest > 0 && procent) {
+        const k = introKuponMaaneder({ nuSek, naesteFakturaSek: naesteFaktura(opdateret), maaneder: rest, fra: "efter_gratis" });
+        const kupon = await sikrIntroKupon(Math.round(procent), k);
+        const flyttet = await s.subscriptions.update(
+          sub.id,
+          { discounts: [{ coupon: kupon }], expand: ["discounts", "discounts.source.coupon"] },
+          { idempotencyKey: idempotensNoegle.introFlyt(firmaId, sub.id, klik) },
+        );
+        introTil = tid(flyttet.discounts.find(erIntroRabat)?.end ?? null);
+        const frisk = await hentFirma("id", firmaId);
+        if (frisk?.intro_noegle) {
+          await rpc("firma_intro_spejl", { p_firma: f.id, p_noegle: frisk.intro_noegle, p_status: "aktiv", p_coupon: kupon, p_til: introTil });
+        }
+      }
+      await synkAbonnement(await s.subscriptions.retrieve(sub.id));
+      return { status: "ok", proeveSlut: tid(opdateret.trial_end), introTil };
+    });
+  } catch (err) {
+    return { status: "fejl", fejl: fejltekst(err) };
+  }
+}
+
+// Særpris (oere) eller pakkens pris igen (null) på abonnementet. fra
+// 'naeste_betaling': proration 'none' (gælder fra næste betaling); 'straks':
+// proration 'create_prorations' (forskellen for resten af perioden afregnes på
+// næste regning - ingen ekstra betaling nu). I den gratis periode er der intet
+// at afregne. Svarer med den gamle pris, så kalderen kan sætte den tilbage.
+export type SaerprisSvar =
+  | { status: "ok"; subId: string; itemId: string; gammelPris: string; nyPris: string; laas: string }
+  | Exclude<AbonnementHandlingSvar, { status: "ok" }>;
+
+// Låsen holdes, til databasen er opdateret (kalderen frigiver den med
+// frigivPakkeskiftLaas - også når prisen sættes tilbage).
+export async function saetSaerprisStripe(
+  firmaId: string,
+  pakkeId: string,
+  oere: number | null,
+  fra: "naeste_betaling" | "straks",
+): Promise<SaerprisSvar> {
+  let laas: string | null = null;
+  try {
+    const f = await hentFirma("id", firmaId);
+    if (!f?.stripe_subscription_id || !stripeTilgaengelig()) return { status: "ingen_stripe" };
+    laas = await tagPakkeskiftLaas(firmaId);
+    if (!laas) return { status: "afvist", kode: "i_gang", fejl: PAKKESKIFT_I_GANG };
+    const s = stripe();
+    const sub = await s.subscriptions.retrieve(f.stripe_subscription_id);
+    if (erAfsluttet(sub)) {
+      await frigivPakkeskiftLaas(firmaId, laas);
+      return { status: "ingen_stripe" };
+    }
+    const afvist = tjekAendring(sub);
+    if (afvist) {
+      await frigivPakkeskiftLaas(firmaId, laas);
+      return afvist;
+    }
+    const item = sub.items.data[0];
+    if (!item) throw new Error(`Abonnement ${sub.id} har ingen linjer`);
+    const nyPris = oere ? await sikrFirmaPris(firmaId, pakkeId, oere) : await sikrPris(pakkeId);
+    if (item.price.id !== nyPris) {
+      await s.subscriptions.update(
+        sub.id,
+        {
+          items: [{ id: item.id, price: nyPris, quantity: 1 }],
+          proration_behavior: fra === "straks" && sub.status === "active" ? "create_prorations" : "none",
+        },
+        { idempotencyKey: idempotensNoegle.saerpris(firmaId, randomUUID()) },
+      );
+    }
+    return { status: "ok", subId: sub.id, itemId: item.id, gammelPris: item.price.id, nyPris, laas };
+  } catch (err) {
+    if (laas) await frigivPakkeskiftLaas(firmaId, laas);
+    return { status: "fejl", fejl: fejltekst(err) };
+  }
+}
+
+// Databasen kunne ikke gemme særprisen: prisen i Stripe sættes tilbage.
+// Kaster ikke.
+export async function saetSaerprisTilbage(svar: Extract<SaerprisSvar, { status: "ok" }>, firmaId: string): Promise<void> {
+  if (svar.gammelPris === svar.nyPris) return;
+  try {
+    await stripe().subscriptions.update(
+      svar.subId,
+      { items: [{ id: svar.itemId, price: svar.gammelPris, quantity: 1 }], proration_behavior: "none" },
+      { idempotencyKey: idempotensNoegle.prisRettelse(svar.subId, randomUUID()) },
+    );
+  } catch (err) {
+    await logDriftFejl({
+      kilde: "action",
+      hvor: "erhverv/saerpris-tilbage",
+      fejl: `Firma ${firmaId}: særprisen blev ikke gemt i databasen, og prisen på ${svar.subId} kunne ikke sættes tilbage til ${svar.gammelPris} - ret i Stripe: ${fejltekst(err)}`,
+    });
+  }
+}
+
+// Kortet på abonnementet (eller kundens standardkort) spejles: mærke, sidste
+// 4 cifre og udløb - aldrig mere. Kaster ved fejl (kalderen logger).
+async function synkKort(firmaId: string, sub: Stripe.Subscription): Promise<void> {
+  const s = stripe();
+  let pmId = id(sub.default_payment_method);
+  if (!pmId) {
+    const kundeId = id(sub.customer);
+    if (!kundeId) return;
+    const kunde = await s.customers.retrieve(kundeId);
+    if (!("deleted" in kunde && kunde.deleted)) {
+      pmId = id((kunde as Stripe.Customer).invoice_settings?.default_payment_method ?? null);
+    }
+  }
+  if (!pmId) return;
+  const pm = await s.paymentMethods.retrieve(pmId);
+  if (!pm.card) return;
+  await rpc("firma_kort_spejl", {
+    p_firma: firmaId,
+    p_maerke: pm.card.brand,
+    p_sidste4: pm.card.last4,
+    p_udloeb_maaned: pm.card.exp_month,
+    p_udloeb_aar: pm.card.exp_year,
+  });
+}
+
+// customer.updated / payment_method.attached / payment_method.automatically_updated:
+// kortet er måske skiftet (fx i kundeportalen). Kaster ikke.
+export async function synkKortForKunde(kunde: string | null): Promise<string> {
+  try {
+    if (!kunde) return "ingen_kunde";
+    const f = await firmaForKunde(kunde);
+    if (!f) return "ikke_erhverv";
+    if (!f.stripe_subscription_id) return "intet_abonnement";
+    await synkKort(f.id, await stripe().subscriptions.retrieve(f.stripe_subscription_id));
+    return "kort_spejlet";
+  } catch (err) {
+    await logDriftFejl({ kilde: "webhook", hvor: "erhverv/kort", fejl: err });
+    return "fejl";
+  }
+}
+
+// Hel refusion af en betalt regning (abonnement eller opgradering) med en
+// kreditnota i Stripe (alle linjer, refund_amount = det betalte). Idempotent
+// pr. regning. Regningen markeres 'krediteret' (bogføringen følger med via
+// firma_regninger_krediteret_kl). Abonnementet fortsætter uændret.
+export type RefusionSvar =
+  | { status: "ok"; beloebOere: number; firmaId: string }
+  | { status: "afvist"; fejl: string }
+  | { status: "fejl"; fejl: string };
+
+export async function refunderRegningStripe(regningId: string): Promise<RefusionSvar> {
+  try {
+    const { data: r, error } = await createAdminClient()
+      .from("firma_regninger")
+      .select("id, firma_id, status, type, stripe_invoice_id, beloeb_oere")
+      .eq("id", regningId)
+      .maybeSingle<{ id: string; firma_id: string; status: string; type: string; stripe_invoice_id: string | null; beloeb_oere: number }>();
+    if (error) throw new Error(`firma_regninger: ${error.message}`);
+    if (!r) return { status: "afvist", fejl: "Regningen findes ikke." };
+    if (r.status === "krediteret") return { status: "afvist", fejl: "Regningen er allerede refunderet." };
+    if (r.status !== "betalt") return { status: "afvist", fejl: "Kun en betalt regning kan refunderes." };
+    if (!r.stripe_invoice_id) return { status: "afvist", fejl: "Regningen er ikke betalt i Stripe og kan ikke refunderes her." };
+    if (!stripeTilgaengelig()) return { status: "afvist", fejl: "Stripe er ikke sat op." };
+    const s = stripe();
+    const faktura = await s.invoices.retrieve(r.stripe_invoice_id);
+    if (faktura.status !== "paid") return { status: "afvist", fejl: "Fakturaen er ikke betalt i Stripe." };
+    if (faktura.amount_paid <= 0) return { status: "afvist", fejl: "Der er intet at refundere (0 kr.)." };
+    if ((faktura.post_payment_credit_notes_amount ?? 0) > 0) {
+      return { status: "afvist", fejl: "Der er allerede lavet en kreditnota på fakturaen i Stripe - tjek den i Stripe." };
+    }
+    const linjer: Stripe.InvoiceLineItem[] = [];
+    for await (const l of s.invoices.listLineItems(faktura.id!, { limit: 100 })) linjer.push(l);
+    await s.creditNotes.create(
+      {
+        invoice: faktura.id!,
+        lines: linjer.map((l) => ({ type: "invoice_line_item" as const, invoice_line_item: l.id, quantity: l.quantity ?? 1 })),
+        refund_amount: faktura.amount_paid,
+        reason: "order_change",
+        memo: "Refunderet af BidHamr",
+        metadata: { firma_id: r.firma_id, regning_id: r.id },
+      },
+      { idempotencyKey: idempotensNoegle.regningRefusion(r.id) },
+    );
+    await rpc("firma_regning_krediteret", { p_firma: r.firma_id, p_stripe_invoice_id: faktura.id });
+    return { status: "ok", beloebOere: faktura.amount_paid, firmaId: r.firma_id };
+  } catch (err) {
+    return { status: "fejl", fejl: fejltekst(err) };
+  }
+}
+
+// Betalings-cron'en: (1) priserne for firmaer, der er flyttet til de nye
+// pakker (stripe_pris_synk), skiftes i Stripe fra næste betaling; (2) en
+// aftalt introrabat, der ikke er kommet på abonnementet (fx Stripe fejlede),
+// sættes på. Kaster ikke pr. firma.
+export async function koerAbonnementSynk(): Promise<{ priser: number; intro: number; fejl: number }> {
+  const ud = { priser: 0, intro: 0, fejl: 0 };
+  if (!stripeTilgaengelig()) return ud;
+  const admin = createAdminClient();
+  const { data: synk, error } = await admin.rpc("firma_pris_synk_kandidater", { p_graense: 20 });
+  if (error) {
+    // PGRST202: migrationen 20261102010000 er ikke kørt endnu.
+    if (error.code !== "PGRST202") throw new Error(`firma_pris_synk_kandidater: ${error.message}`);
+    return ud;
+  }
+  for (const k of (synk ?? []) as { firma_id: string; subscription_id: string }[]) {
+    try {
+      const f = await hentFirma("id", k.firma_id);
+      if (!f?.stripe_subscription_id) continue;
+      const laas = await tagPakkeskiftLaas(f.id);
+      if (!laas) continue;
+      try {
+        const s = stripe();
+        const sub = await s.subscriptions.retrieve(f.stripe_subscription_id);
+        const item = sub.items.data[0];
+        const kanSkifte = !!item && !sub.schedule && !sub.pending_update;
+        if (!erAfsluttet(sub) && kanSkifte) {
+          const pris = await firmaPris(f, f.pakke_id);
+          if (item.price.id !== pris) {
+            await s.subscriptions.update(
+              sub.id,
+              { items: [{ id: item.id, price: pris, quantity: 1 }], proration_behavior: "none" },
+              { idempotencyKey: idempotensNoegle.prisSynk(f.id, pris) },
+            );
+          }
+        }
+        if (erAfsluttet(sub) || kanSkifte) {
+          await rpc("firma_pris_synk_udfoert", { p_firma: f.id });
+          ud.priser++;
+        }
+      } finally {
+        await frigivPakkeskiftLaas(f.id, laas);
+      }
+    } catch (err) {
+      ud.fejl++;
+      await logDriftFejl({ kilde: "cron", hvor: "erhverv/pris-synk", fejl: `Firma ${k.firma_id}: ${fejltekst(err)}` });
+    }
+  }
+  const { data: intro, error: iFejl } = await admin
+    .from("firmaer")
+    .select("id")
+    .eq("intro_status", "planlagt")
+    .not("stripe_subscription_id", "is", null)
+    .limit(20);
+  if (iFejl) throw new Error(`firmaer (intro): ${iFejl.message}`);
+  for (const r of (intro ?? []) as { id: string }[]) {
+    const svar = await introTilStripe(r.id);
+    if (svar.status === "ok") ud.intro++;
+    else if (svar.status === "fejl") {
+      ud.fejl++;
+      await logDriftFejl({ kilde: "cron", hvor: "erhverv/intro", fejl: `Firma ${r.id}: ${svar.fejl}` });
+    }
+  }
+  return ud;
 }

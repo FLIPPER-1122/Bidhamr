@@ -1,9 +1,32 @@
 // Mails til firmakonti (erhverv). Teksterne ligger i src/lib/tekster/erhverv.ts
 // (ERHVERV_VELKOMSTMAIL), så siden, mailen og supabase/templates/invite.html
 // siger det samme.
-import { bygMail, escapeHtml } from "./layout";
+import { bygMail, escapeHtml, sideUrl } from "./layout";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
-import { ERHVERV_VELKOMSTMAIL as T, ERHVERV_VELKOMSTMAIL_GENSENDT } from "@/lib/tekster/erhverv";
+import {
+  ERHVERV_VELKOMSTMAIL as T,
+  ERHVERV_VELKOMSTMAIL_GENSENDT,
+  FIRMA_ABONNEMENT_MAIL as M,
+} from "@/lib/tekster/erhverv";
+
+// Mail til firmaet, når BidHamr ændrer abonnementet (pakke, pris, rabat,
+// gratis periode) eller beder om et nyt kort. Teksterne:
+// FIRMA_ABONNEMENT_MAIL. Knappen fører til Firma oversigt -> Abonnement.
+export function firmaAbonnementMail(input: { emne: string; overskrift: string; afsnit: readonly string[]; knap?: string }) {
+  return {
+    subject: input.emne,
+    ...bygMail({
+      preheader: input.afsnit[1] ?? input.overskrift,
+      overskriftHtml: escapeHtml(input.overskrift),
+      afsnitHtml: [
+        ...input.afsnit.map((t) => escapeHtml(t)),
+        escapeHtml(M.hjaelp).replace(ERHVERV_EMAIL, `<a href="mailto:${ERHVERV_EMAIL}">${ERHVERV_EMAIL}</a>`),
+      ],
+      knap: { tekst: input.knap ?? M.knap, url: sideUrl("/firma/abonnement") },
+      aarsag: M.fodnote,
+    }),
+  };
+}
 
 // Velkomstmail, når BidHamr har oprettet firmakontoen. linkUrl er et
 // engangslink, som logger ind og fører til "Vælg din adgangskode".

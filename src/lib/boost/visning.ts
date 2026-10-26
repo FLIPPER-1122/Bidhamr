@@ -28,6 +28,44 @@ export async function hentBoostTop(
   return ((data ?? []) as { auktion_id: string }[]).map((r) => r.auktion_id);
 }
 
+// Kategori og søgning (20261102010000): boostede (private) og fremhævede
+// (firmaer, "Annonce") auktioner i én pulje - samme loft og rotation som
+// boost_top (liste_top i databasen). Findes liste_top ikke endnu (migrationen
+// er ikke kørt), bruges boost_top som før.
+export async function hentListeTop(
+  supabase: Klient,
+  filtre: { kategori?: string | null; soeg?: string | null } = {},
+): Promise<string[]> {
+  const { data, error } = await supabase.rpc("liste_top", {
+    p_kategori: filtre.kategori || null,
+    p_soeg: filtre.soeg || null,
+  });
+  if (error) {
+    if (/Could not find the function|does not exist|PGRST202/i.test(`${error.code ?? ""} ${error.message}`)) {
+      return hentBoostTop(supabase, filtre);
+    }
+    console.error("liste_top:", error.message);
+    return [];
+  }
+  return ((data ?? []) as { auktion_id: string }[]).map((r) => r.auktion_id);
+}
+
+// Sætter annonce = true på de kort, hvis auktion er fremhævet af et firma
+// lige nu (mærket "Annonce" - markedsføringsloven).
+export async function markerAnnoncer<T extends { id: string; annonce?: boolean }>(supabase: Klient, kort: T[]): Promise<T[]> {
+  const unikke = [...new Set(kort.map((k) => k.id))].slice(0, 500);
+  if (unikke.length === 0) return kort;
+  const { data, error } = await supabase.rpc("aktive_annoncer", { p_auktioner: unikke });
+  if (error) {
+    if (!/Could not find the function|does not exist|PGRST202/i.test(`${error.code ?? ""} ${error.message}`)) {
+      console.error("aktive_annoncer:", error.message);
+    }
+    return kort;
+  }
+  const aktive = new Set(((data ?? []) as { auktion_id: string }[]).map((r) => r.auktion_id));
+  return kort.map((k) => (aktive.has(k.id) ? { ...k, annonce: true } : k));
+}
+
 // Hvilke af auktionerne er boostet lige nu?
 export async function hentAktiveBoosts(supabase: Klient, ider: string[]): Promise<Set<string>> {
   const unikke = [...new Set(ider)].slice(0, 500);

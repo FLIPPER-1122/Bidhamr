@@ -10,7 +10,7 @@ import { markerPopulaereSaelgere } from "@/lib/populaerSaelger";
 import { læsSortering, type Sortering } from "@/lib/sortering";
 import { escapeLike, escapeRegex } from "@/lib/postgrest";
 import type { TotalType } from "@/lib/soegeTotal";
-import { hentBoostTop, markerBoostede } from "@/lib/boost/visning";
+import { hentListeTop, markerAnnoncer, markerBoostede } from "@/lib/boost/visning";
 
 // Søgning på /auktioner med sidetal. Bruges både af siden (første side,
 // server-renderet) og af server-handlingen "Vis flere"/nye filtre, så
@@ -67,7 +67,7 @@ async function medBoost(
 ): Promise<DummyAuction[]> {
   let top: KortRaekke[] = [];
   if (o.offset === 0) {
-    const ider = (await hentBoostTop(supabase, { kategori: o.kategori || null, soeg: o.soeg || null })).filter(
+    const ider = (await hentListeTop(supabase, { kategori: o.kategori || null, soeg: o.soeg || null })).filter(
       (id) => !o.tilladte || o.tilladte.has(id),
     );
     if (ider.length > 0) {
@@ -86,7 +86,8 @@ async function medBoost(
   const iTop = new Set(top.map((r) => r.id));
   const kort = [...top, ...side.filter((r) => !iTop.has(r.id))].map(mapAuctionTilKort);
   // Mærkerne "Boostet" og "Populær sælger".
-  return markerPopulaereSaelgere(await markerBoostede(supabase, kort));
+  // Fremhævede firma-auktioner ("Annonce") er i samme pulje øverst (liste_top).
+  return markerPopulaereSaelgere(await markerAnnoncer(supabase, await markerBoostede(supabase, kort)));
 }
 
 const FEJL = "Auktionerne kunne ikke hentes. Prøv igen.";

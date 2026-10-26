@@ -10,7 +10,7 @@ import { koerUgensButikCron } from "@/lib/betaling/ugensButik";
 import { koerEkstraFragtCron } from "@/lib/betaling/ekstraFragt";
 import { harCronAdgang } from "@/lib/cronAdgang";
 import { koerDac7Cron } from "@/lib/dac7/server";
-import { koerLukOpsigelser } from "@/lib/erhverv/betaling";
+import { koerAbonnementSynk, koerLukOpsigelser } from "@/lib/erhverv/betaling";
 import { koerBetaFejlOprydning } from "@/lib/betaFejlOprydning";
 import { koerEkstraFragtOprydning } from "@/lib/ekstraFragt/oprydning";
 import { kortResultat } from "@/lib/driftCronResultat";
@@ -240,6 +240,18 @@ async function haandter(req: NextRequest) {
         logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Erhverv: opsigelse ved lukning", fejl: err }),
       );
     }
+    // Erhverv (20261102010000): priser for firmaer flyttet til de nye pakker
+    // skiftes i Stripe fra næste betaling, og en aftalt introrabat, der ikke
+    // kom på abonnementet, sættes på. Trinfejl, fordi det handler om, hvad
+    // firmaet bliver trukket.
+    let erhvervSynk: Awaited<ReturnType<typeof koerAbonnementSynk>> | null = null;
+    try {
+      erhvervSynk = await driftFejlSamler.run(trinFejl, () => koerAbonnementSynk());
+    } catch (err) {
+      await driftFejlSamler.run(trinFejl, () =>
+        logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Erhverv: pris og introrabat", fejl: err }),
+      );
+    }
     // Ubrugte beta-skærmbilleder (ældre end 24 timer, ikke i en beta-fejl)
     // slettes højst én gang i timen. Flytter ingen penge - fejl her tæller
     // ikke som trinfejl, men logges i drift_fejl.
@@ -258,7 +270,7 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Ekstra fragt: oprydning af dokumentation", fejl: err });
     }
-    const r = { ...betaling, fragt, returfragt, boost, ugensButik, ekstraFragt, dac7, erhvervLuk, betaFejlOprydning, ekstraFragtOprydning };
+    const r = { ...betaling, fragt, returfragt, boost, ugensButik, ekstraFragt, dac7, erhvervLuk, erhvervSynk, betaFejlOprydning, ekstraFragtOprydning };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);

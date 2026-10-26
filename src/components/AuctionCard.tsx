@@ -26,6 +26,8 @@ export interface DummyAuction {
   erhverv?: boolean;
   // Auktionen er boostet lige nu (aktive_boosts) - vises som "Boostet".
   boostet?: boolean;
+  // Et firma har fremhævet auktionen (aktive_annoncer) - vises som "Annonce".
+  annonce?: boolean;
   // auctions.bruger_id (offentligt) - bruges til at slå "Populær sælger" op.
   saelgerId?: string;
   // Sælgeren har mærket "Populær sælger" (src/lib/populaerSaelger.ts).
@@ -82,7 +84,11 @@ export default function AuctionCard({
             )
           )}
 
-          {auktion.boostet && <BoostetMaerke lille className="absolute top-3 left-3 shadow-kort" />}
+          {auktion.annonce ? (
+            <BoostetMaerke lille annonce className="absolute top-3 left-3 shadow-kort" />
+          ) : (
+            auktion.boostet && <BoostetMaerke lille className="absolute top-3 left-3 shadow-kort" />
+          )}
 
           <span
             className={`absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-none px-[9px] py-[5px] text-xs font-semibold ${

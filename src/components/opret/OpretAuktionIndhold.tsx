@@ -10,7 +10,7 @@ import { hentMineEkstraFragtRegninger } from "@/app/actions/ekstraFragt";
 import EkstraFragtBjaelke from "@/components/ekstraFragt/EkstraFragtBjaelke";
 import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA } from "@/lib/tekster/erhverv";
 import { naesteLedigeTekst } from "@/lib/erhverv/visning";
-import type { Ugekvote } from "@/lib/erhverv/regler";
+import { kvoteBrugt, type Ugekvote } from "@/lib/erhverv/regler";
 
 // Indholdet af "Opret auktion" - fælles for /opret-auktion (private) og
 // /firma/auktioner/ny (firma-dashboardet), så tjek og formular ikke kopieres.
@@ -26,7 +26,7 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
   // også, BHE02/BHE03) - vis det her, før firmaet udfylder hele formularen.
   const [kontoType, { data: kvoteData }, { data: profil }, mitid, { data: dac7Data }, ekstraFragt] = await Promise.all([
     hentKontoType(brugerId),
-    supabase.rpc("firma_ugekvote"),
+    supabase.rpc("firma_kvote"),
     // RLS: brugeren kan kun læse sin egen betalingsprofil.
     supabase
       .from("betalingsprofiler")
@@ -55,7 +55,7 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
   const dac7Spaerret = !!(dac7Data as { anmodning?: { spaerret?: boolean } | null } | null)?.anmodning?.spaerret;
   const erFirma = kontoType === "erhverv";
   const kvote = erFirma ? ((kvoteData as Ugekvote | null) ?? null) : null;
-  const firmaSpaerret = erFirma && (!kvote || !kvote.aktivt_abonnement || kvote.brugt >= kvote.max);
+  const firmaSpaerret = erFirma && (!kvote || !kvote.aktivt_abonnement || kvoteBrugt(kvote));
 
   const harKonto = !!profil?.stripe_account_id;
   // En lukket/frakoblet udbetalingskonto kan ikke bruges (samme regel som

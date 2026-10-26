@@ -64,7 +64,8 @@ export const ADMIN_FIRMA = {
         "Pakken skifter med det samme. Har firmaet et abonnement i Stripe, gælder den nye pris fra firmaets næste betaling. En evt. forskel for denne periode aftaler du med firmaet.",
       nu: "nu",
       prisIkkeSat: "pris ikke sat",
-      pr: (n: number) => `${n} auktion${n === 1 ? "" : "er"} pr. måned`,
+      // Auktioner pr. måned (0 = ubegrænset) - pakkerne fra 26. okt. 2026.
+      pr: (n: number) => (n === 0 ? "ubegrænset antal auktioner" : `${n} auktion${n === 1 ? "" : "er"} pr. måned`),
       eksklMoms: (kr: string) => `${kr} pr. måned ekskl. moms`,
       skjult: "skjult",
       note: "Note til loggen (valgfri)",

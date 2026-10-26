@@ -40,6 +40,17 @@ På det **eksisterende** endpoint `https://bidhamr.dk/api/webhooks/stripe` (samm
 - `invoice.voided` – regningen → "annulleret"; en ventende opgradering på fakturaen annulleres
 - `invoice.marked_uncollectible` – regningen → "mislykket"
 
+## Nye pakker (26. okt. 2026, migration `20261102010000_firmapakker.sql`)
+- **Pakker:** Start 499 kr. (10 auktioner/md), Butik 999 kr. (30/md, 5 fremhævninger, Ugens butik 50 % x 3), Pro 1.999 kr. (ubegrænset, 20 fremhævninger, Ugens butik 50 % x 5). Basis/Plus/Pro/Max er arkiveret ("<navn> (gammel)"); firmaer med abonnement får prisen skiftet i Stripe af betalings-cron'en (`koerAbonnementSynk`, fra næste betaling, ingen proration).
+- **1 måned gratis:** Checkout får `subscription_data.trial_end` (= nu + `firmaer.proeve_maaneder` kalendermåneder) og `payment_method_collection: always` - kortet gemmes, 0 kr. trækkes nu. Kun første gang (aldrig en ny gratis periode efter en mislykket betaling). Firmaet er aktivt i den gratis periode (0-kr.-fakturaen er betalt -> `firma_abonnement_betalt`).
+- **Introrabat:** kupon `bidhamr_intro_<procent>_<måneder>` (`duration: repeating`, metadata `bidhamr=intro`). Stripe tæller kuponens måneder fra den sættes på - også gratis måneder - så varigheden regnes (`introKuponMaaneder`), så rabatten rammer præcis N betalte fakturaer. Sættes på lige efter Checkout (webhooken `customer.subscription.created`) - aldrig i samme sekund som en faktura. Testet med test clock: 2 gratis måneder, 6 fakturaer med 50 %, så fuld pris.
+- **Særpris:** firmaets egen Stripe-pris på pakkens produkt (lookup_key `erhverv_firma_<firma>_<pakke>_<øre>`, metadata `pakke_id` + `firma_id`). Bortfalder, når pakken skiftes (databasen, trigger `firmaer_saerpris_bortfalder`).
+- **Gratis periode:** `trial_end` forlænges (eller lægges efter den betalte periode) med `proration_behavior: none`; en kørende introrabat sættes på igen med de resterende måneder.
+- **Pakkeskift i den gratis periode** (op og ned) sker med det samme uden proration (`firma_pakkeskift_uden_betaling`).
+- **Refusion af en regning:** kreditnota på alle linjer med `refund_amount = amount_paid` (idempotency key pr. regning), regningen -> `krediteret`.
+- **Nye webhook-events** (samme endpoint): `customer.updated`, `payment_method.attached`, `payment_method.automatically_updated` (kortets mærke/sidste 4/udløb spejles). Slå dem til i Stripe (test).
+- **Test mod Stripe:** `npm run test:firmapakker:stripe` (test clock, kort 4242/pm_card_visa).
+
 ## Rettelser efter review (8. okt. 2026)
 - **Pakkeskift kun via serveren.** `firma_skift_pakke` kan ikke længere kaldes af `authenticated` (kun service role). Hjemmesiden og appen bruger samme kode (`src/lib/erhverv/pakkeskift.ts` → `firma_skift_pakke_server` → Stripe). Appen: `POST /api/firma/skift-pakke` med Bearer-token.
 - **Transaktionelt:** fejler Stripe-kaldet ved opgradering (før abonnementet er ændret), nedgradering eller "behold pakken", rulles databasen tilbage (`firma_pakkeskift_rul_tilbage`), og firmaet får en dansk fejl. Chefens pakkeskift i admin ændrer Stripe FØRST (`skiftPrisAdmin`: åbne opgraderingsfakturaer annulleres, plan frigives, ny pris med `proration_behavior: none` – gælder fra næste betaling); fejler databasen bagefter, sættes prisen tilbage.
