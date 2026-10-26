@@ -208,6 +208,19 @@ async function kontekst(admin: Admin, r: FakturaRaekke): Promise<FakturaKontekst
     } else {
       kommentar = `Køb af ${point.toLowerCase()} på BidHamr. Betalt via vores betalingspartner Stripe den ${dato}.`;
     }
+  } else if (r.slags === "ugens_butik") {
+    // Ugens butik: BidHamrs egen ydelse til firmaet (forsidepladsen en uge).
+    const ydelse = r.linjer[0]?.tekst ?? "Ugens butik på BidHamrs forside";
+    if (r.dokument === "kreditnota") {
+      const { data: m } = await admin
+        .from("fakturaer")
+        .select("dinero_nummer")
+        .eq("id", String(r.krediterer_id))
+        .maybeSingle<{ dinero_nummer: number | null }>();
+      kommentar = `Kreditnota for faktura nr. ${m?.dinero_nummer ?? "-"} - ${ydelse}. Refunderet via vores betalingspartner Stripe den ${dato}.`;
+    } else {
+      kommentar = `${ydelse}. Betalt via vores betalingspartner Stripe den ${dato}.`;
+    }
   } else if (r.slags === "ekstra_fragt") {
     // Ekstra fragt: sælgeren betaler forskellen, fordi pakken var større/
     // tungere end den valgte størrelse (BidHamrs fragtindtægt).
@@ -410,6 +423,17 @@ export async function koerFakturaKoe(): Promise<FakturaKoeResultat> {
     const t = bk as { fakturaer?: number; kreditnotaer?: number } | null;
     if (t && res.planlagt) {
       res.planlagt = { ...res.planlagt, boost: Number(t.fakturaer ?? 0), boost_kredit: Number(t.kreditnotaer ?? 0) };
+    }
+  }
+
+  // Ugens butik (20261101020000): firmaets faktura ved betaling, kreditnota ved
+  // refusion. Mangler funktionen (migrationen er ikke kørt), springes det over.
+  {
+    const { data: ub, error: ubFejl } = await admin.rpc("faktura_planlaeg_ugens_butik", { p_graense: 200 });
+    if (ubFejl && !mangler(ubFejl)) throw new Error(`faktura_planlaeg_ugens_butik: ${ubFejl.message}`);
+    const t = ub as { fakturaer?: number; kreditnotaer?: number } | null;
+    if (t && res.planlagt) {
+      res.planlagt = { ...res.planlagt, ugens_butik: Number(t.fakturaer ?? 0), ugens_butik_kredit: Number(t.kreditnotaer ?? 0) };
     }
   }
 

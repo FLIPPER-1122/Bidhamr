@@ -200,6 +200,16 @@ export async function annullerAabneBetalinger(): Promise<Annullering> {
     res.fejlet += bk.fejlet;
     res.igang += bk.igang;
     res.tilbage = Math.max(res.tilbage, bk.tilbage);
+    // Ugens butik (ugensButik.ts): åbne PaymentIntents på reservationer
+    // annulleres på samme måde (reservationen udløber af sig selv).
+    const ub = await annullerAabneUgensButik(
+      Math.max(0, MAKS - set - rf.annulleret - rf.igang - rf.fejlet - bk.annulleret - bk.igang - bk.fejlet),
+      start,
+    );
+    res.annulleret += ub.annulleret;
+    res.fejlet += ub.fejlet;
+    res.igang += ub.igang;
+    res.tilbage = Math.max(res.tilbage, ub.tilbage);
   }
 
   if (stoppetTidligt) {
@@ -279,6 +289,75 @@ export async function annullerAabneBoostKoeb(maks = MAKS, start = Date.now()): P
       res.annulleret++;
     } catch (err) {
       console.error("annullerAabneBoostKoeb:", piId, err);
+      res.fejlet++;
+    }
+  }
+  return res;
+}
+
+// Åbne PaymentIntents på Ugens butik-reservationer (status 'reserveret')
+// annulleres hos Stripe (idempotency key) og kasseres i databasen
+// (ugens_butik_nulstil_pi, pi_forsoeg + 1). 'behandles' røres ikke. Mangler
+// tabellen (migrationen er ikke kørt), springes det over. Kaster aldrig.
+export async function annullerAabneUgensButik(maks = MAKS, start = Date.now()): Promise<Annullering> {
+  const res: Annullering = { annulleret: 0, fejlet: 0, igang: 0, tilbage: 0 };
+  maks = Math.max(0, maks);
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("ugens_butik_bookinger")
+    .select("id, stripe_payment_intent_id")
+    .eq("status", "reserveret")
+    .not("stripe_payment_intent_id", "is", null)
+    .order("id", { ascending: true })
+    .limit(maks + 1);
+  if (error) {
+    if (!/does not exist|Could not find the table|42P01|PGRST205/i.test(`${error.code ?? ""} ${error.message}`)) {
+      console.error("annullerAabneUgensButik: kunne ikke hente bookinger:", error.message);
+      res.fejlet++;
+    }
+    return res;
+  }
+  const raekker = (data ?? []) as { id: string; stripe_payment_intent_id: string }[];
+  if (raekker.length === 0) return res;
+  const stripe = getStripe();
+  let n = 0;
+  for (const r of raekker) {
+    if (n >= maks || Date.now() - start > TIDSGRAENSE_MS) {
+      res.tilbage = Math.max(1, raekker.length - n);
+      break;
+    }
+    n++;
+    const piId = r.stripe_payment_intent_id;
+    try {
+      let pi = await stripe.paymentIntents.retrieve(piId);
+      if (pi.status !== "canceled") {
+        if (!AABNE.includes(pi.status)) {
+          res.igang++;
+          continue;
+        }
+        try {
+          pi = await stripe.paymentIntents.cancel(
+            piId,
+            { cancellation_reason: "abandoned" },
+            { idempotencyKey: `bidhamr-noedstop-annuller-${piId}` },
+          );
+        } catch (err) {
+          pi = await stripe.paymentIntents.retrieve(piId);
+          if (pi.status !== "canceled") {
+            if (pi.status === "succeeded" || pi.status === "processing") res.igang++;
+            else {
+              console.error("annullerAabneUgensButik: kunne ikke annullere:", piId, err);
+              res.fejlet++;
+            }
+            continue;
+          }
+        }
+      }
+      const { error: nFejl } = await admin.rpc("ugens_butik_nulstil_pi", { p_id: r.id, p_pi: piId });
+      if (nFejl) throw new Error(`ugens_butik_nulstil_pi: ${nFejl.message}`);
+      res.annulleret++;
+    } catch (err) {
+      console.error("annullerAabneUgensButik:", piId, err);
       res.fejlet++;
     }
   }

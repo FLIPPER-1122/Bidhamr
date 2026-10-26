@@ -387,6 +387,57 @@ async function boostVed(
   return ud;
 }
 
+// Ugens butik (ugensButik.ts, 20261101020000): firmaets betaling til
+// platformen. Tabellen må mangle (før migrationen).
+export type UgensButikAfst = {
+  id: string;
+  status: string;
+  beloeb_oere: number;
+  modtaget_oere: number | null;
+  stripe_payment_intent_id: string | null;
+};
+
+async function ugensButikVed(admin: Admin, ids: string[]): Promise<Map<string, UgensButikAfst>> {
+  const ud = new Map<string, UgensButikAfst>();
+  for (const del of bidder([...new Set(ids)])) {
+    if (!del.length) continue;
+    const { data, error } = await admin
+      .from("ugens_butik_bookinger")
+      .select("id, status, beloeb_oere, modtaget_oere, stripe_payment_intent_id")
+      .in("stripe_payment_intent_id", del);
+    if (error) {
+      if (manglerIDatabasen(error)) return ud;
+      throw new Error(`ugens_butik_bookinger: ${error.message}`);
+    }
+    for (const x of (data ?? []) as UgensButikAfst[]) if (x.stripe_payment_intent_id) ud.set(x.stripe_payment_intent_id, x);
+  }
+  return ud;
+}
+
+async function ugensButikKasserede(admin: Admin, ids: string[]): Promise<Map<string, string>> {
+  const ud = new Map<string, string>();
+  for (const del of bidder([...new Set(ids)])) {
+    if (!del.length) continue;
+    const { data, error } = await admin
+      .from("ugens_butik_bookinger")
+      .select("id, tidligere_payment_intents")
+      .overlaps("tidligere_payment_intents", del);
+    if (error) {
+      if (manglerIDatabasen(error)) return ud;
+      throw new Error(`ugens_butik_bookinger (tidligere): ${error.message}`);
+    }
+    for (const r of data ?? []) for (const x of (r.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) ud.set(x, r.id as string);
+  }
+  return ud;
+}
+
+// Er en betalt Ugens butik-PaymentIntent spejlet forkert? Betalt hos Stripe
+// skal være betalt (eller annulleret af chefen uden refusion, eller under/
+// efter refusion) i databasen.
+export function ugensButikStatusAfviger(piStatus: string, dbStatus: string): boolean {
+  return piStatus === "succeeded" && !["betalt", "annulleret", "refunderes", "refunderet"].includes(dbStatus);
+}
+
 // Kasserede boost-PaymentIntents (pi -> købets id).
 async function boostKasserede(admin: Admin, ids: string[]): Promise<Map<string, string>> {
   const ud = new Map<string, string>();
@@ -890,6 +941,9 @@ async function afstemBetalinger(
   // Køb af boost-point (betalinger til platformen - BidHamrs egen omsætning).
   const bkVed = await boostVed(admin, "stripe_payment_intent_id", ids);
   const bkKasseret = await boostKasserede(admin, ids.filter((x) => !bkVed.has(x)));
+  // Ugens butik (firmaets betaling til platformen - BidHamrs egen omsætning).
+  const ubVed = await ugensButikVed(admin, ids);
+  const ubKasseret = await ugensButikKasserede(admin, ids.filter((x) => !ubVed.has(x)));
   // Ekstra fragt (sælgerens betaling til platformen).
   const efVed = await ekstraFragtVed(admin, "stripe_payment_intent_id", ids);
   const efKasseret = await ekstraFragtKasserede(admin, ids.filter((x) => !efVed.has(x)));
@@ -909,6 +963,8 @@ async function afstemBetalinger(
           !rfKasseret.has(p.id) &&
           !bkVed.has(p.id) &&
           !bkKasseret.has(p.id) &&
+          !ubVed.has(p.id) &&
+          !ubKasseret.has(p.id) &&
           !efVed.has(p.id) &&
           !efKasseret.has(p.id) &&
           !efTilbage.has(p.id),
@@ -959,6 +1015,50 @@ async function afstemBetalinger(
         type: "betaling_status",
         stripeId: pi.id,
         beskrivelse: `En kasseret ekstra fragt-PaymentIntent (${pi.id}) for ekstraregning ${efGammel} er betalt hos Stripe og ikke refunderet - mulig dobbeltbetaling.`,
+        beloebStripe: pi.amount_received,
+      });
+      continue;
+    }
+    const ub = ubVed.get(pi.id);
+    if (ub) {
+      if (ugensButikStatusAfviger(pi.status, ub.status)) {
+        await registrer({
+          noegle: `betaling-status:${pi.id}`,
+          type: "betaling_status",
+          stripeId: pi.id,
+          beskrivelse: `Ugens butik-PaymentIntent ${pi.id} er betalt hos Stripe, men booking ${ub.id} står som '${ub.status}' i databasen.`,
+          tilstand: `${pi.status}|${ub.status}`,
+          beloebStripe: pi.amount_received,
+          beloebDb: Number(ub.beloeb_oere),
+        });
+      }
+      // Et andet beløb refunderes automatisk (status refunderes/refunderet).
+      if (
+        pi.status === "succeeded" &&
+        pi.amount_received !== Number(ub.beloeb_oere) &&
+        !["refunderes", "refunderet"].includes(ub.status)
+      ) {
+        await registrer({
+          noegle: `betaling-beloeb:${pi.id}`,
+          type: "betaling_beloeb",
+          stripeId: pi.id,
+          beskrivelse: `Ugens butik-PaymentIntent ${pi.id} har modtaget et andet beløb end booking ${ub.id}'s pris.`,
+          beloebStripe: pi.amount_received,
+          beloebDb: Number(ub.beloeb_oere),
+        });
+      }
+      continue;
+    }
+    const ubGammel = ubKasseret.get(pi.id);
+    if (ubGammel) {
+      if (pi.status !== "succeeded") continue;
+      const ch = pi.latest_charge ? await stripe.charges.retrieve(id(pi.latest_charge as string)!, {}, KALD) : null;
+      if (ch?.refunded) continue;
+      await registrer({
+        noegle: `betaling-kasseret-betalt:${pi.id}`,
+        type: "betaling_status",
+        stripeId: pi.id,
+        beskrivelse: `En kasseret Ugens butik-PaymentIntent (${pi.id}) for booking ${ubGammel} er betalt hos Stripe og ikke refunderet - mulig dobbeltbetaling.`,
         beloebStripe: pi.amount_received,
       });
       continue;
@@ -1353,6 +1453,10 @@ async function afstemRefusioner(
   for (const x of refusioner) {
     tjekTid(budget);
     const ch = id(x.charge as string | { id: string } | null);
+    // Ugens butik: BidHamrs egne refusioner (ugensButik.ts sætter metadata
+    // type=ugens_butik - også ved en kasseret dobbeltbetaling). En refusion i
+    // dashboardet uden metadata meldes nedenfor som uden om BidHamr.
+    if (x.metadata?.type === "ugens_butik" && x.metadata?.ugens_butik_id) continue;
     const ef = ch ? efCharge.get(ch) : undefined;
     if (ch && ef) {
       // BidHamr refunderer aldrig en skyldig ekstraregning selv: en refusion

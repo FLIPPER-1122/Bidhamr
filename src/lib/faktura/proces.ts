@@ -31,7 +31,8 @@ export type FakturaRaekke = {
   // 'boost': købers faktura (og kreditnota) på boost-point (20261023030000).
   // 'ekstra_fragt': sælgerens faktura (og kreditnota) på ekstra fragt ved for
   // lille pakkestørrelse (20261029020000).
-  slags?: "salg" | "returfragt" | "sag_returfragt" | "boost" | "ekstra_fragt";
+  // 'ugens_butik': firmaets faktura (og kreditnota) på Ugens butik (20261101020000).
+  slags?: "salg" | "returfragt" | "sag_returfragt" | "boost" | "ekstra_fragt" | "ugens_butik";
   part: "koeber" | "saelger" | "firma";
   bruger_id: string;
   betaling_id: string | null;

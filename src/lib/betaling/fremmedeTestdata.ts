@@ -199,6 +199,22 @@ export async function hentKendte(
     }
     for (const b of data ?? []) for (const x of (b.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) k.pis.add(x);
   }
+  // Ugens butik (firmaets betaling til platformen, ugensButik.ts) - også
+  // kasserede PaymentIntents (refunderes automatisk, hvis de betales).
+  await findesHvisTabel(admin, "ugens_butik_bookinger", "stripe_payment_intent_id", pis, k.pis);
+  await findesHvisTabel(admin, "ugens_butik_bookinger", "stripe_charge_id", charges, k.charges);
+  for (const del of bidder(pis)) {
+    if (!del.length) continue;
+    const { data, error } = await admin
+      .from("ugens_butik_bookinger")
+      .select("tidligere_payment_intents")
+      .overlaps("tidligere_payment_intents", del);
+    if (error) {
+      if (/does not exist|Could not find the table|42P01|PGRST205/i.test(`${error.code ?? ""} ${error.message}`)) break;
+      throw new Error(`kendte (Ugens butik tidligere_payment_intents): ${error.message}`);
+    }
+    for (const b of data ?? []) for (const x of (b.tidligere_payment_intents as string[] | null) ?? []) if (del.includes(x)) k.pis.add(x);
+  }
   // Ekstra fragt (sælgerens betaling til platformen, ekstraFragt.ts) - også
   // kasserede PaymentIntents (adopteres eller refunderes, hvis de betales).
   await findesHvisTabel(admin, "ekstra_fragt_regninger", "stripe_payment_intent_id", pis, k.pis);
