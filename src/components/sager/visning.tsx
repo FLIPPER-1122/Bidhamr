@@ -43,7 +43,7 @@ export const SAG_STATUS_KORT: Record<SagStatus, string> = {
 export function SagStatusBadge({ status, lang = false }: { status: SagStatus; lang?: boolean }) {
   return (
     <span
-      className={`inline-block rounded-full border px-2.5 py-1 text-xs font-semibold ${STATUS_STIL[status]}`}
+      className={`inline-block rounded-none border px-2.5 py-1 text-xs font-semibold ${STATUS_STIL[status]}`}
     >
       {lang ? SAG_STATUS_NAVN[status] : SAG_STATUS_KORT[status]}
     </span>
@@ -52,7 +52,7 @@ export function SagStatusBadge({ status, lang = false }: { status: SagStatus; la
 
 export function BeskyttelseBadge() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-groen-lys px-2.5 py-1 text-xs font-semibold text-groen-mork">
+    <span className="inline-flex items-center gap-1 rounded-none bg-groen-lys px-2.5 py-1 text-xs font-semibold text-groen-mork">
       <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" />
       </svg>

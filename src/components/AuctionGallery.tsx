@@ -30,7 +30,7 @@ export default function AuctionGallery({
 
   return (
     <div>
-      <div className="relative aspect-square w-full overflow-hidden rounded-[14px] bg-skelet sm:aspect-[4/3]">
+      <div className="relative aspect-square w-full overflow-hidden rounded-none bg-skelet sm:aspect-[4/3]">
         {aktivBillede && (
           <Image
             src={aktivBillede}
@@ -64,7 +64,7 @@ export default function AuctionGallery({
               </svg>
             </button>
 
-            <span className="absolute right-3 bottom-3 rounded-full bg-white px-[9px] py-[5px] text-xs font-semibold text-tekst">
+            <span className="absolute right-3 bottom-3 rounded-none bg-white px-[9px] py-[5px] text-xs font-semibold text-tekst">
               {aktivIndex + 1} af {antal}
             </span>
           </>

@@ -58,7 +58,7 @@ export default function KategoriMenu() {
       {aaben && (
         <div
           id={panelId}
-          className="absolute top-full left-0 z-50 mt-1 w-[440px] rounded-[14px] border border-kant bg-white p-3 shadow-flyder"
+          className="absolute top-full left-0 z-50 mt-1 w-[440px] rounded-none border border-kant bg-white p-3 shadow-flyder"
         >
           <ul className="grid grid-cols-2 gap-1">
             {kategorier.map((k) => (

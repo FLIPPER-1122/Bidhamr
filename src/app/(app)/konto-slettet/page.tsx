@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Kontoen er slettet", robots: { index
 export default function KontoSlettetSide() {
   return (
     <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
-      <div className="w-full max-w-md rounded-[14px] border border-kant bg-white p-5 text-center shadow-kort sm:p-8">
+      <div className="w-full max-w-md rounded-none border border-kant bg-white p-5 text-center shadow-kort sm:p-8">
         <h1 className="text-[26px] leading-tight sm:text-[32px]">Din konto er slettet</h1>
         <p className="mt-3 text-[15px] text-tekst-daempet">
           Dine personlige oplysninger er fjernet, og du er logget ud. Vi har sendt en kvittering til din e-mail.

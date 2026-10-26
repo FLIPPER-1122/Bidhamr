@@ -119,7 +119,7 @@ export default function StaffChatBruger({
   return (
     <section
       aria-label="Beskeder"
-      className="overflow-hidden rounded-[14px] border border-kant bg-white"
+      className="overflow-hidden rounded-none border border-kant bg-white"
     >
       <ol className="max-h-[60vh] space-y-4 overflow-y-auto px-4 py-5 sm:px-5" aria-live="polite">
         {beskeder.length === 0 && (

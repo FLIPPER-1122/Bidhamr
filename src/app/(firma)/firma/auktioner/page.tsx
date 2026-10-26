@@ -35,7 +35,7 @@ export default async function FirmaAuktionerSide({
       {lukket && <LukketBoks />}
 
       {(sp.oprettet === "1" || sp.gemt === "1") && (
-        <p role="status" className="rounded-[14px] border-2 border-succes-kant bg-succes-bg p-4 text-[18px] font-semibold text-succes-tekst">
+        <p role="status" className="rounded-none border-2 border-succes-kant bg-succes-bg p-4 text-[18px] font-semibold text-succes-tekst">
           {sp.oprettet === "1" ? A.oprettet : A.gemt}
         </p>
       )}
@@ -76,7 +76,7 @@ export default async function FirmaAuktionerSide({
               const koerer = a.status === "aktiv";
               const harBud = a.nuvaerende_bud != null || a.antal_bud > 0;
               return (
-                <li key={a.id} className="rounded-[14px] border-2 border-kant p-4">
+                <li key={a.id} className="rounded-none border-2 border-kant p-4">
                   <div className="flex gap-4">
                     <VareBillede url={a.billede} />
                     <div className="min-w-0 flex-1">

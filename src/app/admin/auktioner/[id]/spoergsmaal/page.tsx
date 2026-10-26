@@ -56,7 +56,7 @@ export default async function AdminAuktionSpoergsmaal({ params }: { params: Prom
         tilbage={{ href: `/admin/auktioner/${auktion.id}`, label: "Auktionen" }}
       />
       {spoergsmaal.length === 0 ? (
-        <p className="rounded-[14px] border border-admin-kant bg-white p-6 text-sm text-tekst-svag">
+        <p className="rounded-none border border-admin-kant bg-white p-6 text-sm text-tekst-svag">
           Der er ingen spørgsmål til denne auktion.
         </p>
       ) : (
@@ -65,7 +65,7 @@ export default async function AdminAuktionSpoergsmaal({ params }: { params: Prom
             <li
               key={q.id}
               id={`spoergsmaal-${q.id}`}
-              className={`scroll-mt-24 rounded-[14px] border p-4 ${q.hidden ? "border-advarsel-kant bg-advarsel-bg" : "border-admin-kant bg-white"}`}
+              className={`scroll-mt-24 rounded-none border p-4 ${q.hidden ? "border-advarsel-kant bg-advarsel-bg" : "border-admin-kant bg-white"}`}
             >
               {q.hidden && (
                 <p className="mb-2 text-[13px] font-semibold text-advarsel-tekst">

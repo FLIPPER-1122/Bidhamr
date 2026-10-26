@@ -336,7 +336,7 @@ function SpoergsmaalPunkt({
   return (
     <li
       id={`spoergsmaal-${q.id}`}
-      className={`scroll-mt-24 rounded-[14px] border p-4 ${q.hidden ? "border-advarsel-kant bg-advarsel-bg" : "border-kant bg-white"}`}
+      className={`scroll-mt-24 rounded-none border p-4 ${q.hidden ? "border-advarsel-kant bg-advarsel-bg" : "border-kant bg-white"}`}
     >
       {q.hidden && (
         <p className="mb-2 text-[13px] font-semibold text-advarsel-tekst">

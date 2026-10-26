@@ -28,13 +28,13 @@ export default async function MailPreviewSide({
       <p className="mt-4 flex flex-wrap gap-2 text-sm">
         <Link
           href="/dev/mails"
-          className={`rounded-full px-4 py-2 font-medium ${mobil ? "bg-groen-lys text-groen-mork" : "bg-groen text-white"}`}
+          className={`rounded-none px-4 py-2 font-medium ${mobil ? "bg-groen-lys text-groen-mork" : "bg-groen text-white"}`}
         >
           Fuld bredde
         </Link>
         <Link
           href="/dev/mails?bredde=mobil"
-          className={`rounded-full px-4 py-2 font-medium ${mobil ? "bg-groen text-white" : "bg-groen-lys text-groen-mork"}`}
+          className={`rounded-none px-4 py-2 font-medium ${mobil ? "bg-groen text-white" : "bg-groen-lys text-groen-mork"}`}
         >
           Mobil (375px)
         </Link>
@@ -42,7 +42,7 @@ export default async function MailPreviewSide({
 
       <nav aria-label="Mails" className="mt-6 flex flex-wrap gap-2 text-sm">
         {eksempler.map((e) => (
-          <a key={e.id} href={`#${e.id}`} className="rounded-full border border-kant px-3 py-1 text-groen hover:bg-groen-lys">
+          <a key={e.id} href={`#${e.id}`} className="rounded-none border border-kant px-3 py-1 text-groen hover:bg-groen-lys">
             {e.navn}
           </a>
         ))}
@@ -68,7 +68,7 @@ export default async function MailPreviewSide({
               srcDoc={e.mail.html}
               sandbox="allow-popups allow-popups-to-escape-sandbox"
               loading="lazy"
-              className="mt-3 block h-[960px] max-w-full rounded-[14px] border border-kant"
+              className="mt-3 block h-[960px] max-w-full rounded-none border border-kant"
               style={{ width: mobil ? 375 : "100%" }}
             />
           </section>

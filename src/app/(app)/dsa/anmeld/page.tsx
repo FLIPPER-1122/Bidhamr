@@ -34,7 +34,7 @@ export default async function AnmeldSide() {
         profil, et spørgsmål eller en bedømmelse.
       </p>
 
-      <div className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+      <div className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6">
         <AnmeldFormular loggetInd={!!user} />
       </div>
 

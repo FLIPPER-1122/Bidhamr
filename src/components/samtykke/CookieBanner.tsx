@@ -205,7 +205,7 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
           onKeyDown={onKeyDown}
           className="pointer-events-none fixed inset-x-0 bottom-0 z-[35] px-2 pb-[max(8px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-6"
         >
-          <div className="pointer-events-auto mx-auto max-h-[85dvh] w-full max-w-[960px] overflow-y-auto rounded-[14px] border border-kant bg-white p-3 shadow-stor sm:rounded-[18px] sm:p-6">
+          <div className="pointer-events-auto mx-auto max-h-[85dvh] w-full max-w-[960px] overflow-y-auto rounded-none border border-kant bg-white p-3 shadow-stor sm:rounded-none sm:p-6">
             {!iIndstillinger ? (
               <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-end lg:gap-8">
                 <div className="min-w-0 flex-1">
@@ -320,7 +320,7 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
                               {KATEGORI_TEKST[k.id].navn}
                             </h3>
                             {!k.iBrug && (
-                              <span className="rounded-full bg-groen-lys px-2 py-0.5 text-xs font-medium text-groen-mork">
+                              <span className="rounded-none bg-groen-lys px-2 py-0.5 text-xs font-medium text-groen-mork">
                                 {T.ikkeIBrug}
                               </span>
                             )}

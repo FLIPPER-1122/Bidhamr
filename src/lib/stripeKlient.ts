@@ -57,6 +57,6 @@ export const stripeUdseende = {
     colorText: "#1A1A1A",
     colorDanger: "#A32020",
     fontFamily: "Inter, system-ui, sans-serif",
-    borderRadius: "10px",
+    borderRadius: "0px",
   },
 };

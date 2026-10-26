@@ -47,7 +47,7 @@ export default async function FirmaOverblik() {
             {venter.map((v) => {
               const vare = v.titel ?? "varen";
               return (
-                <li key={v.trade_id} className="rounded-[14px] border-2 border-orange bg-orange-lys p-4">
+                <li key={v.trade_id} className="rounded-none border-2 border-orange bg-orange-lys p-4">
                   <p className={E_TEKST}>{v.afhentning ? X.afhentning(vare) : T.venter.sendPakke(vare)}</p>
                   {lukket ? (
                     <p className={`mt-2 ${E_TEKST_DAEMPET}`}>{D.salg.sendPakkeLukket}</p>

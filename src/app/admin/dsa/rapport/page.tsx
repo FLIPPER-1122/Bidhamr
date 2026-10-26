@@ -72,7 +72,7 @@ function kbhMidnat(dato: string): Date {
 
 function Tal({ titel, vaerdi, note }: { titel: string; vaerdi: string | number; note?: string }) {
   return (
-    <div className="rounded-[14px] border border-admin-kant bg-white p-4">
+    <div className="rounded-none border border-admin-kant bg-white p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-tekst-svag">{titel}</p>
       <p className="mt-1 text-2xl font-bold tabular-nums text-tekst">{vaerdi}</p>
       {note && <p className="mt-0.5 text-xs text-tekst-svag">{note}</p>}
@@ -84,7 +84,7 @@ function Tabel({ titel, kolonner, raekker }: { titel: string; kolonner: string[]
   return (
     <section className="min-w-0 space-y-2" aria-label={titel}>
       <h2 className="text-sm font-semibold text-tekst">{titel}</h2>
-      <div className="overflow-x-auto rounded-[14px] border border-admin-kant bg-white">
+      <div className="overflow-x-auto rounded-none border border-admin-kant bg-white">
         <table className="w-full min-w-[480px] text-sm">
           <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-tekst-svag">
             <tr>
@@ -208,7 +208,7 @@ export default async function DsaRapportSide({
       </AdminSideHoved>
       <DriftFaner aktiv="rapport" />
 
-      <form method="get" className="flex flex-wrap items-end gap-3 rounded-[14px] border border-admin-kant bg-white p-4">
+      <form method="get" className="flex flex-wrap items-end gap-3 rounded-none border border-admin-kant bg-white p-4">
         <div>
           <label htmlFor="fra" className="block text-xs font-medium text-tekst-daempet">Fra</label>
           <input id="fra" name="fra" type="date" defaultValue={fraDato} className="mt-1 rounded-lg border border-admin-kant px-3 py-2 text-sm" />
@@ -225,7 +225,7 @@ export default async function DsaRapportSide({
             <Link
               key={f.label}
               href={`/admin/dsa/rapport?fra=${f.fra}&til=${f.til}`}
-              className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-medium text-tekst hover:bg-neutral-200"
+              className="rounded-none bg-neutral-100 px-3 py-1.5 text-xs font-medium text-tekst hover:bg-neutral-200"
             >
               {f.label}
             </Link>
@@ -261,7 +261,7 @@ export default async function DsaRapportSide({
           </div>
           <Tabel titel="Indgreb pr. grund" kolonner={["Regel", "Grundlag", "Antal"]} raekker={regelRaekker} />
 
-          <section className="rounded-[14px] border border-admin-kant bg-white p-4 text-sm text-tekst">
+          <section className="rounded-none border border-admin-kant bg-white p-4 text-sm text-tekst">
             <h2 className="text-sm font-semibold text-tekst">Øvrige rapporter i perioden</h2>
             <p className="mt-1 text-xs text-tekst-svag">Fra appen og det gamle rapport-system, som stadig kører ved siden af.</p>
             <ul className="mt-2 grid gap-1 sm:grid-cols-2">

@@ -14,7 +14,7 @@ export default async function FirmaKontaktBoks({ saelgerId }: { saelgerId: strin
   const K = FIRMA_DASHBOARD.koeberKontakt;
 
   return (
-    <section aria-labelledby="firma-kontakt" className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+    <section aria-labelledby="firma-kontakt" className="rounded-none border border-kant bg-white p-5 sm:p-6">
       <h2 id="firma-kontakt" className="text-[20px] leading-tight">
         {K.titel}
       </h2>

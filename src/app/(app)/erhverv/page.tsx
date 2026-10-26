@@ -55,7 +55,7 @@ export default function ErhvervSide() {
           </h2>
           <ul className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
             {ERHVERV_SIDE.fordele.map((f) => (
-              <li key={f.titel} className="rounded-[14px] border border-kant bg-white p-6">
+              <li key={f.titel} className="rounded-none border border-kant bg-white p-6">
                 <h3 className="font-sans text-[19px] font-semibold text-groen-mork">{f.titel}</h3>
                 <p className="mt-2 text-[17px] leading-relaxed text-tekst">{f.tekst}</p>
               </li>
@@ -70,7 +70,7 @@ export default function ErhvervSide() {
           </h2>
           <ol className="mt-6 space-y-4">
             {ERHVERV_SIDE.trin.map((t, i) => (
-              <li key={t.titel} className="flex gap-4 rounded-[14px] bg-groen-lys p-6">
+              <li key={t.titel} className="flex gap-4 rounded-none bg-groen-lys p-6">
                 <span
                   aria-hidden="true"
                   className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-groen text-[20px] font-semibold text-white"
@@ -97,7 +97,7 @@ export default function ErhvervSide() {
           <h2 id="faq" className="text-[24px] leading-tight sm:text-[28px]">
             {ERHVERV_SIDE.faqOverskrift}
           </h2>
-          <dl className="mt-6 divide-y divide-kant rounded-[14px] border border-kant">
+          <dl className="mt-6 divide-y divide-kant rounded-none border border-kant">
             {ERHVERV_SIDE.faq.map((f) => (
               <div key={f.spoergsmaal} className="p-6">
                 <dt className="text-[18px] font-semibold text-tekst">{f.spoergsmaal}</dt>
@@ -107,7 +107,7 @@ export default function ErhvervSide() {
           </dl>
         </section>
 
-        <section className="rounded-[14px] bg-groen-lys p-6 sm:p-8">
+        <section className="rounded-none bg-groen-lys p-6 sm:p-8">
           <FormularKnap />
           <p className="mt-6 text-[17px] text-tekst">
             {ERHVERV_SIDE_EKSTRA.kontaktLinje}{" "}

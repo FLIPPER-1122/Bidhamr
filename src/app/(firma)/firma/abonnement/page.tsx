@@ -35,7 +35,7 @@ function Boks({ titel, tekst, farve, children }: { titel: string; tekst?: string
     fejl: "border-fejl-kant bg-fejl-bg text-fejl-tekst",
   }[farve];
   return (
-    <div role={farve === "fejl" ? "alert" : "status"} className={`rounded-[18px] border-2 p-5 ${klasser}`}>
+    <div role={farve === "fejl" ? "alert" : "status"} className={`rounded-none border-2 p-5 ${klasser}`}>
       <p className="text-[21px] font-semibold">{titel}</p>
       {tekst && <p className="mt-1 text-[18px]">{tekst}</p>}
       {children && <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">{children}</div>}
@@ -142,7 +142,7 @@ export default async function FirmaAbonnement({
 
       <Kort id="din-pakke" titel={T.abonnement.dinPakke}>
         {pakke ? (
-          <div className="rounded-[14px] border-2 border-groen bg-groen-lys p-5">
+          <div className="rounded-none border-2 border-groen bg-groen-lys p-5">
             <PakkeInfo pakke={pakke} />
           </div>
         ) : (
@@ -153,13 +153,13 @@ export default async function FirmaAbonnement({
           <p className={`mt-4 ${E_TEKST}`}>{B.naesteBetaling(langDato(f.periode_slut))}</p>
         )}
         {f.opsiges_fra && (
-          <p role="status" className="mt-4 rounded-[14px] bg-info-bg p-4 text-[18px] text-info-tekst">
+          <p role="status" className="mt-4 rounded-none bg-info-bg p-4 text-[18px] text-info-tekst">
             {B.opsigesTekst(langDato(f.opsiges_fra))}
           </p>
         )}
 
         {o.afventende_opgradering && (
-          <div role="status" className="mt-4 rounded-[14px] border-2 border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst">
+          <div role="status" className="mt-4 rounded-none border-2 border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst">
             <p className="text-[19px] font-semibold">{X.afventerTitel}</p>
             <p className="mt-1 text-[18px]">{X.afventerTekst(o.afventende_opgradering.navn)}</p>
             {o.afventende_opgradering.faktura_url?.startsWith("https://") && (
@@ -170,7 +170,7 @@ export default async function FirmaAbonnement({
           </div>
         )}
         {o.naeste_pakke && (
-          <p role="status" className="mt-4 rounded-[14px] bg-info-bg p-4 text-[18px] text-info-tekst">
+          <p role="status" className="mt-4 rounded-none bg-info-bg p-4 text-[18px] text-info-tekst">
             {T.abonnement.planlagtSkift(o.naeste_pakke.navn, langDato(o.naeste_pakke.fra))}
           </p>
         )}

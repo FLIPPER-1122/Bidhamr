@@ -49,7 +49,7 @@ export default function GlobalFejl({
                 border: "1px solid #1e5e4a",
                 color: "#1e5e4a",
                 background: "#fff",
-                borderRadius: 8,
+                borderRadius: 0,
                 padding: "0.625rem 1.25rem",
                 fontSize: "0.875rem",
                 fontWeight: 600,

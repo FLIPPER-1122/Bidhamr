@@ -55,7 +55,7 @@ export default function FulgteSaelgere({ start }: { start: FulgtSaelger[] }) {
           {fejl}
         </p>
       )}
-      <ul className="mt-6 divide-y divide-kant rounded-[14px] border border-kant bg-white">
+      <ul className="mt-6 divide-y divide-kant rounded-none border border-kant bg-white">
         {saelgere.map((s) => (
           <li key={s.id} className="flex items-center gap-3 px-4 py-3.5 sm:gap-4">
             <span className="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-kant bg-groen-lys text-groen-mork">

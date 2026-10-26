@@ -40,7 +40,7 @@ export function MitIDIkon() {
 // Samme boks på budpanelet og Opret auktion (kun titlen skifter).
 export default function MitIDKraeves({ sted, retur }: { sted: "bud" | "saelg"; retur: string }) {
   return (
-    <div role="note" className="rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst sm:p-5">
+    <div role="note" className="rounded-none border border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst sm:p-5">
       <div className="flex items-start gap-3">
         <MitIDIkon />
         <div className="min-w-0">

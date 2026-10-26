@@ -12,7 +12,7 @@ const STIL: Record<Status["tone"], { flade: string; ikon: string; tegn: string }
 export default function DriftStatuslinje({ status }: { status: Status }) {
   const s = STIL[status.tone];
   return (
-    <div role="status" className={`flex flex-wrap items-center gap-x-3.5 gap-y-2 rounded-[14px] border px-[18px] py-4 ${s.flade}`}>
+    <div role="status" className={`flex flex-wrap items-center gap-x-3.5 gap-y-2 rounded-none border px-[18px] py-4 ${s.flade}`}>
       <span aria-hidden="true" className={`grid h-9 w-9 shrink-0 place-items-center rounded-full font-bold text-white ${s.ikon}`}>
         {s.tegn}
       </span>

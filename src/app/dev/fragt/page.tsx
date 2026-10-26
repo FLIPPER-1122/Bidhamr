@@ -30,7 +30,7 @@ type Forsendelse = {
 
 type Haendelse = { forsendelse_id: string; type: string; tidspunkt: string; kilde: string };
 
-const KNAP = "rounded-full border border-kant px-3 py-1 text-xs font-medium text-groen hover:bg-groen-lys";
+const KNAP = "rounded-none border border-kant px-3 py-1 text-xs font-medium text-groen hover:bg-groen-lys";
 
 function tid(iso: string) {
   return new Date(iso).toLocaleString("da-DK", { timeZone: "Europe/Copenhagen" });

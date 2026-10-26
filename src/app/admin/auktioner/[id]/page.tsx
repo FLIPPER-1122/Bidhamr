@@ -68,7 +68,7 @@ function Felt({ navn, children }: { navn: string; children: React.ReactNode }) {
 }
 
 function Maerke({ children, farve }: { children: React.ReactNode; farve: string }) {
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${farve}`}>{children}</span>;
+  return <span className={`rounded-none px-2 py-0.5 text-xs font-medium ${farve}`}>{children}</span>;
 }
 
 export default async function AdminAuktion({ params }: { params: Promise<{ id: string }> }) {
@@ -150,7 +150,7 @@ export default async function AdminAuktion({ params }: { params: Promise<{ id: s
         </ul>
       )}
 
-      <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+      <section className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Felt navn="Sælger">
             <Link href={`/admin/brugere/${a.bruger_id}`} className="font-medium text-groen hover:underline">
@@ -174,7 +174,7 @@ export default async function AdminAuktion({ params }: { params: Promise<{ id: s
         </dl>
       </section>
 
-      <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+      <section className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
         <h2 className="mb-2 text-base font-semibold text-tekst">Beskrivelse</h2>
         <p className="whitespace-pre-line break-words text-[15px] text-tekst">{a.beskrivelse?.trim() || "Ingen beskrivelse."}</p>
       </section>

@@ -116,7 +116,7 @@ export default function PakkeEditor({ pakker, erChef }: { pakker: ErhvervPakkeAd
                 <p className="flex flex-wrap items-center gap-2 font-semibold text-neutral-900">
                   {p.navn}
                   {!p.aktiv && (
-                    <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-700">{X.skjult}</span>
+                    <span className="rounded-none bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-700">{X.skjult}</span>
                   )}
                 </p>
                 <p className="text-sm text-neutral-600">

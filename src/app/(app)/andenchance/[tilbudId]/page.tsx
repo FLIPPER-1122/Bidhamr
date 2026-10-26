@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 function Besked({ titel, tekst, children }: { titel: string; tekst: string; children?: React.ReactNode }) {
   return (
-    <div className="rounded-[14px] border border-kant bg-white p-6">
+    <div className="rounded-none border border-kant bg-white p-6">
       <h2 className="text-[20px] leading-tight lg:text-[22px]">{titel}</h2>
       <p className="mt-1 text-sm text-tekst-daempet">{tekst}</p>
       {children}
@@ -144,7 +144,7 @@ function TilbudVisning({ t }: { t: Extract<Awaited<ReturnType<typeof hentMitTilb
     <div className="space-y-6">
       {vare}
 
-      <div className="rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-4 text-sm text-advarsel-tekst">
+      <div className="rounded-none border border-advarsel-kant bg-advarsel-bg p-4 text-sm text-advarsel-tekst">
         <p className="font-semibold">Vinderen betalte ikke. Du kan købe varen for dit eget bud.</p>
         <p className="mt-1">
           Svar senest {dato(t.udloeber)} ·{" "}
@@ -154,7 +154,7 @@ function TilbudVisning({ t }: { t: Extract<Awaited<ReturnType<typeof hentMitTilb
         </p>
       </div>
 
-      <section className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+      <section className="rounded-none border border-kant bg-white p-5 sm:p-6">
         <h2 className="text-[17px] leading-snug lg:text-lg">Det skal du betale</h2>
         <dl className="mt-3 space-y-2 text-sm">
           <Linje label="Dit bud" vaerdi={kroner(t.budOere)} />

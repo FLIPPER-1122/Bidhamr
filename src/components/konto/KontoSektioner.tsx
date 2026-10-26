@@ -58,7 +58,7 @@ export function KontoNavigation() {
           <li key={href}>
             <a
               href={href}
-              className="inline-flex min-h-11 items-center rounded-full bg-groen-lys px-4 text-[13px] font-medium text-groen-mork hover:bg-[#DCEAE4] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+              className="inline-flex min-h-11 items-center rounded-none bg-groen-lys px-4 text-[13px] font-medium text-groen-mork hover:bg-[#DCEAE4] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
             >
               {tekst}
             </a>
@@ -82,7 +82,7 @@ export async function ProfilSektion({ bruger }: { bruger: User }) {
         <dd className="min-w-0 break-all font-medium text-tekst">
           {bruger.email}
           {bruger.email_confirmed_at && (
-            <span className="ml-2 inline-block rounded-full bg-succes-bg px-2 py-0.5 text-[12px] font-semibold text-succes-tekst">
+            <span className="ml-2 inline-block rounded-none bg-succes-bg px-2 py-0.5 text-[12px] font-semibold text-succes-tekst">
               Bekræftet
             </span>
           )}

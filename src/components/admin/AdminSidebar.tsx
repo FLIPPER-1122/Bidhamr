@@ -215,7 +215,7 @@ function Tal({ antal, tone, sr }: { antal: number; tone: "roed" | "gul" | "graa"
   if (!antal) return null;
   const cls = tone === "roed" ? "bg-tal-roed text-white" : tone === "gul" ? "bg-tal-gul text-tekst" : "bg-white/20 text-white";
   return (
-    <span className={`relative min-w-[22px] rounded-full px-[7px] py-px text-center text-[11.5px] font-bold tabular-nums ${cls}`}>
+    <span className={`relative min-w-[22px] rounded-none px-[7px] py-px text-center text-[11.5px] font-bold tabular-nums ${cls}`}>
       {antal}
       <span className="sr-only">{sr ?? (tone === "roed" ? " – over fristen" : " venter")}</span>
     </span>
@@ -348,7 +348,7 @@ export default function AdminSidebar({
         <Link href={rolle === "saelger" ? "/admin/erhverv" : "/admin"} onClick={() => setOpen(false)} className="inline-flex rounded-lg focus-visible:outline-2 focus-visible:outline-orange">
           <Logo />
         </Link>
-        <span className="ml-10 block w-max rounded-full bg-white/14 px-[9px] py-0.5 text-[11.5px] font-semibold text-white">
+        <span className="ml-10 block w-max rounded-none bg-white/14 px-[9px] py-0.5 text-[11.5px] font-semibold text-white">
           {ROLLE_NAVN[rolle]}
         </span>
       </div>

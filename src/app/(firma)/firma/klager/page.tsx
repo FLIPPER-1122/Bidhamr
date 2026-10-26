@@ -31,7 +31,7 @@ export default async function FirmaKlagerSide() {
         {info.klager.length === 0 ? (
           <p className={E_TEKST}>{T.tom}</p>
         ) : (
-          <ul className="divide-y divide-kant rounded-[14px] border border-kant">
+          <ul className="divide-y divide-kant rounded-none border border-kant">
             {info.klager.map((k) => (
               <li key={k.id} className="space-y-2 p-4">
                 <div className="flex flex-wrap items-center gap-2">

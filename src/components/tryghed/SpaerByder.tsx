@@ -21,7 +21,7 @@ export default function SpaerByder({ bydere }: { bydere: ByderValg[] }) {
   const valgtByder = bydere.find((b) => b.budId === valgt);
 
   return (
-    <details className="mb-4 rounded-[14px] border border-kant bg-white p-4 text-sm">
+    <details className="mb-4 rounded-none border border-kant bg-white p-4 text-sm">
       <summary className="flex min-h-11 cursor-pointer items-center rounded-md font-medium text-tekst focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">Spær en byder</summary>
       <p className="mt-2 text-tekst-daempet">
         En spærret byder kan ikke byde på dine auktioner igen. Byderens nuværende bud er bindende og

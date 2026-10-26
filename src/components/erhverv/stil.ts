@@ -24,7 +24,7 @@ export const E_KNAP_PRIMAER = `${E_KNAP} btn-primaer`;
 export const E_KNAP_SEKUNDAER = `${E_KNAP} btn-sekundaer border-2`;
 
 // Kort på Firma oversigt.
-export const E_KORT = "rounded-[18px] border border-kant bg-white p-5 sm:p-7";
+export const E_KORT = "rounded-none border border-kant bg-white p-5 sm:p-7";
 export const E_KORT_TITEL = "text-[24px] leading-tight text-tekst sm:text-[26px]";
 export const E_TEKST = "text-[18px] leading-relaxed text-tekst";
 export const E_TEKST_DAEMPET = "text-[17px] leading-relaxed text-tekst-daempet";

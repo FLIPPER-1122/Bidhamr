@@ -64,16 +64,16 @@ export default function KontoLukningKort({
           <p className="mt-1 text-xs text-neutral-500">Forslag oprettet {dato(f.oprettet_kl)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
+          <span className="rounded-none bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
             {advarsler.length} advarsler
           </span>
           {paamindelser > 0 && (
-            <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
+            <span className="rounded-none bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
               {paamindelser} {paamindelser === 1 ? "påmindelse" : "påmindelser"} (tæller ikke)
             </span>
           )}
           {f.status !== "afventer" && (
-            <span className="rounded-full bg-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-700">
+            <span className="rounded-none bg-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-700">
               {STATUS_NAVN[f.status]}
             </span>
           )}

@@ -4,7 +4,7 @@ import { AuctionCardSkelet } from "@/components/AuctionCard";
 // færdige side, ingen centreret spinner). Kun pladsholdere - intet indhold.
 
 const blok = "animate-pulse rounded bg-skelet";
-const flade = "animate-pulse rounded-[14px] bg-groen-lys";
+const flade = "animate-pulse rounded-none bg-groen-lys";
 
 function Indlaeser({ tekst }: { tekst: string }) {
   return <span className="sr-only">{tekst}</span>;
@@ -29,19 +29,19 @@ export function AuktionerSkelet() {
       {/* Kategorier: rullende række på mobil, ikonflader fra md. */}
       <div className="mt-6 flex gap-2 overflow-hidden py-1 md:hidden">
         {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="h-11 w-28 shrink-0 animate-pulse rounded-full bg-groen-lys" />
+          <div key={i} className="h-11 w-28 shrink-0 animate-pulse rounded-none bg-groen-lys" />
         ))}
       </div>
       <div className="mt-6 hidden grid-cols-4 gap-x-3 gap-y-4 md:grid xl:grid-cols-8">
         {Array.from({ length: 8 }, (_, i) => (
           <div key={i}>
-            <div className="h-16 animate-pulse rounded-[14px] bg-groen-lys" />
+            <div className="h-16 animate-pulse rounded-none bg-groen-lys" />
             <div className="mx-auto mt-2 h-3 w-3/4 animate-pulse rounded bg-skelet" />
           </div>
         ))}
       </div>
       {/* Filterbjælken */}
-      <div className="mt-6 h-[216px] animate-pulse rounded-[14px] bg-groen-lys md:h-[104px]" />
+      <div className="mt-6 h-[216px] animate-pulse rounded-none bg-groen-lys md:h-[104px]" />
       <div className={`mt-4 h-4 w-32 ${blok}`} />
       <div className="mt-4">
         <KortGitterSkelet />
@@ -59,7 +59,7 @@ export function AuktionSkelet() {
         <div className={`mt-4 h-8 w-3/4 ${blok}`} />
         <div className="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-5">
           <div className="lg:col-span-3">
-            <div className="aspect-[4/3] w-full animate-pulse rounded-[14px] bg-skelet" />
+            <div className="aspect-[4/3] w-full animate-pulse rounded-none bg-skelet" />
             <div className="mt-3 flex gap-2">
               {Array.from({ length: 4 }, (_, i) => (
                 <div key={i} className="h-16 w-16 animate-pulse rounded-lg bg-skelet" />
@@ -67,7 +67,7 @@ export function AuktionSkelet() {
             </div>
           </div>
           <div className="space-y-4 lg:col-span-2">
-            <div className="rounded-[14px] border border-kant p-5">
+            <div className="rounded-none border border-kant p-5">
               <div className={`h-4 w-24 ${blok}`} />
               <div className={`mt-3 h-9 w-40 ${blok}`} />
               <div className={`mt-3 h-4 w-32 ${blok}`} />
@@ -95,18 +95,18 @@ export function ListeSkelet({ tekst, antal = 4 }: { tekst: string; antal?: numbe
       <div className="mx-auto max-w-3xl">
         <div className={`h-8 w-48 ${blok}`} />
         <div className="mt-6 flex gap-2">
-          <div className="h-9 w-24 animate-pulse rounded-full bg-groen-lys" />
-          <div className="h-9 w-24 animate-pulse rounded-full bg-groen-lys" />
+          <div className="h-9 w-24 animate-pulse rounded-none bg-groen-lys" />
+          <div className="h-9 w-24 animate-pulse rounded-none bg-groen-lys" />
         </div>
         <ul className="mt-6 space-y-3">
           {Array.from({ length: antal }, (_, i) => (
-            <li key={i} className="flex items-center gap-4 rounded-[14px] border border-kant p-4">
+            <li key={i} className="flex items-center gap-4 rounded-none border border-kant p-4">
               <div className="h-16 w-16 shrink-0 animate-pulse rounded-lg bg-skelet" />
               <div className="min-w-0 flex-1 space-y-2">
                 <div className={`h-4 w-3/5 ${blok}`} />
                 <div className={`h-3 w-2/5 ${blok}`} />
               </div>
-              <div className="h-6 w-20 animate-pulse rounded-full bg-skelet" />
+              <div className="h-6 w-20 animate-pulse rounded-none bg-skelet" />
             </li>
           ))}
         </ul>
@@ -125,12 +125,12 @@ export function HandelSkelet() {
           <div className="h-20 w-20 shrink-0 animate-pulse rounded-lg bg-skelet" />
           <div className="flex-1 space-y-2">
             <div className={`h-6 w-3/5 ${blok}`} />
-            <div className="h-6 w-28 animate-pulse rounded-full bg-skelet" />
+            <div className="h-6 w-28 animate-pulse rounded-none bg-skelet" />
           </div>
         </div>
         <div className={`h-40 ${flade}`} />
         <div className={`h-28 ${flade}`} />
-        <div className="rounded-[14px] border border-kant p-4">
+        <div className="rounded-none border border-kant p-4">
           <div className={`h-5 w-24 ${blok}`} />
           <div className="mt-4 space-y-3">
             <div className={`h-10 w-2/3 ${blok}`} />
@@ -170,7 +170,7 @@ export function KontoSkelet() {
       <Indlaeser tekst="Indlæser din konto…" />
       <div className={`h-8 w-40 ${blok}`} />
       {Array.from({ length: 3 }, (_, i) => (
-        <section key={i} className="mt-6 rounded-[14px] border border-kant p-5">
+        <section key={i} className="mt-6 rounded-none border border-kant p-5">
           <div className={`h-5 w-48 ${blok}`} />
           <div className={`mt-3 h-4 w-4/5 ${blok}`} />
           <div className="mt-4 h-11 w-40 animate-pulse rounded-lg bg-skelet" />
@@ -185,7 +185,7 @@ export function ProfilSkelet() {
     <main className="flex-1 bg-groen-lys px-4 py-8 sm:px-6 lg:px-8 lg:py-10" aria-busy="true">
       <Indlaeser tekst="Indlæser profilen…" />
       <div className="mx-auto max-w-5xl space-y-6">
-        <div className="rounded-[14px] bg-white p-5 sm:p-8">
+        <div className="rounded-none bg-white p-5 sm:p-8">
           <div className="flex items-center gap-4 sm:gap-6">
             <div className="h-20 w-20 shrink-0 animate-pulse rounded-full bg-skelet sm:h-24 sm:w-24" />
             <div className="flex-1 space-y-2">

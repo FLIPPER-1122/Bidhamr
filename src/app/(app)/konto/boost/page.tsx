@@ -136,7 +136,7 @@ export default async function BoostSide({
             </p>
           )}
 
-          <section aria-labelledby="saldo-titel" className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <section aria-labelledby="saldo-titel" className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 id="saldo-titel" className="text-[15px] font-medium text-tekst-daempet">
               {BOOST_TEKST.saldoLabel}
             </h2>
@@ -181,7 +181,7 @@ export default async function BoostSide({
             {p.historik.length === 0 ? (
               <p className="mt-2 text-sm text-tekst-daempet">{BOOST_TEKST.historikTom}</p>
             ) : (
-              <ul className="mt-3 divide-y divide-kant rounded-[14px] border border-kant bg-white">
+              <ul className="mt-3 divide-y divide-kant rounded-none border border-kant bg-white">
                 {p.historik.map((h) => (
                   <li key={h.id} className="flex items-start justify-between gap-4 p-4">
                     <div className="min-w-0">

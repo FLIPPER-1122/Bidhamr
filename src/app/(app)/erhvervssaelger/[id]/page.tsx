@@ -65,7 +65,7 @@ export default async function ErhvervssaelgerSide({ params }: { params: Promise<
     <main className="flex-1 bg-groen-lys px-4 py-8 sm:px-6 lg:py-12">
       <div className="mx-auto max-w-[720px] space-y-6">
         <div>
-          <span className="inline-flex rounded-full border border-groen bg-white px-3 py-1.5 text-[15px] font-semibold text-groen-mork">
+          <span className="inline-flex rounded-none border border-groen bg-white px-3 py-1.5 text-[15px] font-semibold text-groen-mork">
             {T.maerke}
           </span>
           <h1 className="mt-3 text-[30px] leading-tight break-words sm:text-[36px]">{firma.firmanavn}</h1>

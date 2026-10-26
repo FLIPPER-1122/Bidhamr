@@ -137,7 +137,7 @@ export default function BilledVaelger<K extends string = SagBilledeKategori>({
                       />
                     )}
                     {b.sti && (
-                      <span className="absolute left-1 top-1 rounded-full bg-succes-bg px-1.5 py-0.5 text-[11px] font-semibold text-succes-tekst">
+                      <span className="absolute left-1 top-1 rounded-none bg-succes-bg px-1.5 py-0.5 text-[11px] font-semibold text-succes-tekst">
                         Uploadet
                       </span>
                     )}

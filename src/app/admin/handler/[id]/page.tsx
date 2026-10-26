@@ -84,7 +84,7 @@ const BETALING_NAVN: Record<string, string> = {
 
 function Kort({ titel, children, hoejre }: { titel: string; children: React.ReactNode; hoejre?: React.ReactNode }) {
   return (
-    <section className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+    <section className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-tekst">{titel}</h2>
         {hoejre}
@@ -216,7 +216,7 @@ export default async function AdminHandel({ params }: { params: Promise<{ id: st
         forklaring={`Handel ${h.id.slice(0, 8)} · oprettet ${tid(h.created_at)} · bud ${kr(h.amount)}`}
       />
 
-      <div className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+      <div className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
         <HandelHandlinger
           h={h}
           titel={titel}

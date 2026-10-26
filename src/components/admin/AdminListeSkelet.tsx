@@ -16,7 +16,7 @@ export default function AdminListeSkelet({ faner = true, raekker = 5 }: { faner?
             ))}
           </div>
         )}
-        <div className="overflow-hidden rounded-[14px] border border-kant bg-white">
+        <div className="overflow-hidden rounded-none border border-kant bg-white">
           {Array.from({ length: raekker }, (_, i) => (
             <div key={i} className="flex items-center gap-4 border-t border-kant px-4 py-4 first:border-t-0">
               <div className="h-3 w-3 animate-pulse rounded-full bg-skelet" />

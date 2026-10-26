@@ -145,7 +145,7 @@ export default async function AdminMedarbejdere({
     rows: NonNullable<typeof staff>,
     tomBesked: string,
   ) => (
-    <div className="lg:overflow-hidden lg:rounded-[14px] lg:border lg:border-admin-kant lg:bg-white">
+    <div className="lg:overflow-hidden lg:rounded-none lg:border lg:border-admin-kant lg:bg-white">
       <div className="lg:overflow-x-auto">
         <table className="block w-full text-sm lg:table">
           <thead className="hidden lg:table-header-group">
@@ -160,7 +160,7 @@ export default async function AdminMedarbejdere({
           </thead>
           <tbody className="block space-y-3 lg:table-row-group lg:space-y-0 divide-y divide-admin-kant">
             {rows.map((user) => (
-              <tr key={user.id} className="block rounded-[14px] border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50">
+              <tr key={user.id} className="block rounded-none border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 hover:bg-neutral-50">
                 <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 font-medium text-tekst">{user.navn ?? "—"}</td>
                 <td className="block py-1 lg:table-cell lg:px-5 lg:py-3 text-tekst-daempet">{user.email}</td>
                 <td className="block py-1 lg:table-cell lg:px-5 lg:py-3"><RolleBadge rolle={user.rolle} /></td>

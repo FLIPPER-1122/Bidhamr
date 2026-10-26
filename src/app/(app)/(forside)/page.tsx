@@ -168,12 +168,12 @@ export default function Forside() {
 
         {/* Tryghedsstribe (DESIGN.md 7.4) */}
         <section aria-label={FORSIDE.tryghedLabel} className="mt-5">
-          <ul className="grid rounded-[14px] bg-groen-lys sm:grid-cols-2 lg:grid-cols-4">
+          <ul className="grid rounded-none bg-groen-lys sm:grid-cols-2 lg:grid-cols-4">
             {FORSIDE.tryghed.map((t) => (
               <li key={t.titel}>
                 <Link
                   href={t.href}
-                  className="flex h-full items-center gap-3 rounded-[14px] p-5 transition-colors hover:bg-[#DCEAE4] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen"
+                  className="flex h-full items-center gap-3 rounded-none p-5 transition-colors hover:bg-[#DCEAE4] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-groen"
                 >
                   <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-white text-groen-mork">
                     <Ikon navn={t.ikon as IkonNavn} className="h-[18px] w-[18px]" />
@@ -219,7 +219,7 @@ function Hero() {
   return (
     <section
       aria-labelledby="hero-titel"
-      className="mt-4 flex flex-col-reverse overflow-hidden rounded-[18px] md:mt-6 md:min-h-[420px] md:flex-row lg:h-[460px]"
+      className="mt-4 flex flex-col-reverse overflow-hidden rounded-none md:mt-6 md:min-h-[420px] md:flex-row lg:h-[460px]"
     >
       <div className="flex min-w-0 flex-col justify-center bg-groen p-6 text-white sm:p-10 md:flex-[1.1] lg:p-14">
         <h1 id="hero-titel" className="text-[30px] leading-[1.1] lg:text-[42px]">
@@ -261,7 +261,7 @@ function Hero() {
               <li key={s}>
                 <Link
                   href={`/auktioner?q=${encodeURIComponent(s)}`}
-                  className="inline-flex min-h-11 items-center rounded-full border border-white/25 bg-white/15 px-4 py-2 text-[13px] text-white transition-colors hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  className="inline-flex min-h-11 items-center rounded-none border border-white/25 bg-white/15 px-4 py-2 text-[13px] text-white transition-colors hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                 >
                   {s}
                 </Link>
@@ -414,7 +414,7 @@ function IngenAuktioner() {
   return (
     <section aria-labelledby="ingen-auktioner-titel" className="py-8 lg:py-10">
       <SektionsOverskrift id="ingen-auktioner-titel" titel={FORSIDE.slutterSnartTitel} />
-      <div className="flex flex-col items-center rounded-[14px] border border-kant bg-white px-6 py-12 text-center">
+      <div className="flex flex-col items-center rounded-none border border-kant bg-white px-6 py-12 text-center">
         <span className="grid h-14 w-14 place-items-center rounded-full bg-groen-lys text-groen-mork">
           <Ikon navn="ur" className="h-6 w-6" />
         </span>
@@ -439,7 +439,7 @@ function SaadanVirkerDet() {
   const t = FORSIDE.saadan;
   return (
     <section aria-labelledby="saadan-titel" className="py-8 lg:py-10">
-      <div className="rounded-[18px] bg-groen-lys p-6 md:p-10">
+      <div className="rounded-none bg-groen-lys p-6 md:p-10">
         <h2 id="saadan-titel" className="text-xl leading-tight lg:text-[22px]">
           {t.titel}
         </h2>
@@ -447,7 +447,7 @@ function SaadanVirkerDet() {
 
         <ol className="mt-6 grid gap-4 md:grid-cols-3">
           {t.trin.map((trin, i) => (
-            <li key={trin.titel} className="rounded-[14px] bg-white p-6">
+            <li key={trin.titel} className="rounded-none bg-white p-6">
               <div className="flex items-center gap-3">
                 <span
                   aria-hidden="true"
@@ -483,8 +483,8 @@ function ErhvervTeaser() {
   const t = FORSIDE.erhverv;
   return (
     <section aria-labelledby="erhverv-titel" className="pt-2 pb-12 lg:pb-16">
-      <div className="flex flex-col gap-5 rounded-[18px] border border-kant bg-white p-6 md:flex-row md:items-center md:p-10">
-        <span className="grid h-14 w-14 shrink-0 place-items-center rounded-[14px] bg-orange-lys text-groen-mork">
+      <div className="flex flex-col gap-5 rounded-none border border-kant bg-white p-6 md:flex-row md:items-center md:p-10">
+        <span className="grid h-14 w-14 shrink-0 place-items-center rounded-none bg-orange-lys text-groen-mork">
           <Ikon navn="butik" className="h-6 w-6" />
         </span>
         <div className="min-w-0 flex-1">

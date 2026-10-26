@@ -58,7 +58,7 @@ export default async function ErhvervDsaKlagerSide({
             key={s}
             href={filterHref(s)}
             aria-current={status === s ? "page" : undefined}
-            className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium ${
+            className={`inline-flex min-h-11 items-center gap-2 rounded-none border px-4 text-sm font-medium ${
               status === s ? "border-groen bg-groen text-white" : "border-neutral-300 bg-white text-tekst hover:border-groen"
             }`}
           >
@@ -74,9 +74,9 @@ export default async function ErhvervDsaKlagerSide({
       )}
 
       {!fejl && klager.length === 0 ? (
-        <p className="rounded-[14px] border border-admin-kant bg-white p-8 text-center text-tekst-svag">{T.tom[status]}</p>
+        <p className="rounded-none border border-admin-kant bg-white p-8 text-center text-tekst-svag">{T.tom[status]}</p>
       ) : (
-        <ul className="divide-y divide-admin-kant overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+        <ul className="divide-y divide-admin-kant overflow-hidden rounded-none border border-admin-kant bg-white">
           {klager.map((k) => {
             const firma = firmaer.get(k.afg.bruger_id);
             const lukket = k.afg.handling === "konto_lukket";
@@ -122,7 +122,7 @@ export default async function ErhvervDsaKlagerSide({
           <Link
             href={flereHref}
             scroll={false}
-            className="inline-flex min-h-11 items-center rounded-full border border-neutral-300 bg-white px-5 text-sm font-medium text-tekst hover:border-groen"
+            className="inline-flex min-h-11 items-center rounded-none border border-neutral-300 bg-white px-5 text-sm font-medium text-tekst hover:border-groen"
           >
             {T.visFlere}
           </Link>

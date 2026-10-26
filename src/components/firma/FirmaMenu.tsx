@@ -81,7 +81,7 @@ export default function FirmaMenu() {
 
       <div
         id={listeId}
-        className={`${aaben ? "block" : "hidden"} mt-3 rounded-[18px] border border-kant bg-white p-3 lg:sticky lg:top-6 lg:mt-0 lg:block`}
+        className={`${aaben ? "block" : "hidden"} mt-3 rounded-none border border-kant bg-white p-3 lg:sticky lg:top-6 lg:mt-0 lg:block`}
       >
         <ul className="space-y-1.5">
           {PUNKTER.map((p) => (

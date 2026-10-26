@@ -11,7 +11,7 @@ import { hovedsiteUrl } from "@/lib/adminVaert";
 import { useHydreret } from "@/lib/useHydreret";
 
 const NETVAERK = "Der er ingen forbindelse lige nu. Prøv igen.";
-const KORT = "rounded-[14px] border border-kant bg-white p-5 shadow-kort sm:p-8";
+const KORT = "rounded-none border border-kant bg-white p-5 shadow-kort sm:p-8";
 const KODEFELT = `${FELT} text-center text-xl tracking-[0.4em] tabular-nums`;
 
 // Handlingerne er route handlers (POST /adgang/api/<handling>), ikke server

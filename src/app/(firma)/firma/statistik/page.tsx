@@ -41,7 +41,7 @@ export default async function FirmaStatistikSide() {
             {/* Mobil: én boks pr. måned (ingen tabel, der skal rulles sidelæns). */}
             <ul className="space-y-3 sm:hidden">
               {maaneder.map((m) => (
-                <li key={m.maaned} className="rounded-[14px] border border-kant p-4">
+                <li key={m.maaned} className="rounded-none border border-kant p-4">
                   <p className="text-[19px] font-semibold text-tekst capitalize">{maanedNavn(m.maaned)}</p>
                   <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[17px]">
                     <dt className="text-tekst-daempet">{S.kolonneVisninger}</dt>
@@ -92,7 +92,7 @@ export default async function FirmaStatistikSide() {
           </Kort>
 
           <Kort id="pr-auktion" titel={S.prAuktion} forklaring={S.prAuktionForklaring}>
-            <ul className="divide-y divide-kant rounded-[14px] border border-kant">
+            <ul className="divide-y divide-kant rounded-none border border-kant">
               {auktioner.map((a) => (
                 <li key={a.id} className="p-4">
                   <p className="text-[19px] font-semibold break-words text-tekst">{a.titel}</p>

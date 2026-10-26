@@ -241,7 +241,7 @@ export default async function MedarbejderLog({
       <form
         method="get"
         action="/admin/medarbejder-log"
-        className="grid grid-cols-1 gap-3 rounded-[14px] border border-admin-kant bg-white p-4 sm:grid-cols-2 lg:grid-cols-3"
+        className="grid grid-cols-1 gap-3 rounded-none border border-admin-kant bg-white p-4 sm:grid-cols-2 lg:grid-cols-3"
       >
         {kanSeAlle && (
           <label className="text-xs font-medium text-tekst-daempet">
@@ -325,7 +325,7 @@ export default async function MedarbejderLog({
             </Link>
           );
           return (
-            <li key={r.id} className="rounded-[14px] border border-admin-kant bg-white p-4">
+            <li key={r.id} className="rounded-none border border-admin-kant bg-white p-4">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <p className="min-w-0 text-sm text-tekst">
                   <span className="font-semibold">

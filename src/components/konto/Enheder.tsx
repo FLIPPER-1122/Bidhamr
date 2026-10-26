@@ -84,7 +84,7 @@ export default function Enheder({ enheder }: { enheder: Enhed[] }) {
                   <p className="text-[15px] font-medium text-tekst">
                     {e.beskrivelse}
                     {e.denne && (
-                      <span className="ml-2 rounded-full bg-groen-lys px-2 py-0.5 text-[12px] font-semibold text-groen-mork">
+                      <span className="ml-2 rounded-none bg-groen-lys px-2 py-0.5 text-[12px] font-semibold text-groen-mork">
                         Denne enhed
                       </span>
                     )}

@@ -35,7 +35,7 @@ export function StatusBadge({ status }: { status: BrugerStatus }) {
   const s = STYLES[status];
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${s.klasse}`}
+      className={`inline-flex items-center gap-1.5 rounded-none px-2.5 py-1 text-xs font-medium ${s.klasse}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${s.prik}`} />
       {s.tekst}
@@ -55,7 +55,7 @@ const ROLLE_STYLES: Record<string, { klasse: string; tekst: string }> = {
 export function RolleBadge({ rolle }: { rolle: string | null }) {
   const s = ROLLE_STYLES[rolle ?? "bruger"] ?? ROLLE_STYLES.bruger;
   return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.klasse}`}>
+    <span className={`px-2 py-0.5 rounded-none text-xs font-medium ${s.klasse}`}>
       {s.tekst}
     </span>
   );

@@ -100,7 +100,7 @@ export default function NotifikationIndstillinger({ start }: { start: Indstillin
       </p>
 
       {grupper.map((g) => (
-        <section key={g.titel} className="mt-6 rounded-[14px] border border-kant bg-white">
+        <section key={g.titel} className="mt-6 rounded-none border border-kant bg-white">
           <div className="border-b border-kant p-4 sm:px-6">
             <h2 className="text-[20px] font-semibold leading-tight text-tekst sm:text-[22px]">{g.titel}</h2>
             <p className="mt-1 text-sm text-tekst-daempet">{g.tekst}</p>
@@ -131,7 +131,7 @@ export default function NotifikationIndstillinger({ start }: { start: Indstillin
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <h3 className="font-sans text-[15px] font-semibold text-tekst">{i.navn}</h3>
                       {i.paakraevet && (
-                        <span className="rounded-full bg-groen-lys px-2 py-0.5 text-xs font-semibold text-groen-mork">
+                        <span className="rounded-none bg-groen-lys px-2 py-0.5 text-xs font-semibold text-groen-mork">
                           Påkrævet
                         </span>
                       )}

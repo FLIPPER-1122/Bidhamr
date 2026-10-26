@@ -57,7 +57,7 @@ export default function AuctionCard({
     <div className="group relative h-full">
       <Link
         href={`/auktion/${auktion.id}`}
-        className="flex h-full flex-col overflow-hidden rounded-[14px] border border-kant bg-white shadow-kort transition-[box-shadow,border-color] duration-200 ease-out hover:border-kant-staerk hover:shadow-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+        className="flex h-full flex-col overflow-hidden rounded-none border border-kant bg-white shadow-kort transition-[box-shadow,border-color] duration-200 ease-out hover:border-kant-staerk hover:shadow-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
       >
         <div
           className="relative aspect-[4/3] w-full bg-skelet"
@@ -85,7 +85,7 @@ export default function AuctionCard({
           {auktion.boostet && <BoostetMaerke lille className="absolute top-3 left-3 shadow-kort" />}
 
           <span
-            className={`absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full px-[9px] py-[5px] text-xs font-semibold ${
+            className={`absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-none px-[9px] py-[5px] text-xs font-semibold ${
               auktion.slutterSnart ? "bg-orange-knap text-white" : "bg-white text-tekst"
             }`}
           >
@@ -148,7 +148,7 @@ export default function AuctionCard({
 // Skeleton med samme geometri som kortet (ingen layoutspring).
 export function AuctionCardSkelet() {
   return (
-    <div aria-hidden="true" className="overflow-hidden rounded-[14px] border border-kant bg-white">
+    <div aria-hidden="true" className="overflow-hidden rounded-none border border-kant bg-white">
       <div className="aspect-[4/3] w-full animate-pulse bg-skelet" />
       <div className="px-[14px] pt-3 pb-4">
         <div className="h-4 w-4/5 animate-pulse rounded bg-skelet" />

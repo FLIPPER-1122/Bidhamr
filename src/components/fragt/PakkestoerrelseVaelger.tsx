@@ -257,7 +257,7 @@ export default function PakkestoerrelseVaelger({
             onChange={(e) => onAfhentningOgsaa(e.target.checked)}
             disabled={deaktiveret}
             aria-describedby={`${id}-afhentning-hjaelp`}
-            className="mt-0.5 h-5 w-5 shrink-0 rounded-[6px] accent-groen"
+            className="mt-0.5 h-5 w-5 shrink-0 rounded-none accent-groen"
           />
           <span>
             <span className="font-medium">Køberen må også hente varen hos mig</span>

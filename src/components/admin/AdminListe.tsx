@@ -48,7 +48,7 @@ export default function AdminListe<T>({
 }) {
   if (raekker.length === 0 && tom) return <>{tom}</>;
   return (
-    <div className="lg:overflow-hidden lg:rounded-[14px] lg:border lg:border-kant lg:bg-white">
+    <div className="lg:overflow-hidden lg:rounded-none lg:border lg:border-kant lg:bg-white">
       <table aria-label={label} className="block w-full text-sm lg:table">
         <thead className="hidden lg:table-header-group">
           <tr className="border-b border-kant bg-admin-bg text-left text-xs font-semibold uppercase tracking-wide text-tekst-svag">
@@ -65,7 +65,7 @@ export default function AdminListe<T>({
             return (
               <tr
                 key={noegle(r)}
-                className={`flex min-w-0 flex-col gap-1.5 rounded-[14px] border p-4 align-top lg:table-row lg:rounded-none lg:border-0 lg:border-t lg:border-kant lg:p-0 lg:first:border-t-0 ${
+                className={`flex min-w-0 flex-col gap-1.5 rounded-none border p-4 align-top lg:table-row lg:rounded-none lg:border-0 lg:border-t lg:border-kant lg:p-0 lg:first:border-t-0 ${
                   vigtig ? "border-advarsel-kant bg-advarsel-bg/50" : "border-kant bg-white lg:hover:bg-admin-bg/60"
                 }`}
               >

@@ -28,14 +28,14 @@ export default function AdminTopSoeg({ erhverv = false, vaerdi = "" }: { erhverv
         autoComplete="off"
         enterKeyHint="search"
         placeholder={pladsholder}
-        className="h-11 w-full rounded-full border border-kant-staerk bg-white pl-10 pr-24 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
+        className="h-11 w-full rounded-none border border-kant-staerk bg-white pl-10 pr-24 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
       />
       {/* Touch-målet er 44 px højt; den synlige pille ligger indeni (DESIGN 8.4). */}
       <button
         type="submit"
-        className="group absolute right-0 top-0 inline-flex h-11 items-center rounded-full px-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+        className="group absolute right-0 top-0 inline-flex h-11 items-center rounded-none px-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
       >
-        <span className="inline-flex h-9 items-center rounded-full bg-orange-knap px-4 text-sm font-semibold text-white group-hover:bg-orange-knap-mork">
+        <span className="inline-flex h-9 items-center rounded-none bg-orange-knap px-4 text-sm font-semibold text-white group-hover:bg-orange-knap-mork">
           Søg
         </span>
       </button>

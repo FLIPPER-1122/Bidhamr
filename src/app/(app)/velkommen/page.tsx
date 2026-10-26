@@ -23,7 +23,7 @@ export default async function VelkommenSide({ searchParams }: { searchParams: Pr
 
   return (
     <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
-      <div className="w-full max-w-md rounded-[14px] border border-kant bg-white p-5 text-center shadow-kort sm:p-8">
+      <div className="w-full max-w-md rounded-none border border-kant bg-white p-5 text-center shadow-kort sm:p-8">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-succes-bg">
           <svg viewBox="0 0 24 24" className="h-7 w-7 text-succes-tekst" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />

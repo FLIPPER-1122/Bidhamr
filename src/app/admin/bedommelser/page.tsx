@@ -97,9 +97,9 @@ function Stjerner({ antal }: { antal: number }) {
 
 function Status({ skjult }: { skjult: boolean }) {
   return skjult ? (
-    <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-tekst">Skjult</span>
+    <span className="rounded-none bg-neutral-200 px-2 py-0.5 text-xs font-medium text-tekst">Skjult</span>
   ) : (
-    <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">Synlig</span>
+    <span className="rounded-none bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">Synlig</span>
   );
 }
 
@@ -327,7 +327,7 @@ export default async function AdminBedommelser({
       )}
 
       {ratings.length === 0 ? (
-        <p className="rounded-[14px] border border-admin-kant bg-white px-5 py-10 text-center text-sm text-tekst-svag">
+        <p className="rounded-none border border-admin-kant bg-white px-5 py-10 text-center text-sm text-tekst-svag">
           {tomTekst}
         </p>
       ) : (
@@ -346,7 +346,7 @@ export default async function AdminBedommelser({
             const egenSag =
               userId === r.fra_bruger_id || userId === r.til_bruger_id || userId === svar?.saelger_id;
             return (
-              <li key={r.id} className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+              <li key={r.id} className="overflow-hidden rounded-none border border-admin-kant bg-white">
                 {/* Handlen */}
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 bg-neutral-50 px-4 py-3 text-xs text-tekst-daempet sm:px-5">
                   <span className="min-w-0">
@@ -381,7 +381,7 @@ export default async function AdminBedommelser({
                       <Stjerner antal={r.stjerner} />
                       <Status skjult={r.skjult} />
                       {aabneB.length > 0 && (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                        <span className="rounded-none bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
                           {aabneB.length} {aabneB.length === 1 ? "rapport" : "rapporter"}
                         </span>
                       )}
@@ -406,14 +406,14 @@ export default async function AdminBedommelser({
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-xs font-semibold uppercase tracking-wide text-groen-mork">Svar fra sælger</p>
                         {svar.slettet_kl ? (
-                          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-tekst">
+                          <span className="rounded-none bg-neutral-200 px-2 py-0.5 text-xs font-medium text-tekst">
                             Slettet af sælger {tid(svar.slettet_kl)}
                           </span>
                         ) : (
                           <Status skjult={svar.skjult} />
                         )}
                         {aabneS.length > 0 && (
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                          <span className="rounded-none bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
                             {aabneS.length} {aabneS.length === 1 ? "rapport" : "rapporter"}
                           </span>
                         )}

@@ -6,7 +6,7 @@ import Link from "next/link";
 export default function CheckoutFejl({ handelSti, tekst }: { handelSti: string; tekst: string }) {
   return (
     <main className="flex-1 px-4 pt-6 pb-10 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-2xl rounded-[14px] border border-fejl-kant bg-fejl-bg p-6 text-fejl-tekst">
+      <div className="mx-auto max-w-2xl rounded-none border border-fejl-kant bg-fejl-bg p-6 text-fejl-tekst">
         <h1 className="text-[22px] leading-tight font-semibold">Betalingen kunne ikke vises</h1>
         <p className="mt-2 text-sm">{tekst}</p>
         <div className="mt-4 flex flex-wrap items-center gap-4">
@@ -26,7 +26,7 @@ export default function CheckoutFejl({ handelSti, tekst }: { handelSti: string; 
 }
 
 const blok = "animate-pulse rounded bg-skelet";
-const flade = "animate-pulse rounded-[14px] bg-groen-lys";
+const flade = "animate-pulse rounded-none bg-groen-lys";
 
 // Samme geometri som checkout: vare, levering og betaling til venstre,
 // prisoversigt til højre (under på mobil).
@@ -40,7 +40,7 @@ export function CheckoutSkelet() {
         <div className={`mt-4 h-12 ${flade}`} />
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8">
           <div className="space-y-6">
-            <div className="flex items-center gap-4 rounded-[14px] border border-kant p-5">
+            <div className="flex items-center gap-4 rounded-none border border-kant p-5">
               <div className="h-20 w-20 shrink-0 animate-pulse rounded-lg bg-skelet" />
               <div className="flex-1 space-y-2">
                 <div className={`h-5 w-3/5 ${blok}`} />

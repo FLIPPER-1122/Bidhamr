@@ -51,7 +51,7 @@ function Skelet({ hoejde = "h-20", titel = true }: { hoejde?: string; titel?: bo
   return (
     <div aria-hidden="true" className="space-y-2.5">
       {titel && <div className="h-4 w-32 animate-pulse rounded bg-skelet/70" />}
-      <div className={`${hoejde} animate-pulse rounded-[14px] bg-skelet/50`} />
+      <div className={`${hoejde} animate-pulse rounded-none bg-skelet/50`} />
     </div>
   );
 }

@@ -269,7 +269,7 @@ function returTekst(f: TransportoerInfo): string {
 
 function Boks({ id, titel, children }: { id: string; titel: string; children: React.ReactNode }) {
   return (
-    <section aria-labelledby={`${id}-titel`} className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+    <section aria-labelledby={`${id}-titel`} className="rounded-none border border-kant bg-white p-5 sm:p-6">
       <h2 id={`${id}-titel`} className="text-[17px] leading-snug lg:text-lg">
         {titel}
       </h2>

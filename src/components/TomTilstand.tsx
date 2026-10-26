@@ -17,7 +17,7 @@ export default function TomTilstand({
   className?: string;
 }) {
   return (
-    <div className={`flex flex-col items-center rounded-[14px] border border-kant bg-white px-6 py-10 text-center ${className}`}>
+    <div className={`flex flex-col items-center rounded-none border border-kant bg-white px-6 py-10 text-center ${className}`}>
       <span className="grid h-14 w-14 place-items-center rounded-full bg-groen-lys text-groen-mork">
         <Ikon navn={ikon} className="h-6 w-6" />
       </span>

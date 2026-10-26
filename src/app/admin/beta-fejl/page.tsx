@@ -83,7 +83,7 @@ function Fane({ href, aktiv, children }: { href: string; aktiv: boolean; childre
     <Link
       href={href}
       aria-current={aktiv ? "page" : undefined}
-      className={`inline-flex min-h-9 items-center rounded-full px-3 text-sm ${
+      className={`inline-flex min-h-9 items-center rounded-none px-3 text-sm ${
         aktiv ? "bg-groen text-white" : "bg-neutral-100 text-tekst hover:bg-neutral-200"
       }`}
     >
@@ -192,19 +192,19 @@ export default async function AdminBetaFejlSide({
       )}
 
       {!error && fejl.length === 0 && (
-        <p className="rounded-[14px] border border-admin-kant bg-white p-6 text-center text-sm text-tekst-daempet">
+        <p className="rounded-none border border-admin-kant bg-white p-6 text-center text-sm text-tekst-daempet">
           Ingen fejl her.
         </p>
       )}
 
       <ul className="space-y-3">
         {fejl.map((f) => (
-          <li key={f.id} className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+          <li key={f.id} className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${ALVOR_FARVE[f.alvor]}`}>
+              <span className={`rounded-none border px-2.5 py-0.5 text-xs font-semibold ${ALVOR_FARVE[f.alvor]}`}>
                 {ALVOR_KORT[f.alvor]}
               </span>
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_FARVE[f.status]}`}>
+              <span className={`rounded-none px-2.5 py-0.5 text-xs font-medium ${STATUS_FARVE[f.status]}`}>
                 {STATUS_NAVN[f.status]}
               </span>
               <span className="text-xs text-tekst-svag">

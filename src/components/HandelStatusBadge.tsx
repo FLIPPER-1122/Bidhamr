@@ -43,7 +43,7 @@ export function statusLabel(status: string) {
 export default function HandelStatusBadge({ status }: { status: string }) {
   return (
     <span
-      className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${
+      className={`inline-block whitespace-nowrap rounded-none px-2.5 py-1 text-xs font-medium ${
         STIL[status] ?? STIL.afsluttet
       }`}
     >

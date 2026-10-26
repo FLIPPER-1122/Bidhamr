@@ -115,15 +115,15 @@ export default async function Header() {
               type="search"
               name="q"
               placeholder="Søg efter alt fra ure til sofaer…"
-              className="h-11 w-full rounded-full border-[1.5px] border-kant-staerk bg-white py-2.5 pr-14 pl-5 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
+              className="h-11 w-full rounded-none border-[1.5px] border-kant-staerk bg-white py-2.5 pr-14 pl-5 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
             />
-            {/* Touch-målet er 44x44; den synlige orange cirkel er 34px. */}
+            {/* Touch-målet er 44x44; den synlige orange firkant er 34px (kantet som feltet). */}
             <button
               type="submit"
               aria-label="Søg"
-              className="group absolute top-1/2 right-0 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+              className="group absolute top-1/2 right-0 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
             >
-              <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-orange-knap text-white group-hover:bg-orange-knap-mork">
+              <span className="flex h-[34px] w-[34px] items-center justify-center rounded-none bg-orange-knap text-white group-hover:bg-orange-knap-mork">
                 <Ikon navn="soeg" className="h-[18px] w-[18px]" strøg={2} />
               </span>
             </button>
@@ -144,7 +144,7 @@ export default async function Header() {
                 <BeskederLink className={`${ikonKnap} hidden lg:flex`} />
                 <Link
                   href={MINE_HANDLER_HREF}
-                  className="hidden h-11 items-center gap-2 rounded-full px-3 text-sm font-medium text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:flex"
+                  className="hidden h-11 items-center gap-2 rounded-none px-3 text-sm font-medium text-tekst-daempet hover:bg-groen-lys hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:flex"
                 >
                   <Ikon navn="handler" />
                   <span className="sr-only xl:not-sr-only">Mine handler</span>

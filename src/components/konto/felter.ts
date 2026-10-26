@@ -16,4 +16,4 @@ export const SUCCES_BOKS =
 export const LINK =
   "font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
 
-export const KORT = "rounded-[14px] border border-kant bg-white p-5 sm:p-6";
+export const KORT = "rounded-none border border-kant bg-white p-5 sm:p-6";

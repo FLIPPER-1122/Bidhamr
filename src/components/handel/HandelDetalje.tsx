@@ -530,7 +530,7 @@ export default async function HandelDetalje({
 
         {/* Sagen står øverst, så køber og sælger straks kan se, hvor den er. */}
         {sagFejl && (
-          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
+          <div className="rounded-none border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             Sagen kunne ikke hentes lige nu. Genindlæs siden om lidt.
           </div>
         )}
@@ -565,7 +565,7 @@ export default async function HandelDetalje({
           />
         )}
         {visReturPaaVej && returForsendelse && (
-          <section aria-labelledby="retur-paa-vej" className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <section aria-labelledby="retur-paa-vej" className="rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 id="retur-paa-vej" className="text-[17px] leading-snug lg:text-lg">
               Returen er på vej
             </h2>
@@ -581,7 +581,7 @@ export default async function HandelDetalje({
         )}
 
         {/* Overblik */}
-        <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+        <div className="rounded-none border border-kant bg-white p-5 sm:p-6">
           <div className="flex items-start gap-3 sm:items-center sm:gap-4">
             <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-skelet">
               {billede ? (
@@ -638,7 +638,7 @@ export default async function HandelDetalje({
                   aria-current={aktiv ? "step" : undefined}
                   className="flex items-center gap-2.5 sm:min-w-0 sm:flex-1 sm:flex-col sm:items-stretch sm:gap-2"
                 >
-                  <span aria-hidden="true" className={`hidden h-1.5 rounded-full sm:block ${naaet ? "bg-groen" : "bg-kant"}`} />
+                  <span aria-hidden="true" className={`hidden h-1.5 rounded-none sm:block ${naaet ? "bg-groen" : "bg-kant"}`} />
                   <span className="flex min-w-0 items-center gap-2">
                     <span
                       aria-hidden="true"
@@ -672,13 +672,13 @@ export default async function HandelDetalje({
 
         {/* Betaling */}
         {betaling && "fejl" in betaling && handel.status === "afventer_betaling" && (
-          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
+          <div className="rounded-none border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             Betalingen kunne ikke hentes lige nu. {betaling.fejl}
           </div>
         )}
 
         {betalingsstatus && betalingsstatus.status === "betalt" && betalingParam === "retur" && (
-          <div className="rounded-[14px] border border-succes-kant bg-groen-lys p-5 sm:p-6">
+          <div className="rounded-none border border-succes-kant bg-groen-lys p-5 sm:p-6">
             <p className="font-semibold text-groen-mork">Tak – din betaling er gennemført</p>
             <p className="mt-1 text-sm text-groen-mork">
               {afhentning
@@ -691,7 +691,7 @@ export default async function HandelDetalje({
         )}
 
         {betalingsstatus && betalingsstatus.status === "behandles" && erKoeber && (
-          <div className="rounded-[14px] border border-info-kant bg-info-bg p-5 sm:p-6 text-sm text-info-tekst">
+          <div className="rounded-none border border-info-kant bg-info-bg p-5 sm:p-6 text-sm text-info-tekst">
             <p className="font-semibold">Din betaling behandles</p>
             <p className="mt-1">Det tager normalt kun et øjeblik. Genindlæs siden om lidt.</p>
           </div>
@@ -701,7 +701,7 @@ export default async function HandelDetalje({
           betalingsstatus?.erKoeber === true &&
           handel.status === "afventer_betaling" &&
           betalingsstatus.status === "afventer" && (
-          <section className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <section className="rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[20px] leading-tight lg:text-[22px]">Betal for din vare</h2>
             {betalingsstatus.venterPaaSaelgerkonto ? (
               <p className="mt-2 rounded-xl border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
@@ -738,7 +738,7 @@ export default async function HandelDetalje({
         )}
 
         {erSaelger && handel.status === "afventer_betaling" && (
-          <div className="rounded-[14px] border border-advarsel-kant bg-advarsel-bg p-5 sm:p-6 text-sm text-advarsel-tekst">
+          <div className="rounded-none border border-advarsel-kant bg-advarsel-bg p-5 sm:p-6 text-sm text-advarsel-tekst">
             <p className="font-semibold">Afventer købers betaling</p>
             {betalingsstatus?.venterPaaSaelgerkonto ? (
               <p className="mt-1">
@@ -779,7 +779,7 @@ export default async function HandelDetalje({
         )}
 
         {andenchance && "fejl" in andenchance && (
-          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
+          <div className="rounded-none border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             Mulighederne for varen kunne ikke hentes lige nu. {andenchance.fejl}
           </div>
         )}
@@ -794,7 +794,7 @@ export default async function HandelDetalje({
         )}
 
         {koeberUbetalt && (
-          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
+          <div className="rounded-none border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             <p className="font-semibold">Handlen er annulleret</p>
             {koeberUbetalt === "admin_annulleret" ? (
               <p className="mt-1">Handlen er annulleret af BidHamr.</p>
@@ -810,7 +810,7 @@ export default async function HandelDetalje({
         {/* Afhentning hos sælger: køberen bedømmer og viser koden, sælgeren
             indtaster den, og pengene frigives med det samme. */}
         {afhentning && erKoeber && handel.status === "betaling_modtaget" && (
-          <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <div className="rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[17px] leading-snug lg:text-lg">Hent varen hos sælgeren</h2>
             <p className="mt-1 text-sm text-tekst-svag">
               {erhvervHandel
@@ -860,7 +860,7 @@ export default async function HandelDetalje({
         )}
 
         {afhentning && erSaelger && handel.status === "betaling_modtaget" && (
-          <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <div className="rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[17px] leading-snug lg:text-lg">Køberen henter varen hos dig</h2>
             <p className="mt-1 text-sm text-tekst-svag">
               {erhvervHandel
@@ -903,7 +903,7 @@ export default async function HandelDetalje({
         )}
 
         {erKoeber && venterPaaAfsendelse && (
-          <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <div className="rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[17px] leading-snug lg:text-lg">Venter på, at sælgeren sender varen</h2>
             <p className="mt-1 text-sm text-tekst-svag">
               {afsendSenest ? (
@@ -926,7 +926,7 @@ export default async function HandelDetalje({
 
         {/* Sporing for køberen, når pakken er på vej (sælgeren ser den i "Din fragtlabel"). */}
         {erKoeber && forsendelse && (handel.status === "pakke_sendt" || handel.status === "modtaget") && (
-          <section aria-labelledby="sporing-titel" className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <section aria-labelledby="sporing-titel" className="rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 id="sporing-titel" className="text-[17px] leading-snug lg:text-lg">
               Følg pakken
             </h2>
@@ -942,7 +942,7 @@ export default async function HandelDetalje({
         )}
 
         {afsendelsesAnnullering && (
-          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
+          <div className="rounded-none border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             <p className="font-semibold">Handlen er annulleret</p>
             {erKoeber ? (
               <>
@@ -970,7 +970,7 @@ export default async function HandelDetalje({
         )}
 
         {ikkeAfhentet && (
-          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
+          <div className="rounded-none border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             <p className="font-semibold">Pakken blev ikke hentet</p>
             {erKoeber ? (
               <>
@@ -1017,7 +1017,7 @@ export default async function HandelDetalje({
         )}
 
         {afhentningsAnnullering && (
-          <div className="rounded-[14px] border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
+          <div className="rounded-none border border-fejl-kant bg-fejl-bg p-5 sm:p-6 text-sm text-fejl-tekst">
             <p className="font-semibold">Handlen er annulleret</p>
             {erKoeber ? (
               <>
@@ -1058,7 +1058,7 @@ export default async function HandelDetalje({
         )}
 
         {erSaelger && !afhentning && handel.status === "betaling_modtaget" && (
-          <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <div className="rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[17px] leading-snug lg:text-lg">Send pakken</h2>
             <p className="mt-1 mb-4 text-sm text-tekst-svag">
               Tag to billeder, mens du pakker, og indtast sporingsnummeret, når du har sendt
@@ -1089,7 +1089,7 @@ export default async function HandelDetalje({
 
         {/* TRIN 1: kvittering for pakken. Ingen penge flyttes her. */}
         {erKoeber && !afhentning && handel.status === "pakke_sendt" && (
-          <div className="rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <div className="rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[17px] leading-snug lg:text-lg">
               Har du modtaget pakken?
             </h2>
@@ -1103,7 +1103,7 @@ export default async function HandelDetalje({
 
         {/* TRIN 2: godkendelse udbetaler til sælgeren. */}
         {erKoeber && !afhentning && handel.status === "modtaget" && !sagAktiv && (
-          <div className="rounded-[14px] border border-succes-kant bg-groen-lys p-5 sm:p-6">
+          <div className="rounded-none border border-succes-kant bg-groen-lys p-5 sm:p-6">
             <h2 className="text-[17px] leading-snug lg:text-lg">
               Tjek varen
             </h2>
@@ -1125,7 +1125,7 @@ export default async function HandelDetalje({
         )}
 
         {erSaelger && !afhentning && handel.status === "modtaget" && !sagAktiv && (
-          <div className="rounded-[14px] border border-info-kant bg-info-bg p-5 sm:p-6">
+          <div className="rounded-none border border-info-kant bg-info-bg p-5 sm:p-6">
             {fragtUrFrist ? (
               <>
                 <p className="font-semibold text-info-tekst">Pakken er leveret</p>
@@ -1150,7 +1150,7 @@ export default async function HandelDetalje({
         )}
 
         {(handel.status === "leveret" || handel.status === "afsluttet") && (
-          <div className="rounded-[14px] border border-succes-kant bg-succes-bg p-5 sm:p-6">
+          <div className="rounded-none border border-succes-kant bg-succes-bg p-5 sm:p-6">
             <p className="font-semibold text-succes-tekst">Handlen er gennemført</p>
             <p className="mt-1 text-sm text-succes-tekst">
               {afhentning
@@ -1194,7 +1194,7 @@ export default async function HandelDetalje({
             {/* Klage over firmaet (reklamation) - databasen afgør, om den vises. */}
             {erKoeber && <KlageBoks tradeId={handel.id} koeberId={user.id} />}
             {erSaelger && (
-              <p className="rounded-[14px] border border-kant bg-white p-5 text-[17px] text-tekst-daempet sm:p-6">
+              <p className="rounded-none border border-kant bg-white p-5 text-[17px] text-tekst-daempet sm:p-6">
                 {FIRMA_DASHBOARD.salg.ingenChat}
               </p>
             )}

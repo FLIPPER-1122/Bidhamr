@@ -165,9 +165,9 @@ export default async function AdminAuktioner({
   });
 
   const statusBadge = (s: string) => {
-    if (s === "aktiv") return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Aktiv</span>;
-    if (s === "afsluttet") return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-tekst-daempet">Afsluttet</span>;
-    return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-fejl-tekst">Annulleret</span>;
+    if (s === "aktiv") return <span className="px-2 py-0.5 rounded-none text-xs font-medium bg-green-100 text-green-700">Aktiv</span>;
+    if (s === "afsluttet") return <span className="px-2 py-0.5 rounded-none text-xs font-medium bg-neutral-100 text-tekst-daempet">Afsluttet</span>;
+    return <span className="px-2 py-0.5 rounded-none text-xs font-medium bg-red-100 text-fejl-tekst">Annulleret</span>;
   };
 
   // Bevar søgetekst når man skifter statusfilter
@@ -276,7 +276,7 @@ export default async function AdminAuktioner({
               key={s.value}
               href={filterHref(s.value)}
               aria-current={active ? "true" : undefined}
-              className={`inline-flex min-h-10 items-center rounded-full px-4 text-[13px] font-medium transition-colors ${
+              className={`inline-flex min-h-10 items-center rounded-none px-4 text-[13px] font-medium transition-colors ${
                 active ? "bg-groen text-white" : "bg-groen-lys text-groen-mork hover:bg-groen-lys-hover"
               }`}
             >
@@ -286,7 +286,7 @@ export default async function AdminAuktioner({
         })}
       </div>
 
-      <div className="lg:overflow-hidden lg:rounded-[14px] lg:border lg:border-admin-kant lg:bg-white">
+      <div className="lg:overflow-hidden lg:rounded-none lg:border lg:border-admin-kant lg:bg-white">
         {/* Under lg er hver auktion et kort (ingen vandret scroll), fra lg en tabel. */}
         <div className="lg:overflow-x-auto">
           <table className="block w-full text-sm lg:table">
@@ -307,7 +307,7 @@ export default async function AdminAuktioner({
                 const img = Array.isArray(a.billeder) ? a.billeder[0] : null;
                 const sælger = sælgerMap[a.bruger_id];
                 return (
-                  <tr key={a.id} className="block rounded-[14px] border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 lg:hover:bg-neutral-50">
+                  <tr key={a.id} className="block rounded-none border border-admin-kant bg-white p-4 lg:table-row lg:rounded-none lg:border-0 lg:p-0 lg:hover:bg-neutral-50">
                     <td className="block py-1 lg:table-cell lg:px-5 lg:py-3">
                       {img ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -352,18 +352,18 @@ export default async function AdminAuktioner({
                       <span className="inline-flex flex-wrap gap-1.5">
                         {statusBadge(a.status)}
                         {a.skjult && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-200 text-tekst-daempet">Skjult</span>
+                          <span className="px-2 py-0.5 rounded-none text-xs font-medium bg-neutral-200 text-tekst-daempet">Skjult</span>
                         )}
                         {kunstIds.has(a.id) && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-fejl-bg text-fejl-tekst">
+                          <span className="px-2 py-0.5 rounded-none text-xs font-medium bg-fejl-bg text-fejl-tekst">
                             {kunstAfventer.has(a.id) ? "Afventer kunst-kontrol" : "Ligner kunst"}
                           </span>
                         )}
                         {erPaaPause(a) && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">På pause</span>
+                          <span className="px-2 py-0.5 rounded-none text-xs font-medium bg-amber-100 text-amber-700">På pause</span>
                         )}
                         {erPaaPause(a) && a.pauset_kl && pauseDage(a.pauset_kl, nu) >= PAUSE_PAAMIND_DAGE && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-fejl-tekst">
+                          <span className="px-2 py-0.5 rounded-none text-xs font-medium bg-red-100 text-fejl-tekst">
                             Pause i {pauseDage(a.pauset_kl, nu)} dage – {autoAnnulleringTekst(a.pauset_kl, nu)}
                           </span>
                         )}

@@ -23,7 +23,7 @@ export default function CategoryGrid({
       <ul className="-mx-4 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none] sm:-mx-6 sm:px-6">
         {kategorier.map((kategori) => {
           const aktiv = valgt === kategori;
-          const klasse = `flex min-h-11 shrink-0 items-center gap-2 rounded-full px-4 text-[14px] font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+          const klasse = `flex min-h-11 shrink-0 items-center gap-2 rounded-none px-4 text-[14px] font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
             aktiv ? "bg-groen text-white" : "bg-groen-lys text-groen-mork hover:bg-[#DCEAE4]"
           }`;
           const indhold = (
@@ -55,11 +55,11 @@ export default function CategoryGrid({
       {kategorier.map((kategori) => {
         const aktiv = valgt === kategori;
         const fælles =
-          "group flex w-full flex-col items-center rounded-[14px] text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
+          "group flex w-full flex-col items-center rounded-none text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen";
         const indhold = (
           <>
             <span
-              className={`grid h-16 w-full place-items-center rounded-[14px] transition-colors ${
+              className={`grid h-16 w-full place-items-center rounded-none transition-colors ${
                 aktiv
                   ? "bg-groen text-white"
                   : "bg-groen-lys text-groen-mork group-hover:bg-[#DCEAE4]"

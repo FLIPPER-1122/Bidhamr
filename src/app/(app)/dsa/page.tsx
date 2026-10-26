@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 
 const h2 = "text-[20px] leading-tight font-semibold text-tekst sm:text-[22px]";
 const p = "mt-2 text-[15px] leading-relaxed text-tekst-daempet";
-const kort = "rounded-[14px] border border-kant bg-white p-5 sm:p-6";
+const kort = "rounded-none border border-kant bg-white p-5 sm:p-6";
 
 type Handling = {
   id: string;
@@ -81,7 +81,7 @@ export default async function DsaSide() {
 
       <ul className="mt-6 grid gap-4 md:grid-cols-3" aria-label="Hvad vil du gøre?">
         {HANDLINGER.map((h) => (
-          <li key={h.id} className="flex flex-col rounded-[14px] border border-kant bg-white p-5 sm:p-6">
+          <li key={h.id} className="flex flex-col rounded-none border border-kant bg-white p-5 sm:p-6">
             <span className="grid h-[38px] w-[38px] place-items-center rounded-lg bg-groen-lys text-groen-mork">
               <Ikon navn={h.ikon} className="h-[18px] w-[18px]" />
             </span>

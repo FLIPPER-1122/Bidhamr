@@ -117,7 +117,7 @@ export default async function AdminKontolukninger({
       />
 
       {forslag.length === 0 ? (
-        <p className="rounded-[14px] border border-admin-kant bg-white p-8 text-center text-sm text-tekst-svag">
+        <p className="rounded-none border border-admin-kant bg-white p-8 text-center text-sm text-tekst-svag">
           {fane === "afventer" ? "Ingen konti venter på en afgørelse." : "Ingen behandlede forslag endnu."}
         </p>
       ) : (

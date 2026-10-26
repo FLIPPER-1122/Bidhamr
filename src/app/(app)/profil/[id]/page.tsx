@@ -405,7 +405,7 @@ export default async function ProfilPage({
         )}
 
         {/* Aktive auktioner */}
-        <section className="rounded-[14px] bg-white p-5 sm:p-6">
+        <section className="rounded-none bg-white p-5 sm:p-6">
           <h2 className="text-[20px] leading-tight lg:text-[22px]">
             Aktive auktioner
           </h2>
@@ -425,7 +425,7 @@ export default async function ProfilPage({
         </section>
 
         {/* Bedømmelser */}
-        <section className="rounded-[14px] bg-white p-5 sm:p-6">
+        <section className="rounded-none bg-white p-5 sm:p-6">
           <h2 className="text-[20px] leading-tight lg:text-[22px]">
             Bedømmelser
           </h2>

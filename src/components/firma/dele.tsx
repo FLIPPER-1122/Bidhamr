@@ -62,7 +62,7 @@ export function Kort({
 
 export function Tal({ label, vaerdi }: { label: string; vaerdi: string }) {
   return (
-    <div className="rounded-[14px] bg-groen-lys p-4">
+    <div className="rounded-none bg-groen-lys p-4">
       <p className="text-[17px] text-groen-mork">{label}</p>
       <p className="mt-1 text-[28px] leading-tight font-bold text-tekst tabular-nums">{vaerdi}</p>
     </div>
@@ -72,7 +72,7 @@ export function Tal({ label, vaerdi }: { label: string; vaerdi: string }) {
 // "BidHamr åbner snart" - øverst på sider, der ikke kan bruges før lancering.
 export function LukketBoks({ tekst }: { tekst?: string }) {
   return (
-    <div role="status" className="rounded-[18px] border-2 border-info-kant bg-info-bg p-5 text-info-tekst">
+    <div role="status" className="rounded-none border-2 border-info-kant bg-info-bg p-5 text-info-tekst">
       <p className="text-[22px] font-semibold">{FIRMA_FOER_LANCERING.titel}</p>
       <p className="mt-1 text-[18px]">{tekst ?? FIRMA_FOER_LANCERING.tekst}</p>
     </div>
@@ -115,7 +115,7 @@ export function VareBillede({ url }: { url: string | null }) {
 
 export function StatusMaerke({ tekst, farve }: { tekst: string; farve: string }) {
   return (
-    <span className={`inline-flex min-h-9 items-center rounded-full border-2 px-3 py-1 text-[16px] font-semibold ${farve}`}>
+    <span className={`inline-flex min-h-9 items-center rounded-none border-2 px-3 py-1 text-[16px] font-semibold ${farve}`}>
       {tekst}
     </span>
   );
@@ -123,7 +123,7 @@ export function StatusMaerke({ tekst, farve }: { tekst: string; farve: string })
 
 export function Advarsel({ titel, tekst }: { titel?: string; tekst: string }) {
   return (
-    <div role="status" className="rounded-[18px] border-2 border-advarsel-kant bg-advarsel-bg p-5 text-advarsel-tekst">
+    <div role="status" className="rounded-none border-2 border-advarsel-kant bg-advarsel-bg p-5 text-advarsel-tekst">
       {titel && <p className="text-[20px] font-semibold">{titel}</p>}
       <p className={`${titel ? "mt-1 " : ""}text-[18px]`}>{tekst}</p>
     </div>

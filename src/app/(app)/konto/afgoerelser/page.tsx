@@ -58,7 +58,7 @@ function Maerke({ children, tone }: { children: React.ReactNode; tone: "neutral"
       : tone === "advarsel"
         ? "bg-advarsel-bg text-advarsel-tekst"
         : "bg-groen-lys text-groen-mork";
-  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${k}`}>{children}</span>;
+  return <span className={`rounded-none px-2.5 py-0.5 text-xs font-semibold ${k}`}>{children}</span>;
 }
 
 export default async function AfgoerelserSide({
@@ -125,7 +125,7 @@ export default async function AfgoerelserSide({
                 <Link
                   href={f.id === "alle" ? "/konto/afgoerelser" : `/konto/afgoerelser?filter=${f.id}`}
                   aria-current={aktiv ? "page" : undefined}
-                  className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-4 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+                  className={`inline-flex min-h-11 items-center gap-1.5 rounded-none border px-4 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
                     aktiv ? "border-groen bg-groen text-white" : "border-kant-staerk bg-white text-tekst hover:bg-groen-lys"
                   }`}
                 >
@@ -139,7 +139,7 @@ export default async function AfgoerelserSide({
       </nav>
 
       {filtreret && afg.length === 0 && anm.length === 0 && (
-        <p className="mt-6 rounded-[14px] border border-kant bg-white p-6 text-center text-[15px] text-tekst-daempet">
+        <p className="mt-6 rounded-none border border-kant bg-white p-6 text-center text-[15px] text-tekst-daempet">
           Ingen sager passer til filteret.{" "}
           <Link href="/konto/afgoerelser" className="font-medium text-groen hover:underline">
             Vis alle
@@ -148,7 +148,7 @@ export default async function AfgoerelserSide({
       )}
 
       {(!filtreret || afg.length > 0) && (
-        <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="afg-titel">
+        <section className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6" aria-labelledby="afg-titel">
           <h2 id="afg-titel" className="text-[20px] leading-tight">Afgørelser om dig</h2>
           {afg.length === 0 ? (
             <p className="mt-2 text-sm text-tekst-svag">BidHamr har ikke fjernet eller begrænset noget af dit indhold.</p>
@@ -194,7 +194,7 @@ export default async function AfgoerelserSide({
       )}
 
       {(!filtreret || anm.length > 0) && (
-        <section className="mt-6 rounded-[14px] border border-kant bg-white p-5 sm:p-6" aria-labelledby="anm-titel">
+        <section className="mt-6 rounded-none border border-kant bg-white p-5 sm:p-6" aria-labelledby="anm-titel">
           <h2 id="anm-titel" className="text-[20px] leading-tight">Dine anmeldelser</h2>
           {anm.length === 0 ? (
             <p className="mt-2 text-sm text-tekst-svag">

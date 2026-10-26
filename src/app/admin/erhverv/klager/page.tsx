@@ -61,7 +61,7 @@ export default async function ErhvervKlagerSide({
           </div>
           <ul className="space-y-3">
             {forslag.map((f) => (
-              <li key={f.id} className="rounded-[14px] border border-admin-kant bg-white p-4">
+              <li key={f.id} className="rounded-none border border-admin-kant bg-white p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-semibold text-tekst">
                     {f.firmanavn} <span className="font-normal text-tekst-svag">· CVR {f.cvr}</span>
@@ -96,7 +96,7 @@ export default async function ErhvervKlagerSide({
             key={s}
             href={`/admin/erhverv/klager?status=${s}${firmaQ}`}
             aria-current={status === s ? "page" : undefined}
-            className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium ${
+            className={`inline-flex min-h-11 items-center gap-2 rounded-none border px-4 text-sm font-medium ${
               status === s
                 ? "border-groen bg-groen text-white"
                 : "border-neutral-300 bg-white text-tekst hover:border-groen"
@@ -104,14 +104,14 @@ export default async function ErhvervKlagerSide({
           >
             {A.filter[s]}
             {antal && s !== "afsluttet" && antal[s] > 0 && (
-              <span className="rounded-full bg-[#A32020] px-2 py-0.5 text-xs font-bold text-white">{antal[s]}</span>
+              <span className="rounded-none bg-[#A32020] px-2 py-0.5 text-xs font-bold text-white">{antal[s]}</span>
             )}
           </Link>
         ))}
         {firma && (
           <Link
             href={`/admin/erhverv/klager?status=${status}`}
-            className="inline-flex min-h-11 items-center rounded-full border border-neutral-300 bg-white px-4 text-sm text-tekst hover:border-groen"
+            className="inline-flex min-h-11 items-center rounded-none border border-neutral-300 bg-white px-4 text-sm text-tekst hover:border-groen"
           >
             × {A.tilbage}
           </Link>
@@ -119,9 +119,9 @@ export default async function ErhvervKlagerSide({
       </nav>
 
       {!fejl && liste.length === 0 ? (
-        <p className="rounded-[14px] border border-admin-kant bg-white p-8 text-center text-tekst-svag">{A.tom}</p>
+        <p className="rounded-none border border-admin-kant bg-white p-8 text-center text-tekst-svag">{A.tom}</p>
       ) : (
-        <ul className="divide-y divide-admin-kant overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+        <ul className="divide-y divide-admin-kant overflow-hidden rounded-none border border-admin-kant bg-white">
           {liste.map((k) => (
             <li key={k.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:pr-4">
               <Link

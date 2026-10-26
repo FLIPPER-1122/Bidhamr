@@ -152,7 +152,7 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
                 key={m}
                 href={`/admin/konkurrence?maaned=${m}`}
                 aria-current={m === maaned ? "page" : undefined}
-                className={`inline-flex min-h-11 items-center rounded-full border px-4 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
+                className={`inline-flex min-h-11 items-center rounded-none border px-4 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
                   m === maaned ? "border-groen bg-groen text-white" : "border-kant-staerk bg-white text-tekst hover:bg-groen-lys"
                 }`}
               >
@@ -186,7 +186,7 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
       </dl>
 
       {/* Lodtrækning */}
-      <section className="rounded-[14px] border border-kant bg-white p-4">
+      <section className="rounded-none border border-kant bg-white p-4">
         <h2 className="text-base font-semibold">Lodtrækning</h2>
         {gaeldende ? (
           <div className="mt-2 space-y-3 text-sm">
@@ -294,7 +294,7 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
 
       {/* Log */}
       {o.traekninger.length > 0 && (
-        <section className="rounded-[14px] border border-kant bg-white">
+        <section className="rounded-none border border-kant bg-white">
           <h2 className="border-b border-kant px-4 py-3 text-base font-semibold">Log over trækninger</h2>
           <ol className="divide-y divide-kant">
             {o.traekninger.map((t) => (
@@ -336,7 +336,7 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
       )}
 
       {/* Deltagere */}
-      <section className="rounded-[14px] border border-kant bg-white">
+      <section className="rounded-none border border-kant bg-white">
         <h2 className="border-b border-kant px-4 py-3 text-base font-semibold">
           {fastfrosset ? "Deltagere (fastfrosset ved trækningen)" : "Deltagere lige nu"} ({liste.length})
         </h2>
@@ -382,7 +382,7 @@ export default async function AdminKonkurrence({ searchParams }: { searchParams:
 
       {/* Ikke med */}
       {o.udelukkede.length > 0 && (
-        <details className="rounded-[14px] border border-kant bg-white">
+        <details className="rounded-none border border-kant bg-white">
           <summary className="flex min-h-11 cursor-pointer items-center px-4 py-3 text-base font-semibold">
             Sælgere med salg, der ikke er med ({o.udelukkede.length})
           </summary>

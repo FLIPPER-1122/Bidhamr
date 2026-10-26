@@ -36,7 +36,7 @@ export default async function BekraeftSide({ searchParams }: { searchParams: Pro
 
   return (
     <main className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-12">
-      <div className="w-full max-w-md rounded-[14px] border border-kant bg-white p-5 text-center shadow-kort sm:p-8">
+      <div className="w-full max-w-md rounded-none border border-kant bg-white p-5 text-center shadow-kort sm:p-8">
         {gyldig ? (
           <>
             <h1 className="text-[26px] leading-tight sm:text-[32px]">

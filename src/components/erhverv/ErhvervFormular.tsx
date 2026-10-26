@@ -145,7 +145,7 @@ export default function ErhvervFormular() {
 
   if (sendt) {
     return (
-      <div role="status" className="rounded-[18px] border border-succes-kant bg-succes-bg p-6 sm:p-8">
+      <div role="status" className="rounded-none border border-succes-kant bg-succes-bg p-6 sm:p-8">
         <h2 ref={kvitteringRef} tabIndex={-1} className="text-[26px] leading-tight text-succes-tekst outline-none">
           {F.kvittering.titel}
         </h2>

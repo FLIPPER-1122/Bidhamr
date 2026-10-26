@@ -77,7 +77,7 @@ export default function BetaAdmin({ oversigt, erChef }: { oversigt: BetaOversigt
           </h2>
           <ul className="flex flex-wrap gap-2 text-xs" aria-label="Antal pr. status">
             {antal.map(({ status, n }) => (
-              <li key={status} className={`rounded-full px-2.5 py-1 font-medium ${STATUS[status].klasse}`}>
+              <li key={status} className={`rounded-none px-2.5 py-1 font-medium ${STATUS[status].klasse}`}>
                 {STATUS[status].tekst}: {n}
               </li>
             ))}
@@ -304,7 +304,7 @@ function InvitationRaekke({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="break-all font-medium text-neutral-900">{inv.email}</span>
-          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${s.klasse}`}>{s.tekst}</span>
+          <span className={`rounded-none px-2.5 py-1 text-xs font-medium ${s.klasse}`}>{s.tekst}</span>
         </div>
         {inv.note && <p className="mt-1 break-words text-sm text-neutral-700">{inv.note}</p>}
         <ul className="mt-1 space-y-0.5 text-xs text-neutral-500">

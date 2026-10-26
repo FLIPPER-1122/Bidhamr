@@ -78,7 +78,7 @@ export default function KontoMenu({
           .filter(Boolean)
           .join(", ")}
         onClick={() => setAaben((v) => !v)}
-        className="relative flex h-11 items-center gap-1.5 rounded-full border-[1.5px] border-kant-staerk pr-2.5 pl-1.5 text-sm font-medium text-tekst hover:border-groen hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+        className="relative flex h-11 items-center gap-1.5 rounded-none border-[1.5px] border-kant-staerk pr-2.5 pl-1.5 text-sm font-medium text-tekst hover:border-groen hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
       >
         <span className="grid h-8 w-8 place-items-center rounded-full bg-groen-lys text-groen-mork">
           <Ikon navn="bruger" className="h-[18px] w-[18px]" />
@@ -134,7 +134,7 @@ export default function KontoMenu({
                   {antalBeskeder > 0 && (
                     <span
                       aria-hidden="true"
-                      className="flex h-[20px] min-w-[20px] items-center justify-center rounded-full bg-fejl-fyldt px-1.5 text-[12px] leading-none font-semibold text-white"
+                      className="flex h-[20px] min-w-[20px] items-center justify-center rounded-none bg-fejl-fyldt px-1.5 text-[12px] leading-none font-semibold text-white"
                     >
                       {badgeTekst(antalBeskeder)}
                     </span>

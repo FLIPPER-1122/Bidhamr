@@ -200,7 +200,7 @@ export default async function AdminReklamationer({
           link={filter !== "alle" ? { href: href("alle"), label: "Se alle reklamationer" } : undefined}
         />
       ) : (
-        <ul className="overflow-hidden rounded-[14px] border border-admin-kant bg-white">
+        <ul className="overflow-hidden rounded-none border border-admin-kant bg-white">
           {raekker.map((r) => {
             const roed = erAnmeldRoed(r.status, r.aktiv_fra_kl, nu);
             const stille = erStille(r.status, r.fremdrift_kl, nu);

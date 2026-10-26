@@ -154,7 +154,7 @@ export default async function AdminBetalinger({
       />
 
       {tom ? (
-        <p className="rounded-[14px] border border-admin-kant bg-white p-8 text-center text-sm text-tekst-svag">
+        <p className="rounded-none border border-admin-kant bg-white p-8 text-center text-sm text-tekst-svag">
           {fane === "aaben" ? "Ingen betalinger kræver handling." : "Ingen løste betalinger endnu."}
         </p>
       ) : (
@@ -165,7 +165,7 @@ export default async function AdminBetalinger({
               <ul className="space-y-3">
                 {afvigelser.map((a) => (
                   <li key={a.id} className="rounded-xl border border-amber-200 bg-white p-4 sm:p-5">
-                    <span className="mb-3 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                    <span className="mb-3 inline-block rounded-none bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
                       Afvigelse
                     </span>
                     <Problemlinje
@@ -212,11 +212,11 @@ export default async function AdminBetalinger({
                 {udbetalingskonti.map((k) => (
                   <li key={k.saelger.id} className="rounded-xl border border-amber-200 bg-white p-4 sm:p-5">
                     <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                      <span className="rounded-none bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
                         Udbetalingskonto
                       </span>
                       {k.frakoblet && (
-                        <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+                        <span className="rounded-none bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
                           Lukket hos Stripe
                         </span>
                       )}
@@ -279,7 +279,7 @@ export default async function AdminBetalinger({
               <p className="text-xs text-tekst-svag">
                 Afsluttede auktioner med en vinder, hvor der ikke er oprettet en handel.
               </p>
-              <ul className="divide-y divide-admin-kant rounded-[14px] border border-admin-kant bg-white">
+              <ul className="divide-y divide-admin-kant rounded-none border border-admin-kant bg-white">
                 {udenHandel.map((a) => (
                   <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
                     <Link
@@ -290,7 +290,7 @@ export default async function AdminBetalinger({
                     </Link>
                     <span className="text-xs text-tekst-svag">Sluttede {dato(a.slutter_kl)}</span>
                     {a.for_gammel_til_automatik && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                      <span className="rounded-none bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
                         for gammel til automatik
                       </span>
                     )}
@@ -306,26 +306,26 @@ export default async function AdminBetalinger({
                 const badge = statusBadge(b, STATUS[b.status] ?? b.status);
                 const problem = problemTekst(b);
                 return (
-                <li key={b.id} className="rounded-[14px] border border-admin-kant bg-white p-4 sm:p-5">
+                <li key={b.id} className="rounded-none border border-admin-kant bg-white p-4 sm:p-5">
                   <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.farve}`}>
+                    <span className={`rounded-none px-2 py-0.5 text-xs font-medium ${badge.farve}`}>
                       {badge.tekst}
                     </span>
                     {b.refusion && b.refusion.tilstand !== "gennemfoert" && (
-                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-tekst">
+                      <span className="rounded-none bg-neutral-100 px-2 py-0.5 text-xs font-medium text-tekst">
                         Automatiske forsøg: {Math.min(b.refusion.forsoeg, b.refusion.maksForsoeg)} af{" "}
                         {b.refusion.maksForsoeg}
                         {b.refusion.proeverSelv ? " · prøver selv igen" : " · prøver ikke selv igen"}
                       </span>
                     )}
                     {b.indsigelse_kl && (
-                      <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+                      <span className="rounded-none bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
                         Indsigelse {dato(b.indsigelse_kl)}
                       </span>
                     )}
                     {b.svindelvarsel && (
                       <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                        className={`rounded-none px-2 py-0.5 text-xs font-bold ${
                           b.svindelvarsel.gennemgaaet ? "bg-neutral-200 text-tekst" : "bg-red-600 text-white"
                         }`}
                       >
@@ -391,7 +391,7 @@ export default async function AdminBetalinger({
 
                   {b.loest ? (
                     <div className="mt-3 rounded-lg bg-neutral-50 px-3 py-2 text-sm text-tekst">
-                      <span className="mr-2 inline-block rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                      <span className="mr-2 inline-block rounded-none bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
                         Løst
                       </span>
                       <span className="text-xs text-tekst-svag">

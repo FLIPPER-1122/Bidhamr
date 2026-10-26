@@ -34,7 +34,7 @@ export default async function KlageBoks({ tradeId, koeberId }: { tradeId: string
     <section
       id="klage"
       aria-labelledby="klage-titel"
-      className="scroll-mt-24 rounded-[14px] border border-kant bg-white p-5 sm:p-6"
+      className="scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6"
     >
       <h2 id="klage-titel" className="text-[20px] leading-tight">
         {T.titel}
