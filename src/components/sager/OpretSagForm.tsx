@@ -21,6 +21,7 @@ import BilledVaelger, { KATEGORI_FELTER, useFrigivPreviews, type KategoriFelt } 
 import { uploadBilleder, type ValgtBillede } from "./sagUpload";
 import { sagTid } from "./visning";
 import { useHydreret } from "@/lib/useHydreret";
+import { SAG_REFUSION_NY } from "@/lib/tekster/beskyttelse";
 
 // Korte forklaringer under hver type.
 const TYPE_HJAELP: Record<SagType, string> = {
@@ -35,6 +36,7 @@ export default function OpretSagForm({
   koeberId,
   muligheder,
   erhverv = false,
+  nyPrismodel = false,
 }: {
   tradeId: string;
   koeberId: string;
@@ -42,6 +44,8 @@ export default function OpretSagForm({
   // Køb fra et firma: ingen BidHamr Beskyttelse og ingen chat - køberen har
   // fortrydelses- og reklamationsret efter loven.
   erhverv?: boolean;
+  // betalinger.prismodel = 'ny': ved medhold refunderes kun buddet.
+  nyPrismodel?: boolean;
 }) {
   const router = useRouter();
   const id = useId();
@@ -188,6 +192,7 @@ export default function OpretSagForm({
           Pengene sættes på pause, mens BidHamr ser på sagen.
           {muligheder.fristKl && <> Frist: {sagTid(muligheder.fristKl)}.</>}
         </p>
+        {nyPrismodel && <p className="mt-1 text-sm text-tekst-daempet">{SAG_REFUSION_NY}</p>}
         {beskyttelseInfo && <div className="mt-4">{beskyttelseInfo}</div>}
         <form onSubmit={send} method="post" className="mt-5 space-y-6" noValidate>
           <fieldset>

@@ -30,6 +30,7 @@ import {
   STARTPRIS_FOR_LAV,
   AUKTION_LAAST,
   erAuktionLaastFejl,
+  beloebForHoejtTekst,
 } from "@/lib/auktionRegler";
 import { erStand } from "@/lib/stand";
 import { forbudtBesked } from "@/lib/forbudteVarer";
@@ -165,6 +166,8 @@ export async function redigerAuktion(
       if (erAuktionLaastFejl(error)) return { fejl: LAAST };
       const erhvervTekst = erhvervFejlTekst(error.message, error.code);
       if (erhvervTekst) return { fejl: erhvervTekst };
+      const loftTekst = beloebForHoejtTekst(error);
+      if (loftTekst) return { fejl: loftTekst };
       console.error("rediger_auktion fejlede:", error.code, error.message);
       return { fejl: GENERISK };
     }
@@ -291,6 +294,8 @@ export async function saetVarenOpIgen(auktionId: string): Promise<{ ok: true; au
       // Ubetalt ekstra fragt efter fristen (BHX01, auctions_a1_ekstra_fragt).
       if (erEkstraFragtFejl(error.code, error.message)) return { fejl: EKSTRA_FRAGT_SPAERRET_TEKST };
       if (error.code === "23505") return { fejl: SAET_OP_IGEN_FEJL.allerede_genopsat };
+      const loftTekst = beloebForHoejtTekst(error);
+      if (loftTekst) return { fejl: loftTekst };
       console.error("saet_annulleret_op_igen fejlede:", error.code, error.message);
       return { fejl: GENERISK };
     }

@@ -13,6 +13,7 @@ import { SAG_MAKS_BILLEDER, SAG_TYPE_NAVN } from "@/lib/sager";
 import TilfoejSagBilleder from "./TilfoejSagBilleder";
 import AnkeForm from "./AnkeForm";
 import { BeskyttelseBadge, SagBilleder, SagStatusBadge, sagTid } from "./visning";
+import { SAG_REFUSION_NY } from "@/lib/tekster/beskyttelse";
 
 export type SagSamtale = { id: string; lukket: boolean; seneste: StaffBesked | null; ulaest: boolean };
 
@@ -235,7 +236,12 @@ function goerNuSag(sag: MinSag): { tekst: string; handling: boolean } {
   switch (sag.status) {
     case "aaben":
       return k
-        ? { tekst: "Du skal ikke gøre noget nu. BidHamr kigger på sagen og vender tilbage hurtigst muligt.", handling: false }
+        ? {
+            tekst: `Du skal ikke gøre noget nu. BidHamr kigger på sagen og vender tilbage hurtigst muligt.${
+              sag.nyPrismodel ? ` ${SAG_REFUSION_NY}` : ""
+            }`,
+            handling: false,
+          }
         : { tekst: "Du skal ikke gøre noget nu. Udbetalingen venter, mens BidHamr kigger på sagen.", handling: false };
     case "afventer_retur":
       // Inden for ankefristen venter køberen med at sende varen: sælgeren kan

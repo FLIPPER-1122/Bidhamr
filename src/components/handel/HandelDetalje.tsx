@@ -1154,7 +1154,9 @@ export default async function HandelDetalje({
             <p className="font-semibold text-succes-tekst">Handlen er gennemført</p>
             <p className="mt-1 text-sm text-succes-tekst">
               {afhentning
-                ? "Varen er hentet, og pengene er frigivet til sælgeren."
+                ? erSaelger
+                  ? "Varen er hentet, og pengene er frigivet til dig."
+                  : "Varen er hentet, og pengene er frigivet til sælgeren."
                 : "Varen er bekræftet modtaget."}
             </p>
           </div>
@@ -1167,7 +1169,13 @@ export default async function HandelDetalje({
 
         {/* Køberen kan oprette en sag */}
         {muligheder && !muligheder.harSag && (muligheder.typer.length > 0 || muligheder.kraeverBeskyttelse.length > 0) && (
-          <OpretSagForm tradeId={handel.id} koeberId={user.id} muligheder={muligheder} erhverv={erhvervHandel} />
+          <OpretSagForm
+            tradeId={handel.id}
+            koeberId={user.id}
+            muligheder={muligheder}
+            erhverv={erhvervHandel}
+            nyPrismodel={kvittering?.rolle === "koeber" && kvittering.prismodel === "ny"}
+          />
         )}
         {muligheder &&
           muligheder.typer.length === 0 &&

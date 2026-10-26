@@ -99,6 +99,25 @@ export function erAuktionLaastBesked(fejl: string | null | undefined): boolean {
   return fejl === AUKTION_LAAST;
 }
 
+// Beløbsloftet (20261031010000): databasen afviser startpris, bud og
+// maksimum over loftet med errcode 'BHB05' og en besked, der starter med
+// 'beloeb_for_hoejt:'. Teksten efter præfikset vises som den er.
+export function beloebForHoejtTekst(
+  fejl: { code?: string; message?: string } | null | undefined,
+): string | null {
+  if (!fejl) return null;
+  const besked = fejl.message ?? "";
+  const i = besked.indexOf("beloeb_for_hoejt:");
+  if (i >= 0) {
+    const tekst = besked.slice(i + "beloeb_for_hoejt:".length).trim();
+    if (tekst) return tekst;
+  }
+  if (fejl.code === "BHB05" || i >= 0) {
+    return `Det højeste tilladte beløb er ${MAKS_BUD.toLocaleString("da-DK")} kr.`;
+  }
+  return null;
+}
+
 // Vises, når et kald til serveren kaster (fx afbrudt forbindelse).
 export const NETVAERKSFEJL = "Der skete en fejl. Tjek din forbindelse, og prøv igen.";
 

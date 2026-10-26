@@ -522,6 +522,9 @@ export default function BidPanel({
   const visteBud = visAlle ? budListe : budListe.slice(0, VIST_SOM_STANDARD);
   const visningsBud = harBud ? nuværendeBud : startpris;
   const kanByde = auktionStatus === "aktiv" && !erSælger && !erFirmakonto && !saelgerFrosset;
+  // Beløbsloftet: er næste mindstebud over loftet, kan ingen byde mere.
+  const loftNaaet = minimumBud > MAKS_BELOEB_KR;
+  const loftTekst = BIDPANEL.loftNaaet(`${MAKS_BELOEB_KR.toLocaleString("da-DK")} kr.`);
   // Afsluttet eller annulleret: ingen opfordringer til at byde. En skjult
   // eller pauset auktion kan blive aktiv igen og tæller ikke som slut.
   const auktionSlut = auktionStatus !== "aktiv" && auktionStatus !== "skjult";
@@ -616,7 +619,7 @@ export default function BidPanel({
               <p className="mt-0.5">{AUTOBUD.statusMaksNaaet(`${mitMaksimum.toLocaleString("da-DK")} kr`)}</p>
             )}
           </div>
-          {jegFoerer && (
+          {jegFoerer && !loftNaaet && (
             <button
               type="button"
               onClick={retMaksimum}
@@ -668,6 +671,10 @@ export default function BidPanel({
         <div role="note" className="mt-4 rounded-xl border border-info-kant bg-info-bg px-4 py-4 text-info-tekst">
           <p className="text-[17px] font-semibold">{ERHVERV_BIDPANEL.firmakontoTitel}</p>
           <p className="mt-1 text-base">{ERHVERV_BIDPANEL.firmakontoTekst}</p>
+        </div>
+      ) : loftNaaet ? (
+        <div ref={handlingRef} role="note" className="mt-4 rounded-xl bg-groen-lys px-4 py-4 text-center">
+          <p className="text-base font-semibold text-groen-mork">{loftTekst}</p>
         </div>
       ) : brugerId && mitidMangler ? (
         <div className="mt-4">
@@ -818,16 +825,16 @@ export default function BidPanel({
             <dl className="flex flex-col gap-1 text-sm text-tekst-daempet">
               <div className={linje}>
                 <dt>{automatisk ? AUTOBUD.feltLabel : "Dit bud"}</dt>
-                <dd className="tabular-nums">{budOereVist !== null ? kroner(budOereVist) : "–"}</dd>
+                <dd className="shrink-0 whitespace-nowrap tabular-nums">{budOereVist !== null ? kroner(budOereVist) : "–"}</dd>
               </div>
               <div className={linje}>
                 <dt>{koebergebyrTekst(erhvervAuktion ? "erhverv" : "ny", beskyttelseMulig)}</dt>
-                <dd className="tabular-nums">{gebyrOereVist !== null ? kroner(gebyrOereVist) : "–"}</dd>
+                <dd className="shrink-0 whitespace-nowrap tabular-nums">{gebyrOereVist !== null ? kroner(gebyrOereVist) : "–"}</dd>
               </div>
               <div className={linje}>
                 <dt>{forsendelseMulig ? "Fragt (pakkeshop)" : "Fragt (kun afhentning)"}</dt>
-                <dd className="tabular-nums">
-                  {kroner(fragtOere(forsendelseMulig, fragtPakkeshopOere))}
+                <dd className="text-right tabular-nums">
+                  <span className="whitespace-nowrap">{kroner(fragtOere(forsendelseMulig, fragtPakkeshopOere))}</span>
                   {forsendelseMulig && afhentningMulig && (
                     <span className="block text-[12px] font-normal text-tekst-svag">eller 0 kr. ved afhentning</span>
                   )}
@@ -925,24 +932,28 @@ export default function BidPanel({
           </span>
           <div className="min-w-0 text-sm">
             <p className="text-tekst">
-              Fragt <span className="font-semibold tabular-nums">{kroner(fragtOere(true, fragtPakkeshopOere))}</span>{" "}
-              <span className="text-tekst-daempet">til pakkeshop</span>
+              Fragt{" "}
+              <span className="whitespace-nowrap">
+                <span className="font-semibold tabular-nums">{kroner(fragtOere(true, fragtPakkeshopOere))}</span>{" "}
+                <span className="text-tekst-daempet">til pakkeshop</span>
+              </span>
               {fragtDoerOere ? (
                 <>
-                  <span className="mx-1.5 text-tekst-svag" aria-hidden="true">
+                  {" "}
+                  <span className="text-tekst-svag" aria-hidden="true">
                     ·
-                  </span>
-                  <span className="whitespace-nowrap">
-                    levering hjem <span className="font-semibold tabular-nums">{kroner(fragtDoerOere)}</span>
-                  </span>
+                  </span>{" "}
+                  levering hjem{" "}
+                  <span className="font-semibold whitespace-nowrap tabular-nums">{kroner(fragtDoerOere)}</span>
                 </>
               ) : null}
               {afhentningMulig && (
                 <>
-                  <span className="mx-1.5 text-tekst-svag" aria-hidden="true">
+                  {" "}
+                  <span className="text-tekst-svag" aria-hidden="true">
                     ·
-                  </span>
-                  <span className="whitespace-nowrap">eller 0 kr. ved afhentning</span>
+                  </span>{" "}
+                  eller <span className="whitespace-nowrap">0 kr.</span> ved afhentning
                 </>
               )}
             </p>
@@ -1071,12 +1082,14 @@ export default function BidPanel({
                     ? maksAktivt && mitMaksimum !== null
                       ? `Du fører · dit maksimum ${mitMaksimum.toLocaleString("da-DK")} kr`
                       : "Du fører"
-                    : brugerId && harBudtSelv
-                      ? "Du er overbudt"
-                      : `Fra ${kroner(mindsteTotalOere)} i alt inkl. gebyr og fragt`}
+                    : loftNaaet
+                      ? BIDPANEL.loftNaaetKort
+                      : brugerId && harBudtSelv
+                        ? "Du er overbudt"
+                        : `Fra ${kroner(mindsteTotalOere)} i alt inkl. gebyr og fragt`}
                 </p>
               </div>
-              {brugerId ? (
+              {loftNaaet ? null : brugerId ? (
                 <button
                   type="button"
                   onClick={jegFoerer ? retMaksimum : gaaTilBud}

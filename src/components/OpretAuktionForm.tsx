@@ -16,6 +16,7 @@ import {
   erGyldigVarighed,
   slutterKlFraVarighed,
   valideStartpris,
+  beloebForHoejtTekst,
   type VarighedDage,
 } from "@/lib/auktionRegler";
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
@@ -427,6 +428,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         // Ubetalt ekstra fragt efter fristen (BHX01).
         else if (erEkstraFragtFejl(insertError.code, insertError.message)) besked = EKSTRA_FRAGT_SPAERRET_TEKST;
         else if (insertError.code === "BHU01") besked = "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.";
+        // Beløbsloftet (BHB05): databasens tekst efter "beloeb_for_hoejt:".
+        else if (beloebForHoejtTekst(insertError)) besked = beloebForHoejtTekst(insertError)!;
         else if (insertError.code === "22023") besked = "Tjek startpris og varighed (3, 5, 7 eller 10 dage), og prøv igen.";
         else if (insertError.code === "BHA01") besked = "Et af billederne kunne ikke bruges. Fjern det, tilføj det igen, og prøv igen.";
         else if (insertError.code === "BHA02") besked = "Vælg en kategori.";

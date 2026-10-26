@@ -103,7 +103,7 @@ export const FAQ: FaqPunkt[] = [
   },
   {
     spoergsmaal: "Varen er gået i stykker under forsendelsen. Hvad gør jeg?",
-    svar: "Tag billeder af pakken, labelen og skaden, og opret en sag på handelssiden inden for 48 timer. En medarbejder ser på sagen. Får du medhold, sendes varen retur til sælgeren.",
+    svar: "Tag billeder af pakken, labelen og skaden, og opret en sag på handelssiden inden for 48 timer. En medarbejder ser på sagen. Får du medhold, får du prisen for varen tilbage (gebyr og fragt refunderes ikke), og varen sendes retur til sælgeren.",
   },
   {
     spoergsmaal: "Kan jeg fortryde mit køb?",
@@ -128,4 +128,13 @@ export const BIDPANEL = {
   laesMereHref: "/bidhamr-beskyttelse",
   prisLinje:
     "Vinder du, betaler du dit bud + gebyr + fragt. Du ser den samlede pris i kroner, før du byder, og har 48 timer til at betale. Alle beløb er inkl. moms.",
+  // Næste mindstebud er over beløbsloftet (MAKS_BELOEB_KR) - ingen kan byde mere.
+  loftNaaet: (maks: string) => `Auktionen har nået det højeste tilladte bud på ${maks}.`,
+  loftNaaetKort: "Højeste tilladte bud er nået",
 } as const;
+
+// Sager i den nye prismodel (betalinger.prismodel = 'ny', Filip 26. okt. 2026):
+// ved medhold får køberen kun buddet tilbage. Vises i "Opret sag" og ved en
+// åben sag - ikke for gamle handler eller erhverv.
+export const SAG_REFUSION_NY =
+  "Får du medhold, får du prisen for varen (dit bud) tilbage. Gebyr og fragt refunderes ikke.";

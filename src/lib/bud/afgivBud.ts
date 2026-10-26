@@ -25,7 +25,7 @@ import { MITID } from "@/lib/tekster/mitid";
 import { erVilkaarFejl } from "@/lib/vilkaar";
 import { KUNST_TEKST, erKunstBudFejl } from "@/lib/kunstForbud";
 import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
-import { MAKS_BUD } from "@/lib/auktionRegler";
+import { MAKS_BUD, beloebForHoejtTekst } from "@/lib/auktionRegler";
 
 export type BudFejl = { fejl: string; kode: string; auktionAendret?: true; mitid?: true };
 
@@ -80,6 +80,9 @@ function faellesFejl(error: PostgrestError, besked: string): BudFejl | null {
   if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion.", kode: "own_auction" };
   if (besked.includes("erhverv_kan_ikke_byde")) return { fejl: ERHVERV_FEJL.kanIkkeByde, kode: bh ?? "BHE01" };
   if (erBudSaelgerFrossetFejl(error.code, besked)) return { fejl: BUD_SAELGER_FROSSET_TEKST, kode: bh ?? "BHU03" };
+  // Beløbsloftet (BHB05) - også når et automatisk bud imod rammer loftet.
+  const loft = beloebForHoejtTekst(error);
+  if (loft) return { fejl: loft, kode: bh ?? "BHB05" };
   return null;
 }
 
