@@ -210,6 +210,41 @@ export async function hentFirmaRegninger(admin: Admin, firmaId: string): Promise
   return data ?? [];
 }
 
+// --- Fremhævninger ("Annonce") ------------------------------------------------------
+
+export type FirmaFremhaevning = {
+  id: string;
+  auktion_id: string;
+  titel: string | null;
+  start_kl: string;
+  slut_kl: string;
+  stoppet_kl: string | null;
+  tilbagegivet: boolean;
+};
+
+export const FREMHAEVNINGER_MAKS = 20;
+
+export async function hentFirmaFremhaevninger(admin: Admin, firmaId: string): Promise<FirmaFremhaevning[] | null> {
+  const { data, error } = await admin
+    .from("firma_fremhaevninger")
+    .select("id, auktion_id, start_kl, slut_kl, stoppet_kl, tilbagegivet")
+    .eq("firma_id", firmaId)
+    .order("start_kl", { ascending: false })
+    .limit(FREMHAEVNINGER_MAKS);
+  if (error) {
+    console.error("firma_fremhaevninger:", error.message);
+    return null;
+  }
+  const raekker = (data ?? []) as Omit<FirmaFremhaevning, "titel">[];
+  const ids = [...new Set(raekker.map((r) => r.auktion_id))];
+  const titler = new Map<string, string>();
+  if (ids.length) {
+    const { data: a } = await admin.from("auctions").select("id, titel").in("id", ids);
+    for (const r of (a ?? []) as { id: string; titel: string }[]) titler.set(r.id, r.titel);
+  }
+  return raekker.map((r) => ({ ...r, titel: titler.get(r.auktion_id) ?? null }));
+}
+
 // --- Auktioner og salg ------------------------------------------------------------
 
 export type FirmaAuktion = {

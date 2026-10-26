@@ -5,10 +5,15 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   BookUgeKnap,
+  EkstraKort,
+  GratisPeriodeKort,
+  IntrorabatKort,
+  SaerprisKort,
   SkiftPakkeKort,
   StatusKort,
   UgensRabatKort,
   type FirmaRabatTilstand,
+  type IntroTilstand,
   type LedigUge,
   type PakkeValg,
 } from "@/components/admin/erhverv/firma/FirmaHandlinger";
@@ -81,11 +86,13 @@ function LaastKort({ titel, under }: { titel: string; under: string }) {
   );
 }
 
-// Hurtighandlingerne. Flere kort (gratis periode, introrabat, særpris, ekstra
-// auktioner og fremhævninger) lægges ind i gitteret her, når backend findes.
+// Hurtighandlingerne: hvert kort åbner en dialog med bekræftelse og
+// begrundelse (alt logges med navn).
 export function FirmaHurtighandlinger({
   firmaId,
   pakkeId,
+  pakkeNavn,
+  pakkePris,
   pakker,
   status,
   opsiges,
@@ -93,9 +100,13 @@ export function FirmaHurtighandlinger({
   kanBookeUge,
   medBetalingMulig,
   rabat,
+  abonnement,
+  lukket,
 }: {
   firmaId: string;
   pakkeId: string;
+  pakkeNavn: string;
+  pakkePris: number | null;
   pakker: PakkeValg[];
   status: AbonnementStatus;
   opsiges: boolean;
@@ -104,15 +115,48 @@ export function FirmaHurtighandlinger({
   kanBookeUge: string | null;
   medBetalingMulig: boolean;
   rabat: FirmaRabatTilstand | null;
+  abonnement: {
+    saerpris: number | null;
+    gratisTil: string | null;
+    gratisVedStart: number;
+    intro: IntroTilstand;
+    ekstraAuktioner: number;
+    ekstraFremh: number;
+    ubegraenset: boolean;
+  };
+  // Kontoen er lukket permanent: abonnementet kan ikke ændres mere.
+  lukket: boolean;
 }) {
+  const a = abonnement;
   return (
     <section aria-labelledby="hurtig-titel">
       <h2 id="hurtig-titel" className="mb-2 text-sm font-bold text-tekst">
         {T.hurtig.titel}
       </h2>
       <div className="grid grid-cols-1 gap-2.5 min-[420px]:grid-cols-2 lg:grid-cols-4">
-        <SkiftPakkeKort firmaId={firmaId} pakkeId={pakkeId} pakker={pakker} />
+        <SkiftPakkeKort firmaId={firmaId} pakkeId={pakkeId} pakker={pakker} harSaerpris={a.saerpris != null} />
         <StatusKort firmaId={firmaId} status={status} opsiges={opsiges} />
+        {lukket ? (
+          <LaastKort titel={T.hurtig.gratis.titel} under={T.hurtig.uge.underIkkeAktiv} />
+        ) : (
+          <GratisPeriodeKort firmaId={firmaId} gratisTil={a.gratisTil} vedStart={a.gratisVedStart} />
+        )}
+        {lukket ? (
+          <LaastKort titel={T.hurtig.intro.titel} under={T.hurtig.uge.underIkkeAktiv} />
+        ) : (
+          <IntrorabatKort firmaId={firmaId} intro={a.intro} />
+        )}
+        {lukket ? (
+          <LaastKort titel={T.hurtig.saerpris.titel} under={T.hurtig.uge.underIkkeAktiv} />
+        ) : (
+          <SaerprisKort firmaId={firmaId} saerpris={a.saerpris} pakkeNavn={pakkeNavn} pakkePris={pakkePris} />
+        )}
+        {a.ubegraenset ? (
+          <LaastKort titel={T.hurtig.ekstra.auktionerTitel} under={T.hurtig.ekstra.ubegraenset} />
+        ) : (
+          <EkstraKort firmaId={firmaId} hvad="auktioner" ekstra={a.ekstraAuktioner} />
+        )}
+        <EkstraKort firmaId={firmaId} hvad="fremhaevninger" ekstra={a.ekstraFremh} />
         {ledigeUger && ledigeUger.length > 0 && !kanBookeUge ? (
           <BookUgeKnap firmaId={firmaId} uger={ledigeUger} trigger="kort" medBetalingMulig={medBetalingMulig} />
         ) : ledigeUger ? (

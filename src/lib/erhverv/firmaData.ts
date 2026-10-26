@@ -11,6 +11,7 @@ import type { FakturaData } from "@/lib/erhverv/fakturaOplysninger";
 import type {
   AuktionGruppe,
   FirmaAuktioner,
+  FirmaFremhaevninger,
   FirmaOversigt,
   FirmaSalg,
   FirmaStatistik,
@@ -71,6 +72,8 @@ export const hentFirmaAuktioner = cache((gruppe: AuktionGruppe) =>
   rpc<FirmaAuktioner>("firma_auktioner", { p_gruppe: gruppe }),
 );
 export const hentFirmaStatistik = cache(() => rpc<FirmaStatistik>("firma_statistik"));
+// Månedens fremhævninger og de seneste (firma_fremhaevninger, højst 50).
+export const hentFirmaFremhaevninger = cache(() => rpc<FirmaFremhaevninger>("firma_fremhaevninger"));
 export const hentFirmaSalg = cache(async () => (await rpc<FirmaSalg>("firma_salg")) ?? []);
 
 // Oplysninger til firmaets egen faktura på varen (kun betalte salg).

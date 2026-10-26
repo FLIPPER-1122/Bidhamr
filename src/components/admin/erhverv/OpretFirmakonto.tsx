@@ -8,8 +8,9 @@ import { useState, useTransition } from "react";
 import BekraeftDialog from "@/components/BekraeftDialog";
 import FirmaFelter, { ADMIN_FELT, ADMIN_LABEL, type FirmaVaerdier } from "@/components/admin/erhverv/FirmaFelter";
 import { opretFirmakonto, slaaCvrOp } from "@/app/actions/adminErhverv";
-import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_EKSTRA as X } from "@/lib/tekster/erhverv";
+import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_EKSTRA as X, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
 import { EMAIL, POSTNUMMER, type ErhvervPakke } from "@/lib/erhverv/regler";
+import { INTRO_GRAENSER, INTRO_STANDARD } from "@/lib/erhverv/abonnementRegler";
 
 export default function OpretFirmakonto({
   henvendelseId,
@@ -25,6 +26,10 @@ export default function OpretFirmakonto({
   const [v, setV] = useState<FirmaVaerdier>(start);
   const [loginEmail, setLoginEmail] = useState(startLogin);
   const [pakkeId, setPakkeId] = useState(pakker.length === 1 ? pakker[0].id : "");
+  // Introrabat efter den gratis måned: forvalgt 50 % i 6 måneder (kan slås fra).
+  const [medIntro, setMedIntro] = useState(true);
+  const [introProcent, setIntroProcent] = useState(String(INTRO_STANDARD.procent));
+  const [introMaaneder, setIntroMaaneder] = useState(String(INTRO_STANDARD.maaneder));
   const [cvrBesked, setCvrBesked] = useState<{ tekst: string; ok: boolean } | null>(null);
   const [slaarOp, startOpslag] = useTransition();
   const [feltFejl, setFeltFejl] = useState<Partial<Record<keyof FirmaVaerdier, string>>>({});
@@ -90,7 +95,17 @@ export default function OpretFirmakonto({
     );
   }
 
-  const klar = !!pakkeId && EMAIL.test(loginEmail.trim());
+  const ip = Number(introProcent);
+  const im = Number(introMaaneder);
+  const introGyldig =
+    !medIntro ||
+    (/^\d+$/.test(introProcent) &&
+      /^\d+$/.test(introMaaneder) &&
+      ip >= INTRO_GRAENSER.procentMin &&
+      ip <= INTRO_GRAENSER.procentMaks &&
+      im >= INTRO_GRAENSER.maanederMin &&
+      im <= INTRO_GRAENSER.maanederMaks);
+  const klar = !!pakkeId && EMAIL.test(loginEmail.trim()) && introGyldig;
 
   return (
     <div className="space-y-5">
@@ -145,12 +160,17 @@ export default function OpretFirmakonto({
           </label>
           <select id="opret-pakke" value={pakkeId} onChange={(e) => setPakkeId(e.target.value)} className={ADMIN_FELT} aria-describedby="opret-pakke-hjaelp">
             <option value="">{A.opret.fejl.ingenPakke}</option>
-            {pakker.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.navn} – {A.pakker.feltAuktioner.toLowerCase()}: {p.auktioner_pr_uge}
-                {p.maanedspris != null ? ` – ${p.maanedspris.toLocaleString("da-DK")} kr./md.` : ""}
-              </option>
-            ))}
+            {pakker
+              .filter((p) => !p.arkiveret)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {A.opret.pakkeValg(
+                    p.navn,
+                    FIRMA_PAKKER.auktionerPrMaaned(p.ubegraenset ? null : p.auktioner_pr_maaned).toLowerCase(),
+                    p.maanedspris != null ? `${p.maanedspris.toLocaleString("da-DK")} kr.` : null,
+                  )}
+                </option>
+              ))}
           </select>
           <p id="opret-pakke-hjaelp" className="mt-1.5 text-[13px] text-tekst-daempet">
             {A.opret.feltPakkeHjaelp}
@@ -158,11 +178,60 @@ export default function OpretFirmakonto({
         </div>
       </div>
 
+      <fieldset className="border border-kant p-4">
+        <legend className="px-1 text-sm font-semibold text-tekst">{A.opret.introTitel}</legend>
+        <label className="flex min-h-11 cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={medIntro}
+            onChange={(e) => setMedIntro(e.target.checked)}
+            className="mt-0.5 h-5 w-5 shrink-0 accent-groen"
+          />
+          <span>
+            <span className="block text-[15px] font-medium text-tekst">{A.opret.introSlaa}</span>
+            <span className="block text-[13px] text-tekst-daempet">{A.opret.introHjaelp}</span>
+          </span>
+        </label>
+        {medIntro && (
+          <div className="mt-3 grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+            <div>
+              <label htmlFor="opret-intro-procent" className={ADMIN_LABEL}>
+                {A.opret.introProcent}
+              </label>
+              <input
+                id="opret-intro-procent"
+                inputMode="numeric"
+                value={introProcent}
+                aria-invalid={!introGyldig || undefined}
+                onChange={(e) => setIntroProcent(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                className={ADMIN_FELT}
+              />
+            </div>
+            <div>
+              <label htmlFor="opret-intro-maaneder" className={ADMIN_LABEL}>
+                {A.opret.introMaaneder}
+              </label>
+              <input
+                id="opret-intro-maaneder"
+                inputMode="numeric"
+                value={introMaaneder}
+                aria-invalid={!introGyldig || undefined}
+                onChange={(e) => setIntroMaaneder(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                className={ADMIN_FELT}
+              />
+            </div>
+          </div>
+        )}
+        <p className={`mt-3 text-[13px] ${introGyldig ? "text-tekst-daempet" : "font-medium text-fejl-tekst"}`} role={introGyldig ? undefined : "alert"}>
+          {!introGyldig ? A.opret.introUgyldig : medIntro ? A.opret.introOpsummering(ip, im) : A.opret.udenIntro}
+        </p>
+      </fieldset>
+
       <BekraeftDialog
         triggerLabel={A.opret.knapOpret}
         triggerClassName="btn btn-primaer btn-stor w-full sm:w-auto disabled:opacity-50"
         title={X.bekraeftOpretTitel}
-        description={X.bekraeftOpret(loginEmail.trim())}
+        description={`${X.bekraeftOpret(loginEmail.trim())} ${medIntro ? A.opret.introOpsummering(ip, im) : A.opret.udenIntro}`}
         confirmLabel={A.opret.knapOpret}
         confirmDisabled={!klar}
         foerAabning={tjekFelter}
@@ -173,6 +242,8 @@ export default function OpretFirmakonto({
             loginEmail,
             pakkeId,
             henvendelseId,
+            introProcent: medIntro ? ip : null,
+            introMaaneder: medIntro ? im : null,
           });
           if ("fejl" in svar) return { fejl: svar.fejl };
           // Ingen router.refresh her: så ville siden skifte væk fra resultatet.

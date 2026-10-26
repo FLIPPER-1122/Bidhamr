@@ -1,12 +1,16 @@
 import { hentFirmaStatistik, kraevFirma } from "@/lib/erhverv/firmaData";
+import Link from "next/link";
 import { FirmaSide, Kort } from "@/components/firma/dele";
-import { E_TEKST } from "@/components/erhverv/stil";
-import { FIRMA_DASHBOARD as D } from "@/lib/tekster/erhverv";
+import { E_KNAP_PRIMAER, E_TEKST } from "@/components/erhverv/stil";
+import { FIRMA_DASHBOARD as D, FIRMA_STATISTIK_NIVEAU as N } from "@/lib/tekster/erhverv";
 import { kr } from "@/lib/erhverv/visning";
 
 // Statistik: visninger, bud og salg pr. måned (seneste 12) og pr. auktion
 // (firma_statistik). Bevidst enkelt: tabeller og en vandret søjle pr.
 // måned - ingen grafer, der skal tolkes. Visninger tælles fra auction_views.
+// Efter pakkens niveau (20261102010000): Start har ingen statistik (siden
+// fortæller, at den følger med Butik og Pro), Butik har tal pr. måned, Pro
+// også tal pr. auktion.
 
 export const metadata = { title: D.statistik.titel };
 
@@ -27,7 +31,21 @@ export default async function FirmaStatistikSide() {
   const maaneder = [...(s?.maaneder ?? [])].reverse();
   const auktioner = s?.auktioner ?? [];
   const maks = Math.max(1, ...maaneder.map((m) => m.visninger));
-  const ingenTal = auktioner.length === 0;
+  const niveau = s?.niveau ?? "fuld";
+  const ingenTal = maaneder.every((m) => !m.visninger && !m.bud && !m.solgte) && auktioner.length === 0;
+
+  if (niveau === "ingen") {
+    return (
+      <FirmaSide titel={S.titel} intro={S.intro}>
+        <Kort id="laast" titel={N.laastTitel}>
+          <p className={E_TEKST}>{N.laastTekst}</p>
+          <Link href="/firma/abonnement" className={`${E_KNAP_PRIMAER} mt-5 w-full sm:w-auto`}>
+            {N.knapSePakker}
+          </Link>
+        </Kort>
+      </FirmaSide>
+    );
+  }
 
   return (
     <FirmaSide titel={S.titel} intro={S.intro}>
@@ -91,6 +109,14 @@ export default async function FirmaStatistikSide() {
             </div>
           </Kort>
 
+          {niveau !== "fuld" ? (
+            <Kort id="pr-auktion" titel={S.prAuktion}>
+              <p className={E_TEKST}>{N.prAuktionLaast}</p>
+              <Link href="/firma/abonnement" className="mt-3 inline-flex min-h-12 items-center text-[18px] font-semibold text-groen underline underline-offset-2">
+                {N.knapSePakker}
+              </Link>
+            </Kort>
+          ) : (
           <Kort id="pr-auktion" titel={S.prAuktion} forklaring={S.prAuktionForklaring}>
             <ul className="divide-y divide-kant rounded-none border border-kant">
               {auktioner.map((a) => (
@@ -116,6 +142,7 @@ export default async function FirmaStatistikSide() {
               ))}
             </ul>
           </Kort>
+          )}
         </>
       )}
     </FirmaSide>

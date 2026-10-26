@@ -9,6 +9,22 @@ export const KORT =
 export const KORT_LAAST =
   "flex min-h-[64px] w-full flex-col items-start justify-center gap-0.5 border border-kant bg-admin-graa px-4 py-3 text-left text-xs text-tekst-daempet";
 
+// Hele kroner ekskl. moms -> øre inkl. 25 % moms (som Stripes faste Tax Rate:
+// momsen afrundes til nærmeste øre).
+export function oereInklMoms(kr: number): number {
+  const ekskl = Math.round(kr * 100);
+  return ekskl + Math.round((ekskl * 25) / 100);
+}
+
+// Introrabattens tilstand ud fra intro_til (intro_status kan ikke bruges - den
+// står altid som 'aktiv'): ingen slutdato endnu = planlagt (kuponen er ikke
+// sat på), slutdato i fremtiden = kører, ellers slut.
+export type IntroTilstandNavn = "planlagt" | "koerer" | "slut";
+export function introTilstand(til: string | null | undefined, nu: number = Date.now()): IntroTilstandNavn {
+  if (!til) return "planlagt";
+  return new Date(til).getTime() > nu ? "koerer" : "slut";
+}
+
 // ISO-ugenummer for en dato (ÅÅÅÅ-MM-DD).
 export function ugeNr(iso: string): number {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);

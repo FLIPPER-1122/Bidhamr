@@ -9,6 +9,7 @@ import {
   FIRMA_OVERSIGT as T,
   FIRMA_OVERSIGT_EKSTRA as X,
   FIRMA_BETALING,
+  FIRMA_FREMHAEV_KNAP as FV,
 } from "@/lib/tekster/erhverv";
 import { kr, krFraOere } from "@/lib/erhverv/visning";
 import { hentMineEkstraFragtRegninger } from "@/app/actions/ekstraFragt";
@@ -69,6 +70,9 @@ export default async function FirmaOverblik() {
           <Tal label={T.overblik.iAlt} vaerdi={kr(o.salg.omsaetning_i_alt)} />
           <Tal label={D.overblik.aktive} vaerdi={o.auktioner.aktive.toLocaleString("da-DK")} />
           {k && <Tal label={D.overblik.ugensKvote} vaerdi={X.ugensTal(k.brugt, k.max)} />}
+          {k?.fremhaevninger && k.fremhaevninger.maks > 0 && (
+            <Tal label={FV.talLabel} vaerdi={FV.tal(k.fremhaevninger.tilbage, k.fremhaevninger.maks)} />
+          )}
           <Tal label={T.overblik.paaVej} vaerdi={krFraOere(o.udbetalinger.paa_vej_oere)} />
           <Tal label={X.solgtIAlt} vaerdi={o.salg.solgte_i_alt.toLocaleString("da-DK")} />
         </div>
