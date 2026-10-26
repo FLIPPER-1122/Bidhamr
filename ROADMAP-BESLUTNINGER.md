@@ -61,6 +61,7 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
   - **Afklaret med Filip 26. okt. 2026:**
     - **Afhentning:** samme gebyrer, men BidHamr Beskyttelse gælder kun pakker, der sendes (køber tjekker selv varen ved afhentning) – som før.
     - **Erhvervsauktioner beholder den gamle model indtil videre: 5 % købergebyr og 5 % sælgergebyr, uden minimum/maksimum**, og ingen BidHamr Beskyttelse (fortrydelsesret i stedet). Beløbsloftet på 25.000 kr. gælder også erhverv.
+    - **Refusion ved medhold i en sag (Filip, 26. okt. 2026 – som Trendsales):** køber får kun auktionsprisen (buddet) tilbage. Gebyret og fragten refunderes ikke. Gælder handler med den nye model; gamle handler følger de gamle regler.
     - **Overgang:** de nye priser gælder alle auktioner, der slutter efter opdateringen (også auktioner oprettet før). Handler, der allerede er vundet, beholder deres beløb.
 - (Historik: før 26. okt. 2026 var det 5 % for sælger og 5 % for køber uden minimum/maksimum.)
 
