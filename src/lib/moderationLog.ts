@@ -90,10 +90,6 @@ export const HANDLING_NAVNE: Record<string, string> = {
   erhverv_klage_afgjort: "Afgjorde klage over firma",
   erhverv_klage_koeber_email_vist: "Så købers e-mail i klage over firma",
   erhverv_forslag_afvist: "Afviste forslag om advarsel til firma",
-  ugens_butik_booket: "Bookede Ugens butik",
-  ugens_butik_annulleret: "Annullerede Ugens butik",
-  ugens_butik_refunderet: "Refunderede Ugens butik",
-  ugens_butik_pris: "Ændrede prisen på Ugens butik",
   // 20261017010000_beta_invitationer.sql
   beta_inviteret: "Inviterede til beta-testen",
   beta_genaktiveret: "Genaktiverede beta-invitation",
