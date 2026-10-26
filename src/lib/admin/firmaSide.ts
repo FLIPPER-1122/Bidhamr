@@ -1,0 +1,283 @@
+import "server-only";
+
+// Data til firmasiden i admin (Admin -> Erhverv -> Firmaer -> [firma]).
+// Kaldes KUN efter kraevErhvervSide() (chef og sælger-rollen) med dens
+// service-role-klient. Hver funktion fejler blødt: en fejl giver null eller
+// { fejl }, så resten af siden stadig vises.
+import type { createAdminClient } from "@/lib/supabase/admin";
+import { manglerUgensButik } from "@/lib/betaling/ugensButik";
+import { erSystem } from "@/lib/moderationLog";
+
+type Admin = ReturnType<typeof createAdminClient>;
+
+// --- Kvote (erhverv_kvote: nuværende ugekvote) --------------------------------
+
+export type FirmaKvote = { brugt: number; max: number; naeste_uge: string };
+
+export async function hentFirmaKvote(admin: Admin, brugerId: string): Promise<FirmaKvote | null> {
+  const { data, error } = await admin.rpc("erhverv_kvote", { p_bruger: brugerId, p_laas: false });
+  if (error || !data) {
+    if (error) console.error("erhverv_kvote:", error.message);
+    return null;
+  }
+  const k = data as { brugt?: number; max?: number; naeste_uge?: string };
+  return { brugt: Number(k.brugt ?? 0), max: Number(k.max ?? 0), naeste_uge: String(k.naeste_uge ?? "") };
+}
+
+// --- Ugens butik ---------------------------------------------------------------
+
+export type UgeCelle = {
+  uge_start: string;
+  uge_nr: number;
+  aar: number;
+  booking_id: string | null;
+  status: string | null;
+  firma_id: string | null;
+  firmanavn: string | null;
+};
+
+export type UgensBooking = {
+  id: string;
+  uge_start: string;
+  status: string;
+  kilde: "firma" | "staff";
+  betaling: "stripe" | "ingen";
+  beloeb_oere: number;
+  rabat_procent: number;
+  reserveret_til: string | null;
+  betalt_kl: string | null;
+  refunderet_kl: string | null;
+  annulleret_kl: string | null;
+  note: string | null;
+  kraever_opmaerksomhed: boolean;
+  opmaerksomhed_tekst: string | null;
+  oprettet_kl: string;
+};
+
+// Prisen for firmaet for en ledig uge (ugens_butik_pris_for - med pakkens rabat).
+export type UgePris = { inkl_oere: number; rabat_procent: number };
+
+export type FirmaUgensButik = {
+  denneUge: string;
+  pris: { ekskl_moms_oere: number; inkl_moms_oere: number };
+  uger: UgeCelle[];
+  bookinger: UgensBooking[];
+  priser: Record<string, UgePris>;
+  rabat: { procent: number; antal: number; brugt: number } | null;
+};
+
+const BOOKING_KOLONNER =
+  "id, uge_start, status, kilde, betaling, beloeb_oere, rabat_procent, reserveret_til, betalt_kl, refunderet_kl, " +
+  "annulleret_kl, note, kraever_opmaerksomhed, opmaerksomhed_tekst, oprettet_kl";
+
+export const UGER_I_KALENDER = 8;
+
+export async function hentFirmaUgensButik(
+  admin: Admin,
+  staffId: string,
+  firmaId: string,
+): Promise<FirmaUgensButik | { fejl: "mangler" | "fejl" }> {
+  const [oversigt, bookinger] = await Promise.all([
+    admin.rpc("ugens_butik_admin", { p_staff: staffId }),
+    admin
+      .from("ugens_butik_bookinger")
+      .select(BOOKING_KOLONNER)
+      .eq("firma_id", firmaId)
+      .order("uge_start", { ascending: false })
+      .order("oprettet_kl", { ascending: false })
+      .limit(30)
+      .returns<UgensBooking[]>(),
+  ]);
+  if (oversigt.error || bookinger.error) {
+    const err = oversigt.error ?? bookinger.error;
+    if (manglerUgensButik(err)) return { fejl: "mangler" };
+    console.error("Ugens butik (firmaside):", err?.message);
+    return { fejl: "fejl" };
+  }
+  const o = oversigt.data as {
+    denne_uge: string;
+    pris: { ekskl_moms_oere: number; inkl_moms_oere: number };
+    uger: UgeCelle[];
+  } | null;
+  if (!o) return { fejl: "fejl" };
+  const uger = (o.uger ?? []).slice(0, UGER_I_KALENDER);
+
+  // Pris for hver ledig uge (rabatten tælles pr. kalenderår) og årets rabat.
+  const ledige = uger.filter((u) => !u.booking_id);
+  const [prisSvar, rabatSvar] = await Promise.all([
+    Promise.all(ledige.map((u) => admin.rpc("ugens_butik_pris_for", { p_firma: firmaId, p_uge: u.uge_start }))),
+    admin.rpc("ugens_butik_rabat", { p_firma: firmaId, p_uge: o.denne_uge }),
+  ]);
+  const priser: Record<string, UgePris> = {};
+  ledige.forEach((u, i) => {
+    const r = prisSvar[i];
+    const raekke = (Array.isArray(r.data) ? r.data[0] : r.data) as { inkl_oere?: number; rabat_procent?: number } | null;
+    if (!r.error && raekke?.inkl_oere != null) {
+      priser[u.uge_start] = { inkl_oere: Number(raekke.inkl_oere), rabat_procent: Number(raekke.rabat_procent ?? 0) };
+    }
+  });
+  const rabatRaekke = (Array.isArray(rabatSvar.data) ? rabatSvar.data[0] : rabatSvar.data) as
+    | { procent?: number; antal?: number; brugt?: number }
+    | null;
+
+  return {
+    denneUge: o.denne_uge,
+    pris: { ekskl_moms_oere: Number(o.pris?.ekskl_moms_oere ?? 0), inkl_moms_oere: Number(o.pris?.inkl_moms_oere ?? 0) },
+    uger,
+    bookinger: bookinger.data ?? [],
+    priser,
+    rabat:
+      !rabatSvar.error && rabatRaekke
+        ? { procent: Number(rabatRaekke.procent ?? 0), antal: Number(rabatRaekke.antal ?? 0), brugt: Number(rabatRaekke.brugt ?? 0) }
+        : null,
+  };
+}
+
+// --- Regninger (abonnement) -------------------------------------------------------
+
+export type FirmaRegning = {
+  id: string;
+  nummer: string | null;
+  type: "abonnement" | "opgradering" | "andet";
+  periode_fra: string | null;
+  periode_til: string | null;
+  beloeb_oere: number;
+  status: string;
+  pdf_url: string | null;
+  hosted_url: string | null;
+  betalt_kl: string | null;
+  oprettet_kl: string;
+};
+
+export async function hentFirmaRegninger(admin: Admin, firmaId: string): Promise<FirmaRegning[] | null> {
+  const { data, error } = await admin
+    .from("firma_regninger")
+    .select("id, nummer, type, periode_fra, periode_til, beloeb_oere, status, pdf_url, hosted_url, betalt_kl, oprettet_kl")
+    .eq("firma_id", firmaId)
+    .order("oprettet_kl", { ascending: false })
+    .limit(25)
+    .returns<FirmaRegning[]>();
+  if (error) {
+    console.error("firma_regninger:", error.message);
+    return null;
+  }
+  return data ?? [];
+}
+
+// --- Auktioner og salg ------------------------------------------------------------
+
+export type FirmaAuktion = {
+  id: string;
+  titel: string;
+  slutter_kl: string;
+  startpris: number;
+  hoejeste: number | null;
+  antal_bud: number;
+};
+
+export type FirmaHandel = {
+  id: string;
+  titel: string | null;
+  amount: number;
+  status: string;
+  afhentning: boolean;
+  created_at: string;
+};
+
+export const SALG_MAKS = 20;
+
+export async function hentFirmaAuktionerOgSalg(
+  admin: Admin,
+  brugerId: string,
+): Promise<{ auktioner: FirmaAuktion[]; salg: FirmaHandel[] } | null> {
+  // "nuværende_bud" kan ikke stå i select-strengen uden at supabase-js'
+  // type kollapser - derfor castes rækken.
+  const [a, t] = await Promise.all([
+    admin
+      .from("auctions")
+      .select("id, titel, slutter_kl, startpris, nuværende_bud, antal_bud")
+      .eq("bruger_id", brugerId)
+      .eq("status", "aktiv")
+      .order("slutter_kl", { ascending: true })
+      .limit(SALG_MAKS),
+    admin
+      .from("trades")
+      .select("id, auction_id, amount, status, afhentning, created_at")
+      .eq("seller_id", brugerId)
+      .order("created_at", { ascending: false })
+      .limit(SALG_MAKS),
+  ]);
+  if (a.error || t.error) {
+    console.error("Firmaets auktioner/salg:", (a.error ?? t.error)?.message);
+    return null;
+  }
+  const auktioner = ((a.data ?? []) as unknown as Record<string, unknown>[]).map((r) => ({
+    id: String(r.id),
+    titel: String(r.titel ?? ""),
+    slutter_kl: String(r.slutter_kl),
+    startpris: Number(r.startpris ?? 0),
+    hoejeste: r["nuværende_bud"] == null ? null : Number(r["nuværende_bud"]),
+    antal_bud: Number(r.antal_bud ?? 0),
+  }));
+  const handler = (t.data ?? []) as { id: string; auction_id: string | null; amount: number; status: string; afhentning: boolean | null; created_at: string }[];
+  const auktionIds = [...new Set(handler.map((h) => h.auction_id).filter((x): x is string => !!x))];
+  const titler = new Map<string, string>();
+  if (auktionIds.length) {
+    const { data } = await admin.from("auctions").select("id, titel").in("id", auktionIds);
+    for (const r of (data ?? []) as { id: string; titel: string }[]) titler.set(r.id, r.titel);
+  }
+  return {
+    auktioner,
+    salg: handler.map((h) => ({
+      id: h.id,
+      titel: h.auction_id ? (titler.get(h.auction_id) ?? null) : null,
+      amount: Number(h.amount),
+      status: h.status,
+      afhentning: !!h.afhentning,
+      created_at: h.created_at,
+    })),
+  };
+}
+
+// --- Log (moderation_log for firmaet og firmakontoen) -----------------------------
+
+export type FirmaLogRaekke = {
+  id: string;
+  handling: string;
+  aarsag: string | null;
+  oprettet_kl: string;
+  medarbejder_navn: string | null;
+  system: boolean;
+};
+
+export async function hentFirmaLog(
+  admin: Admin,
+  firmaId: string,
+  brugerId: string,
+): Promise<FirmaLogRaekke[] | null> {
+  const { data, error } = await admin
+    .from("moderation_log")
+    .select("id, handling, aarsag, oprettet_kl, medarbejder_id")
+    .or(`bruger_id.eq.${brugerId},maal_id.eq.${firmaId}`)
+    .order("oprettet_kl", { ascending: false })
+    .limit(40);
+  if (error) {
+    console.error("moderation_log (firma):", error.message);
+    return null;
+  }
+  const raekker = (data ?? []) as { id: string; handling: string; aarsag: string | null; oprettet_kl: string; medarbejder_id: string | null }[];
+  const ids = [...new Set(raekker.map((r) => r.medarbejder_id).filter((x): x is string => !!x))];
+  const navne = new Map<string, string | null>();
+  if (ids.length) {
+    const { data: staff } = await admin.from("users").select("id, navn").in("id", ids);
+    for (const s of (staff ?? []) as { id: string; navn: string | null }[]) navne.set(s.id, s.navn);
+  }
+  return raekker.map((r) => ({
+    id: r.id,
+    handling: r.handling,
+    aarsag: r.aarsag,
+    oprettet_kl: r.oprettet_kl,
+    medarbejder_navn: r.medarbejder_id ? (navne.get(r.medarbejder_id) ?? null) : null,
+    system: erSystem(r.medarbejder_id),
+  }));
+}
