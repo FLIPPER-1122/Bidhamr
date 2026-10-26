@@ -313,6 +313,17 @@ body {
   }
 }
 
+/* Ugens butik på forsiden: fremdriftsstregen under billedet (5 s pr. billede,
+   src/components/forside/UgensButikKarrusel.tsx). */
+@keyframes ugens-fyld {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

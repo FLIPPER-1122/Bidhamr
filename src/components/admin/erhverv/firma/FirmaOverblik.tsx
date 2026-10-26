@@ -7,6 +7,8 @@ import {
   BookUgeKnap,
   SkiftPakkeKort,
   StatusKort,
+  UgensRabatKort,
+  type FirmaRabatTilstand,
   type LedigUge,
   type PakkeValg,
 } from "@/components/admin/erhverv/firma/FirmaHandlinger";
@@ -89,6 +91,8 @@ export function FirmaHurtighandlinger({
   opsiges,
   ledigeUger,
   kanBookeUge,
+  medBetalingMulig,
+  rabat,
 }: {
   firmaId: string;
   pakkeId: string;
@@ -98,6 +102,8 @@ export function FirmaHurtighandlinger({
   ledigeUger: LedigUge[] | null;
   // null = kan bookes; ellers forklaringen.
   kanBookeUge: string | null;
+  medBetalingMulig: boolean;
+  rabat: FirmaRabatTilstand | null;
 }) {
   return (
     <section aria-labelledby="hurtig-titel">
@@ -108,10 +114,11 @@ export function FirmaHurtighandlinger({
         <SkiftPakkeKort firmaId={firmaId} pakkeId={pakkeId} pakker={pakker} />
         <StatusKort firmaId={firmaId} status={status} opsiges={opsiges} />
         {ledigeUger && ledigeUger.length > 0 && !kanBookeUge ? (
-          <BookUgeKnap firmaId={firmaId} uger={ledigeUger} trigger="kort" />
+          <BookUgeKnap firmaId={firmaId} uger={ledigeUger} trigger="kort" medBetalingMulig={medBetalingMulig} />
         ) : ledigeUger ? (
           <LaastKort titel={T.hurtig.uge.titel} under={kanBookeUge ?? T.hurtig.uge.underIngen} />
         ) : null}
+        {rabat && <UgensRabatKort firmaId={firmaId} rabat={rabat} trigger="kort" />}
       </div>
     </section>
   );

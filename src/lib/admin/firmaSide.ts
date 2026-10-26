@@ -64,6 +64,19 @@ export type FirmaUgensButik = {
   bookinger: UgensBooking[];
   priser: Record<string, UgePris>;
   rabat: { procent: number; antal: number; brugt: number } | null;
+  // Pakkens rabat og firmaets egen (tilsidesætter pakkens; null = følger pakken).
+  rabatIndstilling: {
+    pakkeProcent: number;
+    pakkeAntal: number;
+    egen: { procent: number; antal: number; begrundelse: string | null; opdateret_kl: string | null; opdateret_af_navn: string | null } | null;
+  } | null;
+};
+
+type AdminFirmaRaekke = {
+  id: string;
+  pakke_rabat_procent?: number;
+  pakke_rabat_antal?: number;
+  egen_rabat?: { procent: number; antal: number; begrundelse: string | null; opdateret_kl: string | null; opdateret_af_navn: string | null } | null;
 };
 
 const BOOKING_KOLONNER =
@@ -98,6 +111,7 @@ export async function hentFirmaUgensButik(
     denne_uge: string;
     pris: { ekskl_moms_oere: number; inkl_moms_oere: number };
     uger: UgeCelle[];
+    firmaer?: AdminFirmaRaekke[];
   } | null;
   if (!o) return { fejl: "fejl" };
   const uger = (o.uger ?? []).slice(0, UGER_I_KALENDER);
@@ -120,7 +134,18 @@ export async function hentFirmaUgensButik(
     | { procent?: number; antal?: number; brugt?: number }
     | null;
 
+  const fr = (o.firmaer ?? []).find((x) => x.id === firmaId) ?? null;
+
   return {
+    rabatIndstilling: fr
+      ? {
+          pakkeProcent: Number(fr.pakke_rabat_procent ?? 0),
+          pakkeAntal: Number(fr.pakke_rabat_antal ?? 0),
+          egen: fr.egen_rabat
+            ? { ...fr.egen_rabat, procent: Number(fr.egen_rabat.procent), antal: Number(fr.egen_rabat.antal) }
+            : null,
+        }
+      : null,
     denneUge: o.denne_uge,
     pris: { ekskl_moms_oere: Number(o.pris?.ekskl_moms_oere ?? 0), inkl_moms_oere: Number(o.pris?.inkl_moms_oere ?? 0) },
     uger,

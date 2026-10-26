@@ -13,6 +13,10 @@ import { sideUrl } from "@/lib/seo";
 import { FORSIDE } from "@/lib/tekster/forside";
 import { hentBoostTop, markerBoostede } from "@/lib/boost/visning";
 import { BOOST_TEKST } from "@/lib/boost/tekster";
+import UgensButikKarrusel, { type UgensSlide } from "@/components/forside/UgensButikKarrusel";
+import { UGENS_FORSIDE } from "@/lib/tekster/ugensButik";
+import { formatTidTilbage } from "@/lib/auctionTid";
+import { kr } from "@/lib/erhverv/visning";
 import heroBillede from "../../../../public/forside/hero.webp";
 
 // Kun de kolonner, kortene bruger. Typet som string: Supabase-typernes
@@ -285,21 +289,85 @@ function Hero() {
         </div>
       </div>
 
-      <div className="relative h-52 bg-groen-lys sm:h-72 md:h-auto md:flex-1">
-        <Image
-          src={heroBillede}
-          alt=""
-          fill
-          // LCP-billedet på mobil: hentes med det samme og med høj
-          // prioritet (anbefalet frem for preload i Next.js 16).
-          loading="eager"
-          fetchPriority="high"
-          placeholder="blur"
-          sizes="(min-width: 1280px) 600px, (min-width: 768px) 48vw, 100vw"
-          className="object-cover"
-        />
-      </div>
+      {/* Ugens butik (betalt annonce) erstatter billedet, når et firma har
+          ugen. Billedet sendes med det samme (LCP), og Ugens butik byttes
+          ind, når databasen svarer. */}
+      <Suspense fallback={<HeroBillede />}>
+        <HeroHoejre />
+      </Suspense>
     </section>
+  );
+}
+
+function HeroBillede() {
+  return (
+    <div className="relative h-52 bg-groen-lys sm:h-72 md:h-auto md:flex-1">
+      <Image
+        src={heroBillede}
+        alt=""
+        fill
+        // LCP-billedet på mobil: hentes med det samme og med høj
+        // prioritet (anbefalet frem for preload i Next.js 16).
+        loading="eager"
+        fetchPriority="high"
+        placeholder="blur"
+        sizes="(min-width: 1280px) 600px, (min-width: 768px) 48vw, 100vw"
+        className="object-cover"
+      />
+    </div>
+  );
+}
+
+// forside_ugens_butik (anon): den igangværende uges firma og højst 8 aktive
+// auktioner - null, når ingen har ugen (eller firmaet ingen aktive auktioner
+// har). Coming soon-låsen før lancering er uændret: forsiden kan kun ses
+// efter lancering (og på testserveren). En fejl må aldrig tage forsiden ned.
+type UgensButikSvar = {
+  annonce: boolean;
+  firma: { bruger_id: string; firmanavn: string; profil_url: string; billede: string | null };
+  auktioner: {
+    id: string;
+    titel: string;
+    billede: string | null;
+    startpris: number | string;
+    nuvaerende_bud: number | string | null;
+    antal_bud: number | null;
+    slutter_kl: string;
+  }[];
+};
+
+async function HeroHoejre() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("forside_ugens_butik");
+  const u = (error ? null : data) as UgensButikSvar | null;
+  if (!u?.annonce || !u.firma?.firmanavn || !Array.isArray(u.auktioner) || u.auktioner.length === 0) {
+    if (error) console.error("forside_ugens_butik:", error.message);
+    return <HeroBillede />;
+  }
+  const t = UGENS_FORSIDE;
+  const slides: UgensSlide[] = u.auktioner.map((a) => {
+    const antalBud = Number(a.antal_bud ?? 0);
+    const pris = Number(antalBud > 0 && a.nuvaerende_bud != null ? a.nuvaerende_bud : a.startpris);
+    return {
+      id: a.id,
+      titel: a.titel,
+      billede: a.billede,
+      pris: `${antalBud > 0 ? "" : `${t.startpris} `}${kr(pris)}`,
+      meta: `${t.bud(antalBud)} · ${t.inklMoms}`,
+      tid: formatTidTilbage(a.slutter_kl),
+    };
+  });
+  // Profil-URL'en kommer fra databasen - kun en intern sti bruges.
+  const profilUrl = /^\/[a-z]/.test(u.firma.profil_url ?? "") ? u.firma.profil_url : `/erhvervssaelger/${u.firma.bruger_id}`;
+  return (
+    <UgensButikKarrusel
+      firmanavn={u.firma.firmanavn}
+      profilUrl={profilUrl}
+      slides={slides}
+      // Mobil (flex-col-reverse): under panelet med søgefeltet - ikke øverst
+      // som billedet. Computer: til højre.
+      className="max-md:order-first"
+    />
   );
 }
 

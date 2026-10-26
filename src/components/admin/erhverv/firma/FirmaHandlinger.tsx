@@ -19,7 +19,11 @@ import {
   opdaterFirma,
   opsigFirmaAbonnement,
 } from "@/app/actions/adminErhverv";
-import { annullerUgensButikAction, bookUgensButikAction } from "@/app/actions/adminUgensButik";
+import {
+  annullerUgensButikAction,
+  bookUgensButikAction,
+  saetUgensButikFirmaRabatAction,
+} from "@/app/actions/adminUgensButik";
 import { ADMIN_FIRMA as T } from "@/lib/tekster/adminFirma";
 import { ABONNEMENT_STATUS_NAVN, type AbonnementStatus } from "@/lib/erhverv/regler";
 import { kr, krFraOere } from "@/lib/erhverv/visning";
@@ -109,12 +113,12 @@ function Begrundelse({
 
 export function EtKlikKnap({
   firmaId,
-  handling,
   label,
   className = "btn btn-primaer btn-lille",
 }: {
   firmaId: string;
-  handling: "genaktiver" | "gensendVelkomst";
+  // Genaktivér har sin egen dialog med begrundelse (GenaktiverKnap).
+  handling: "gensendVelkomst";
   label: string;
   className?: string;
 }) {
@@ -124,15 +128,12 @@ export function EtKlikKnap({
   function koer() {
     setFejl(null);
     start(async () => {
-      const svar =
-        handling === "genaktiver"
-          ? await opdaterFirma({ firmaId, status: "aktiv", note: "Genaktiveret fra Kræver handling" })
-          : await gensendFirmaVelkomst(firmaId);
+      const svar = await gensendFirmaVelkomst(firmaId);
       if ("fejl" in svar) {
         setFejl(svar.fejl);
         return;
       }
-      visKvittering(handling === "genaktiver" ? T.kraever.genaktiveret : T.kraever.velkomstSendt);
+      visKvittering(T.kraever.velkomstSendt);
       router.refresh();
     });
   }
@@ -148,6 +149,37 @@ export function EtKlikKnap({
         </p>
       )}
     </div>
+  );
+}
+
+// --- Genaktivér (fra "Kræver handling") - med begrundelse som StatusKort ----------
+
+export function GenaktiverKnap({ firmaId }: { firmaId: string }) {
+  const router = useRouter();
+  const [grund, setGrund] = useState("");
+  const G = T.hurtig.genaktiver;
+  return (
+    <BekraeftDialog
+      triggerClassName="btn btn-primaer btn-lille"
+      triggerLabel={T.kraever.genaktiver}
+      title={G.dialog}
+      description={G.forklaring}
+      confirmLabel={T.kraever.genaktiver}
+      confirmDisabled={!grund.trim()}
+      onConfirm={async () => {
+        const b = grund.trim();
+        if (!b) return { fejl: T.hurtig.status.skrivBegrundelse };
+        const svar = await opdaterFirma({ firmaId, status: "aktiv", note: b });
+        if ("fejl" in svar) return { fejl: svar.fejl };
+        visKvittering(T.kraever.genaktiveret);
+      }}
+      onSuccess={() => {
+        setGrund("");
+        router.refresh();
+      }}
+    >
+      <Begrundelse value={grund} onChange={setGrund} label={G.begrundelse} pladsholder={G.begrundelsePladsholder} />
+    </BekraeftDialog>
   );
 }
 
@@ -294,7 +326,8 @@ export type LedigUge = {
   // Firmaets pris for ugen (med pakkens rabat). null = prisen kunne ikke hentes.
   inkl_oere: number | null;
   rabat_procent: number;
-  // Den igangværende uge kan kun bookes uden betaling (ugens_butik_staff_book).
+  // Den igangværende uge (kan også bookes med betaling - prisen er den samme
+  // hele ugen, og reservationen holder højst til ugens slutning).
   denne_uge: boolean;
 };
 
@@ -303,10 +336,14 @@ export function BookUgeKnap({
   uger,
   startUge,
   trigger,
+  medBetalingMulig,
 }: {
   firmaId: string;
   uger: LedigUge[];
   startUge?: string;
+  // Med betaling kræver et aktivt firma (ikke på pause eller suspenderet).
+  // Uden betaling kan altid bookes, så længe kontoen ikke er lukket.
+  medBetalingMulig: boolean;
   // "kort" = hurtighandlingen; "lille" = knappen i kalenderen.
   trigger: "kort" | "lille";
 }) {
@@ -314,10 +351,11 @@ export function BookUgeKnap({
   const id = useId();
   const [uge, setUge] = useState(startUge ?? uger[0]?.uge_start ?? "");
   const valgtUge = uger.find((u) => u.uge_start === uge) ?? null;
-  // "ja" gælder kun, hvor det er muligt (ikke den igangværende uge) - se med.
+  // "ja" gælder kun, hvor det er muligt (aktivt firma, prisen er hentet).
   const [betaling, setBetaling] = useState<"ja" | "nej">("ja");
   const [grund, setGrund] = useState("");
-  const medMulig = !!valgtUge && !valgtUge.denne_uge && valgtUge.inkl_oere != null;
+  const [omgaaLoft, setOmgaaLoft] = useState(false);
+  const medMulig = medBetalingMulig && !!valgtUge && valgtUge.inkl_oere != null;
   const med = betaling === "ja" && medMulig;
 
   return (
@@ -335,6 +373,7 @@ export function BookUgeKnap({
         fd.set("uge", valgtUge.uge_start);
         fd.set("medBetaling", med ? "ja" : "nej");
         fd.set("begrundelse", grund.trim());
+        fd.set("omgaaLoft", omgaaLoft ? "ja" : "nej");
         const svar = await bookUgensButikAction(fd);
         if ("fejl" in svar) return { fejl: svar.fejl };
         visKvittering(svar.status === "reserveret" ? T.hurtig.uge.reserveret : T.hurtig.uge.booket);
@@ -343,6 +382,7 @@ export function BookUgeKnap({
         // Næste booking starter forfra (med betaling, hvor det er muligt).
         setGrund("");
         setBetaling("ja");
+        setOmgaaLoft(false);
         router.refresh();
       }}
     >
@@ -373,19 +413,115 @@ export function BookUgeKnap({
                 {valgtUge.rabat_procent > 0 && T.hurtig.uge.medRabat(valgtUge.rabat_procent)}
               </>
             ) : (
-              T.hurtig.uge.medBetalingIkkeNu
+              medBetalingMulig ? T.hurtig.uge.medBetalingIngenPris : T.hurtig.uge.medBetalingIkkeAktiv
             )}
           </Valg>
           <Valg name="betaling" value="nej" valgt={med ? "ja" : "nej"} onVaelg={() => setBetaling("nej")}>
             {T.hurtig.uge.udenBetaling}
           </Valg>
         </fieldset>
+        <label className="flex items-start gap-3 border border-kant px-3 py-2.5 text-sm text-tekst">
+          <input
+            type="checkbox"
+            checked={omgaaLoft}
+            onChange={(e) => setOmgaaLoft(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-groen"
+          />
+          <span className="min-w-0">
+            <span className="font-semibold">{T.hurtig.uge.omgaaLoft}</span>
+            <span className="block text-tekst-daempet">{T.hurtig.uge.omgaaLoftForklaring}</span>
+          </span>
+        </label>
         <Begrundelse
           value={grund}
           onChange={setGrund}
           label={T.hurtig.uge.begrundelse}
-          pladsholder={T.hurtig.uge.begrundelsePladsholder}
+          pladsholder={omgaaLoft ? T.hurtig.uge.begrundelseLoftPladsholder : T.hurtig.uge.begrundelsePladsholder}
         />
+      </div>
+    </BekraeftDialog>
+  );
+}
+
+// --- Firmaets rabat på Ugens butik ------------------------------------------------
+
+export type FirmaRabatTilstand = {
+  // Pakkens rabat (standard for firmaet).
+  pakkeProcent: number;
+  pakkeAntal: number;
+  // Firmaets egen rabat (tilsidesætter pakkens). null = følger pakken.
+  egen: { procent: number; antal: number; begrundelse: string | null; opdateret_kl: string | null; opdateret_af_navn: string | null } | null;
+};
+
+const HELTAL = /^\d{1,2}$/;
+
+export function UgensRabatKort({ firmaId, rabat, trigger }: { firmaId: string; rabat: FirmaRabatTilstand; trigger: "kort" | "knap" }) {
+  const router = useRouter();
+  const id = useId();
+  const R = T.hurtig.rabat;
+  const [valg, setValg] = useState<"pakke" | "egen">(rabat.egen ? "egen" : "pakke");
+  const [procent, setProcent] = useState(String(rabat.egen?.procent ?? rabat.pakkeProcent));
+  const [antal, setAntal] = useState(String(rabat.egen?.antal ?? rabat.pakkeAntal));
+  const [grund, setGrund] = useState("");
+  const nu = rabat.egen ? R.nuEgen(rabat.egen.procent, rabat.egen.antal) : R.nuPakke(rabat.pakkeProcent, rabat.pakkeAntal);
+  const heltal = (v: string, max: number) => HELTAL.test(v.trim()) && Number(v) <= max;
+  const gyldig = valg === "pakke" || (heltal(procent, 90) && heltal(antal, 52));
+  return (
+    <BekraeftDialog
+      triggerClassName={trigger === "kort" ? KORT : "btn btn-sekundaer btn-lille"}
+      triggerIcon={trigger === "kort" ? <KortTitel>{R.titel}</KortTitel> : undefined}
+      triggerLabel={trigger === "kort" ? nu : R.ret}
+      title={R.dialog}
+      description={R.forklaring}
+      confirmLabel={R.bekraeft}
+      confirmDisabled={!gyldig || !grund.trim() || (valg === "pakke" && !rabat.egen)}
+      onConfirm={async () => {
+        const fd = new FormData();
+        fd.set("firmaId", firmaId);
+        fd.set("procent", valg === "pakke" ? "" : procent.trim());
+        fd.set("antal", valg === "pakke" ? "" : antal.trim());
+        fd.set("begrundelse", grund.trim());
+        const svar = await saetUgensButikFirmaRabatAction(fd);
+        if ("fejl" in svar) return { fejl: svar.fejl };
+        visKvittering(R.gemt);
+      }}
+      onSuccess={() => {
+        setGrund("");
+        router.refresh();
+      }}
+    >
+      <div className="space-y-3">
+        <p className="bg-groen-lys px-3 py-2 text-sm text-groen-mork">
+          {R.nu}: {nu}
+          {rabat.egen?.begrundelse && <span className="block text-tekst-daempet">{rabat.egen.begrundelse}</span>}
+        </p>
+        <fieldset className="space-y-2">
+          <legend className="sr-only">{R.titel}</legend>
+          <Valg name="rabat" value="pakke" valgt={valg} onVaelg={(v) => setValg(v as "pakke" | "egen")}>
+            {R.foelgPakken(rabat.pakkeProcent, rabat.pakkeAntal)}
+          </Valg>
+          <Valg name="rabat" value="egen" valgt={valg} onVaelg={(v) => setValg(v as "pakke" | "egen")}>
+            {R.egen}
+          </Valg>
+        </fieldset>
+        {valg === "egen" && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor={`${id}-pct`} className={LABEL}>
+                {R.procent}
+              </label>
+              <input id={`${id}-pct`} inputMode="numeric" value={procent} onChange={(e) => setProcent(e.target.value)} className={FELT} />
+            </div>
+            <div>
+              <label htmlFor={`${id}-antal`} className={LABEL}>
+                {R.antal}
+              </label>
+              <input id={`${id}-antal`} inputMode="numeric" value={antal} onChange={(e) => setAntal(e.target.value)} className={FELT} />
+            </div>
+            {!gyldig && <p className="col-span-2 text-xs font-medium text-fejl-tekst">{R.ugyldig}</p>}
+          </div>
+        )}
+        <Begrundelse value={grund} onChange={setGrund} label={R.begrundelse} pladsholder={R.begrundelsePladsholder} />
       </div>
     </BekraeftDialog>
   );

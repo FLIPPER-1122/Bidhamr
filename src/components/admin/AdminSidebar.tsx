@@ -152,7 +152,11 @@ const GRUPPER: MenuGruppe[] = [
       { href: "/admin/auktioner", label: "Auktioner", minRolle: "admin" },
     ],
   },
-  { id: "erhverv", titel: "Erhverv", punkter: [ERHVERV] },
+  {
+    id: "erhverv",
+    titel: "Erhverv",
+    punkter: [ERHVERV, { href: "/admin/erhverv/ugens-butik", label: "Ugens butik", minRolle: "chef" }],
+  },
   {
     id: "drift",
     titel: "Drift og indstillinger",
@@ -179,6 +183,7 @@ const SAELGER_GRUPPER: MenuGruppe[] = [
       { href: "/admin/erhverv/klager", label: "Købers klager over firmaer", minRolle: "chef", ikon: "/admin/sager" },
       { href: "/admin/erhverv/dsa-klager", label: "Firmaers klager (DSA)", minRolle: "chef", ikon: "/admin/dsa" },
       { href: "/admin/erhverv/pakker", label: "Pakker", minRolle: "chef", ikon: "/admin/fakturaer" },
+      { href: "/admin/erhverv/ugens-butik", label: "Ugens butik", minRolle: "chef" },
     ],
   },
 ];

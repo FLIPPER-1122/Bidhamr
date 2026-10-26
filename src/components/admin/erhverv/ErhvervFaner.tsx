@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { hentErhvervTal } from "@/lib/admin/erhvervTal";
 import { ADMIN_ERHVERV } from "@/lib/tekster/erhverv";
 
-export type ErhvervFane = "oversigt" | "henvendelser" | "firmaer" | "klager" | "dsa-klager" | "pakker";
+export type ErhvervFane = "oversigt" | "henvendelser" | "firmaer" | "klager" | "dsa-klager" | "pakker" | "ugens-butik";
 
 // Faner under Admin → Erhverv (kun chef og saelger). Tallene er kun antal og
 // hentes én gang pr. forespørgsel (cache() i src/lib/admin/erhvervTal.ts) -
@@ -22,6 +22,7 @@ export default async function ErhvervFaner({ aktiv }: { aktiv: ErhvervFane }) {
         { id: "klager", label: "Købers klager over firmaer", href: "/admin/erhverv/klager", antal: tal?.aabneKlager, tone: "gul" },
         { id: "dsa-klager", label: "Firmaers klager (DSA)", href: "/admin/erhverv/dsa-klager", antal: tal?.dsaKlager, tone: "gul" },
         { id: "pakker", label: "Pakker", href: "/admin/erhverv/pakker" },
+        { id: "ugens-butik", label: "Ugens butik", href: "/admin/erhverv/ugens-butik" },
       ]}
     />
   );

@@ -5,7 +5,7 @@ import Link from "next/link";
 import AdminBadge, { type BadgeTone } from "@/components/admin/AdminBadge";
 import AdminFejl from "@/components/admin/AdminFejl";
 import { dato, datoTid } from "@/components/admin/erhverv/ErhvervFaner";
-import { AnnullerUgeKnap, BookUgeKnap, type LedigUge } from "@/components/admin/erhverv/firma/FirmaHandlinger";
+import { AnnullerUgeKnap, BookUgeKnap, UgensRabatKort, type LedigUge } from "@/components/admin/erhverv/firma/FirmaHandlinger";
 import { mandag, ugeNr } from "@/components/admin/erhverv/firma/stil";
 import { KlageStatusMaerke } from "@/components/erhverv/klager/visning";
 import type { FirmaAuktion, FirmaHandel, FirmaKvote, FirmaLogRaekke, FirmaRegning, FirmaUgensButik, UgensBooking } from "@/lib/admin/firmaSide";
@@ -127,11 +127,13 @@ export function FaneUgensButik({
   ugens,
   ledigeUger,
   kanBooke,
+  medBetalingMulig,
 }: {
   firmaId: string;
   ugens: FirmaUgensButik | { fejl: "mangler" | "fejl" };
   ledigeUger: LedigUge[];
   kanBooke: boolean;
+  medBetalingMulig: boolean;
 }) {
   const U = T.uger;
   if ("fejl" in ugens) return <AdminFejl>{ugens.fejl === "mangler" ? U.mangler : U.fejl}</AdminFejl>;
@@ -160,7 +162,13 @@ export function FaneUgensButik({
                 </span>
                 {ledig && kanBooke && (
                   <span className="mt-auto">
-                    <BookUgeKnap firmaId={firmaId} uger={ledigeUger} startUge={ledig.uge_start} trigger="lille" />
+                    <BookUgeKnap
+                      firmaId={firmaId}
+                      uger={ledigeUger}
+                      startUge={ledig.uge_start}
+                      trigger="lille"
+                      medBetalingMulig={medBetalingMulig}
+                    />
                   </span>
                 )}
               </li>
@@ -171,6 +179,35 @@ export function FaneUgensButik({
           {U.pris(krFraOere(ugens.pris.inkl_moms_oere), krFraOere(ugens.pris.ekskl_moms_oere))}
         </p>
       </Felt>
+
+      {ugens.rabatIndstilling && (
+        <Felt titel={T.hurtig.rabat.titel}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 text-sm text-tekst">
+              <p className="font-semibold">
+                {ugens.rabatIndstilling.egen
+                  ? T.hurtig.rabat.nuEgen(ugens.rabatIndstilling.egen.procent, ugens.rabatIndstilling.egen.antal)
+                  : T.hurtig.rabat.nuPakke(ugens.rabatIndstilling.pakkeProcent, ugens.rabatIndstilling.pakkeAntal)}
+              </p>
+              {ugens.rabat && (
+                <p className="text-tekst-daempet">
+                  {T.kvoter.tilbage(Math.max(0, ugens.rabat.antal - ugens.rabat.brugt), ugens.rabat.antal, Number(ugens.denneUge.slice(0, 4)))}
+                </p>
+              )}
+              {ugens.rabatIndstilling.egen && (
+                <p className="break-words text-tekst-daempet">
+                  {ugens.rabatIndstilling.egen.begrundelse}
+                  {ugens.rabatIndstilling.egen.opdateret_kl &&
+                    ` · ${ugens.rabatIndstilling.egen.opdateret_af_navn ?? "–"}, ${datoTid(ugens.rabatIndstilling.egen.opdateret_kl)}`}
+                </p>
+              )}
+            </div>
+            <div className="shrink-0">
+              <UgensRabatKort firmaId={firmaId} rabat={ugens.rabatIndstilling} trigger="knap" />
+            </div>
+          </div>
+        </Felt>
+      )}
 
       <Felt titel={U.bookinger}>
         {ugens.bookinger.length === 0 ? (

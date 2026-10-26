@@ -31,7 +31,7 @@ import {
   Raekker,
   UgeHandlinger,
 } from "@/components/admin/erhverv/firma/FirmaFaner";
-import { EtKlikKnap, FirmaNote, type LedigUge } from "@/components/admin/erhverv/firma/FirmaHandlinger";
+import { EtKlikKnap, FirmaNote, GenaktiverKnap, type LedigUge } from "@/components/admin/erhverv/firma/FirmaHandlinger";
 import { ugeNr } from "@/components/admin/erhverv/firma/stil";
 import {
   hentFirmaAuktionerOgSalg,
@@ -140,8 +140,11 @@ export default async function FirmaSide({
           denne_uge: u.uge_start === ugens.denneUge,
         }))
     : [];
-  // Som ugens_butik_staff_book: kun aktive firmaer, der ikke er lukket/suspenderet.
-  const ugeSpaerret = lukket || suspenderet || status !== "aktiv" ? T.hurtig.uge.underIkkeAktiv : null;
+  // Som ugens_butik_staff_book: uden betaling kan bookes for alle konti, der
+  // ikke er lukket (også pause/suspenderet - feltet vises først på forsiden,
+  // når firmaet er aktivt). Med betaling kun for et aktivt firma.
+  const ugeSpaerret = lukket ? T.hurtig.uge.underIkkeAktiv : null;
+  const medBetalingMulig = !lukket && !suspenderet && status === "aktiv";
 
   const fanHref = (x: Fane) => `/admin/erhverv/firmaer/${f.id}?fane=${x}`;
 
@@ -164,7 +167,7 @@ export default async function FirmaSide({
       id: "pause",
       tone: "gul",
       tekst: f.pauset_aarsag === "betaling" ? T.kraever.pauseBetaling : T.kraever.pauseBidhamr,
-      handling: f.pauset_aarsag === "betaling" ? undefined : <EtKlikKnap firmaId={f.id} handling="genaktiver" label={T.kraever.genaktiver} />,
+      handling: f.pauset_aarsag === "betaling" ? undefined : <GenaktiverKnap firmaId={f.id} />,
     });
   if (status === "afventer_betaling") punkter.push({ id: "afventer", tone: "gul", tekst: T.kraever.afventerBetaling });
   if (opsiges && f.opsiges_fra)
@@ -293,6 +296,8 @@ export default async function FirmaSide({
         opsiges={opsiges}
         ledigeUger={ugens ? ledigeUger : null}
         kanBookeUge={ugeSpaerret}
+        medBetalingMulig={medBetalingMulig}
+        rabat={ugens?.rabatIndstilling ?? null}
       />
 
       <AdminFaner
@@ -364,7 +369,13 @@ export default async function FirmaSide({
       {fane === "kvoter" && <FaneKvoter kvote={kvote} ugens={ugens} />}
 
       {fane === "ugens-butik" && (
-        <FaneUgensButik firmaId={f.id} ugens={ugensSvar} ledigeUger={ledigeUger} kanBooke={!ugeSpaerret} />
+        <FaneUgensButik
+          firmaId={f.id}
+          ugens={ugensSvar}
+          ledigeUger={ledigeUger}
+          kanBooke={!ugeSpaerret}
+          medBetalingMulig={medBetalingMulig}
+        />
       )}
 
       {fane === "oplysninger" && (

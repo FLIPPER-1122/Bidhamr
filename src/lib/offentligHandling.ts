@@ -14,7 +14,9 @@ export type OffentligHandling =
   | "firma-skift-pakke"
   | "firma-betal"
   | "firma-betalingskort"
-  | "firma-brugtmoms";
+  | "firma-brugtmoms"
+  | "firma-ugens-butik-koeb"
+  | "firma-ugens-butik-annuller";
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 
