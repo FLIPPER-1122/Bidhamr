@@ -8,6 +8,7 @@ import {
   betal,
   betaling,
   forberedSaelger,
+  forventet,
   fuldRefusion,
   koeberGodkender,
   opretHandel,
@@ -23,6 +24,9 @@ let fuld: TestHandel;
 let udbetalt: TestHandel;
 let dashboard: TestHandel;
 let konto: string;
+// Bud 200 kr.: købergebyr 7 % + 5 = 19 kr., fragt 42 kr. -> total 261 kr.;
+// sælgergebyr 15 kr. -> udbetaling 185 kr.
+const FULD = forventet(20_000);
 
 beforeAll(async () => {
   konto = await forberedSaelger();
@@ -45,20 +49,23 @@ describe("fuld og delvis refusion", () => {
     const b = await betaling(fuld.betalingId);
     expect(b.status).toBe("refunderet");
     const t = await stripeTal(b);
-    // bud 200 + købergebyr 10 + fragt 40 = 250 kr.
-    expect(t.beloeb).toBe(25_000);
-    expect(t.refunderet).toBe(25_000);
+    // bud 200 + gebyr 19 + fragt 42 = 261 kr.
+    expect(FULD.total).toBe(26_100);
+    expect(t.beloeb).toBe(FULD.total);
+    expect(t.refunderet).toBe(FULD.total);
+    expect(t.gebyr).toBe(FULD.gebyr);
     expect(t.gebyrRefunderet).toBe(t.gebyr);
-    expect(t.tilbagefoert).toBe(25_000);
+    expect(t.tilbagefoert).toBe(FULD.total);
     const efter = await saldo(konto);
-    expect(foer.tilgaengelig + foer.afventer - (efter.tilgaengelig + efter.afventer)).toBe(19_000);
+    expect(foer.tilgaengelig + foer.afventer - (efter.tilgaengelig + efter.afventer)).toBe(FULD.udbetaling);
+    expect(FULD.udbetaling).toBe(18_500);
   });
 
   it("refusionen kan ikke gentages (idempotent)", async () => {
     const r = await fuldRefusion(fuld);
     expect(r.claimet).toBeNull();
     const t = await stripeTal(await betaling(fuld.betalingId));
-    expect(t.refunderet).toBe(25_000);
+    expect(t.refunderet).toBe(FULD.total);
     const refusioner = await stripe().refunds.list({ charge: (await betaling(fuld.betalingId)).stripe_charge_id! });
     expect(refusioner.data.length).toBe(1);
   });

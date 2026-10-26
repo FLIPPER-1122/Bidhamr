@@ -1,6 +1,6 @@
 // Scenarie: retur i en sag (Filip, 13. okt. 2026). Køberen har fået medhold
 // (skadet, BidHamr Beskyttelse), ankefristen er udløbet, og varen skal sendes
-// retur. Køberen betaler selv returfragten (= fragten ud, 40 kr.) til
+// retur. Køberen betaler selv returfragten (= fragten ud, 42 kr.) til
 // BidHamrs PLATFORMSKONTO - ingen destination charge, intet gebyr - med
 // testkortet pm_card_bypassPending. Returkoden må først laves, når webhooken
 // har bekræftet betalingen.
@@ -260,7 +260,7 @@ describe("returfragt i en sag", () => {
       .select("dokument, part, slags, beloeb_oere, moms_oere, betaling_id")
       .eq("returfragt_id", r.id);
     expect(data).toEqual([
-      { dokument: "faktura", part: "koeber", slags: "sag_returfragt", beloeb_oere: 4000, moms_oere: 800, betaling_id: hA.betalingId },
+      { dokument: "faktura", part: "koeber", slags: "sag_returfragt", beloeb_oere: PAKKESHOP_FRAGT_OERE, moms_oere: PAKKESHOP_FRAGT_OERE / 5, betaling_id: hA.betalingId },
     ]);
   });
 
@@ -304,8 +304,8 @@ describe("returfragt i en sag", () => {
     await admin().rpc("faktura_planlaeg_returfragt", { p_graense: 200 });
     const { data } = await admin().from("fakturaer").select("dokument, beloeb_oere").eq("returfragt_id", r.id).order("dokument");
     expect(data).toEqual([
-      { dokument: "faktura", beloeb_oere: 4000 },
-      { dokument: "kreditnota", beloeb_oere: 4000 },
+      { dokument: "faktura", beloeb_oere: PAKKESHOP_FRAGT_OERE },
+      { dokument: "kreditnota", beloeb_oere: PAKKESHOP_FRAGT_OERE },
     ]);
   });
 

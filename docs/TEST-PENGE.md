@@ -33,6 +33,8 @@ PENGE_ENV_FIL=C:/Users/jeppe/Desktop/hamr/.env.local npm run test:penge
 
 - **Faste TEST-brugere** (oprettes første gang, slettes aldrig - brugere kan ikke slettes, og `seed.sql` nægter at køre med over 50 brugere): `penge-saelger@`, `penge-saelger-bankfejl@`, `penge-koeber@`, `penge-fremmed@test.bidhamr.dk` (id `11111111-1111-4111-8111-0000000005e1..e4`), navne "TEST Penge …". Adgangskoden sættes tilfældigt ved hver kørsel og gemmes ingen steder.
 - **Nye Stripe Connect-testkonti for hver kørsel** (oprettet færdige via API'et i testmiljøet: card_payments, transfers, mobilepay_payments og revolut_pay_payments (20. okt. 2026), manuel udbetalingsplan, DK-test-IBAN `DK5000400440116243`; bankfejl-sælgeren får `DK8003450003179681`, som afviser udbetalinger). Saldoen starter derfor altid på 0. Metadata `test = TEST pengetest`.
+- **Beløbene** regnes med den rigtige formel (`forventet()` i `handel.ts` = `src/lib/betaling/beregn.ts`, ny prismodel 26. okt. 2026), så testene følger prismodellen; de konkrete tal står som kommentar og kontrol i hver test.
+- **Udbetaling hver 14. dag:** de faste testsælgere får en payout i mange scenarier, så `forberedSaelger` flytter (kun på testdatabasen) testsælgerens payouts fra de seneste 15 dage 15 dage tilbage i tiden (`saelger_udbetalinger.oprettet`) - en payout, der stadig står som `oprettet`, afsluttes først via payout-webhooken. Intet slettes; status, beløb og payout-id røres ikke (afstemningen finder dem via payout-id'et).
 - **Hver handel** hedder `TEST pengetest: <scenarie> [<kørsel>]`. Auktionen slutter "for 8 dage siden", så pg_cron's `afslut_udloebne_auktioner` aldrig laver sin egen handel på den. Handel, leveringsvalg og betalingsrække skrives med service role (som `afslut_udloebne_auktioner` og checkout gør); alt derefter er den rigtige kode.
 - **Oprydning:** handelsdata slettes aldrig (bogføringsloven). Hver test bringer pengene til en sluttilstand (udbetalt eller refunderet), annullerer ubetalte handler som admin (`admin_annuller_ikke_betalt` - ingen "ubetalt vinder"-advarsel), annullerer åbne PaymentIntents hos Stripe, arkiverer auktionen og lukker drift-tilfælde for betalingen. `99-slutafstemning` tjekker til sidst, at saldoen på begge testkonti hos Stripe er præcis det, databasen siger (`skyldigOere`), og at overvågningen ikke finder afvigelser.
 
@@ -40,8 +42,8 @@ PENGE_ENV_FIL=C:/Users/jeppe/Desktop/hamr/.env.local npm run test:penge
 
 | Fil | Scenarie | Testkort |
 |---|---|---|
-| 01 | Betal → køberen godkender (frigivelse) → payout til banken → `payout.paid`. Gebyret = købergebyr + sælgergebyr + fragt + Beskyttelse; sælgeren står med bud − sælgergebyr | `pm_card_bypassPending` (4000 0000 0000 0077) |
-| 02 | Sag med medhold (skadet, BidHamr Beskyttelse) → ankefristen udløber → refusion af alt undtagen Beskyttelsen i tre trin (gebyr-refusion, tilbageførsel, refusion). BidHamr beholder præcis Beskyttelsen. Gentaget afvikling flytter intet | 0077 |
+| 01 | Betal → køberen godkender (frigivelse) → payout til banken → `payout.paid`. Gebyret = købergebyr + sælgergebyr + fragt (ny prismodel, BidHamr Beskyttelse er i købergebyret); sælgeren står med bud − sælgergebyr | `pm_card_bypassPending` (4000 0000 0000 0077) |
+| 02 | Sag med medhold (skadet) → ankefristen udløber → køberen får kun buddet tilbage (ny prismodel) i tre trin (gebyr-refusion = sælgergebyret, tilbageførsel, refusion). BidHamr beholder præcis købergebyr + fragt. Gentaget afvikling flytter intet | 0077 |
 | 03 | Fuld refusion (admin) og idempotens; refusion efter udbetaling afvises; refusion lavet i "dashboardet" uden tilbageførsel markeres til staff og kan ikke udbetales | 0077 |
 | 04 | Ikke-afhentet pakke: R = 0 (køber 0, sælgerens del tilbageført) og R < U (køber bud − returfragt, hele U tilbageført) | 0077 |
 | 05 | Indsigelse før udbetaling: frosset, frigivelse afvist; tabt → sælgerens del hentet tilbage; gentaget event/cron henter ikke igen | `pm_card_createDispute` (…0259) |

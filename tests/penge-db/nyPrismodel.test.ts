@@ -9,6 +9,9 @@
 // formlerne, gamle rækker uændret, beløbsloftet (25.000 kr.), fragtpriserne,
 // refusion ved medhold i en sag (kun buddet i den nye model), og at en sælger
 // højst får én udbetaling pr. 14 dage.
+// Rettelserne (20261031020000_prismodel_rettelser.sql, også kørt to gange):
+// samme kørsel må lave flere payouts, til køen er tom (B1), og cron'ens liste
+// over sælgere, der er klar (B2).
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
@@ -24,6 +27,7 @@ import {
 
 const MIG = path.resolve(import.meta.dirname, "../../supabase/migrations");
 const MIGRATION = readFileSync(path.join(MIG, "20261031010000_ny_prismodel.sql"), "utf8");
+const RETTELSER = readFileSync(path.join(MIG, "20261031020000_prismodel_rettelser.sql"), "utf8");
 const FIX = path.resolve(import.meta.dirname, "fixtures");
 
 // "create or replace function <start>..." til og med det afsluttende dollar-tag.
@@ -59,7 +63,11 @@ create table public.auctions (id uuid primary key default gen_random_uuid(), bru
   vinder_id uuid, status text not null default 'aktiv', slutter_kl timestamptz not null default now() + interval '1 day',
   pauset_kl timestamptz, skjult boolean default false, forsendelse_mulig boolean default true,
   afhentning_mulig boolean default false, erhverv boolean not null default false, startpris numeric default 1,
-  titel text, pakkestoerrelse text, fragt_pakkeshop_oere integer, fragt_doer_oere integer);
+  titel text, pakkestoerrelse text, fragt_pakkeshop_oere integer, fragt_doer_oere integer, "nuværende_bud" numeric);
+-- Som repoets naeste_bud_minimum (budstigningen forenklet til 1 kr.).
+create function public.naeste_bud_minimum(p_nuvaerende numeric, p_startpris numeric) returns numeric
+  language sql immutable as $$ select case when p_nuvaerende is null then greatest(ceil(coalesce(p_startpris, 0)), 3)
+                                           else p_nuvaerende + 1 end $$;
 -- Som auctions_fragt: en UPDATE uden ændret forsendelse/størrelse bevarer den låste pris.
 create function public.auctions_fragt() returns trigger language plpgsql as $$
 begin
@@ -101,6 +109,7 @@ create table public.betalinger (
   saelger_udbetaling_id uuid, overfoersel_paabegyndt_kl timestamptz, stripe_transfer_id text,
   refusion_anmodet_kl timestamptz, refusion_aarsag text, refusion_oere bigint, indsigelse_kl timestamptz,
   indsigelse_status text, frigivet_kl timestamptz, oprettet timestamptz default now(), opdateret timestamptz default now(),
+  midler_tilgaengelige_kl timestamptz, udbetal_tidligst timestamptz, kraever_opmaerksomhed boolean not null default false,
   constraint betalinger_total_stemmer check (total_oere = bud_oere + koebergebyr_oere + fragt_oere + beskyttelse_oere),
   constraint betalinger_beskyttelse_stemmer check (beskyttelse or beskyttelse_oere = 0),
   constraint betalinger_udbetaling_stemmer check (udbetaling_oere = bud_oere - saelgergebyr_oere),
@@ -164,11 +173,12 @@ async function nyAuktion(o: {
   stoerrelse?: string;
   bud?: number;
   koeber?: string;
+  saelger?: string;
 }): Promise<string> {
   const { id } = await en<{ id: string }>(
     `insert into public.auctions (bruger_id, forsendelse_mulig, erhverv, pakkestoerrelse, slutter_kl)
      values ($1, $2, $3, $4, now() - interval '1 minute') returning id`,
-    [SAELGER, o.forsendelse ?? true, o.erhverv ?? false, o.stoerrelse ?? "lille"],
+    [o.saelger ?? SAELGER, o.forsendelse ?? true, o.erhverv ?? false, o.stoerrelse ?? "lille"],
   );
   if (o.bud) {
     // Byderen vælger "Beskyttelse" - det skal ikke længere betyde noget.
@@ -219,6 +229,8 @@ beforeAll(async () => {
   );
   await db.exec(MIGRATION);
   await db.exec(MIGRATION);
+  await db.exec(RETTELSER);
+  await db.exec(RETTELSER);
 }, 60_000);
 
 describe("gebyrfunktionerne", () => {
@@ -285,6 +297,11 @@ describe("nye betalinger", () => {
     expect(Number(b.total_oere)).toBe(koeberTotalOere(10000, false, 4200));
     expect(Number(b.udbetaling_oere)).toBe(9000);
     expect(forventetTotalOere({ ...tal(b), prismodel: "ny" })).toBe(Number(b.total_oere));
+    // Forsvar i dybden (20261031020000, S4): et forkert sælgergebyr (eller
+    // købergebyr/Beskyttelse) giver null - så betales der ikke.
+    expect(forventetTotalOere({ ...tal(b), saelgergebyr_oere: Number(b.saelgergebyr_oere) + 1, prismodel: "ny" })).toBeNull();
+    expect(forventetTotalOere({ ...tal(b), koebergebyr_oere: Number(b.koebergebyr_oere) - 1, prismodel: "ny" })).toBeNull();
+    expect(forventetTotalOere({ ...tal(b), beskyttelse_oere: 2500, prismodel: "ny" })).toBeNull();
     // Application fee = købergebyr + sælgergebyr + fragt (CHECK betalinger_destination_gebyr_stemmer).
     await db.query(
       `update public.betalinger set application_fee_oere = koebergebyr_oere + saelgergebyr_oere + fragt_oere where id = $1`,
@@ -380,6 +397,7 @@ describe("nye betalinger", () => {
     const b = await en<Betaling>(`select * from public.betalinger where prismodel = 'gammel'`);
     expect([Number(b.koebergebyr_oere), Number(b.beskyttelse_oere), Number(b.total_oere)]).toEqual([5000, 5000, 114000]);
     expect(forventetTotalOere({ ...tal(b), prismodel: "gammel" })).toBe(114000);
+    expect(forventetTotalOere({ ...tal(b), saelgergebyr_oere: 4999, prismodel: "gammel" })).toBeNull();
     // Constrainterne er gyldige (også på de gamle rækker).
     const c = await db.query<{ conname: string; convalidated: boolean }>(
       `select conname, convalidated from pg_constraint where conname like 'betalinger_%_formel' order by 1`,
@@ -482,15 +500,29 @@ describe("fragt 42 / 52 / 67 kr.", () => {
 });
 
 describe("udbetaling hver 14. dag", () => {
-  async function frigivet(): Promise<string> {
-    const a = await nyAuktion({ bud: 500 });
+  async function frigivet(saelger = SAELGER, frigivetKl = "now()"): Promise<string> {
+    const a = await nyAuktion({ bud: 500, saelger });
     await db.query(`select public.afslut_udloebne_auktioner()`);
     const b = await betalingFor(a);
     await db.query(
-      `update public.betalinger set status = 'betalt', frigivet_kl = now(), saelger_stripe_konto = 'acct_test' where id = $1`,
+      `update public.betalinger set status = 'betalt', frigivet_kl = ${frigivetKl}, saelger_stripe_konto = 'acct_test',
+              midler_tilgaengelige_kl = now() - interval '1 hour' where id = $1`,
       [b.id],
     );
     return b.id;
+  }
+
+  type Claim = { kode: string; udbetaling_id?: string; naeste_kl?: string };
+  async function claim(saelger: string, betaling: string, koersel: string | null): Promise<Claim> {
+    const r = await en<{ r: Claim }>(
+      `select public.saelger_udbetaling_claim($1, 'acct_test', array[$2]::uuid[], $3::uuid) as r`,
+      [saelger, betaling, koersel],
+    );
+    return r.r;
+  }
+  // Som registrerOprettet (payouten er oprettet hos Stripe).
+  async function oprettet(id: string, oprettetKl = "now()"): Promise<void> {
+    await db.query(`update public.saelger_udbetalinger set status = 'oprettet', oprettet = ${oprettetKl} where id = $1`, [id]);
   }
 
   it("første udbetaling straks; derefter tidligst 14 dage efter den seneste", async () => {
@@ -521,12 +553,94 @@ describe("udbetaling hver 14. dag", () => {
     );
     expect(c3.r.kode).toBe("ok");
   });
+
+  it("samme kørsel fortsætter, til køen er tom; en anden kørsel og et kald uden kørsel afvises", async () => {
+    const S = "00000000-0000-4000-8000-0000000000b2";
+    const k1 = "00000000-0000-4000-8000-00000000c001";
+    const k2 = "00000000-0000-4000-8000-00000000c002";
+    const [b1, b2, b3, b4] = [await frigivet(S), await frigivet(S), await frigivet(S), await frigivet(S)];
+    const c1 = await claim(S, b1, k1);
+    expect(c1.kode).toBe("ok");
+    // Endnu ikke oprettet hos Stripe: en uafklaret claim stopper også samme kørsel.
+    expect((await claim(S, b2, k1)).kode).toBe("i_gang");
+    await oprettet(c1.udbetaling_id!, "now() - interval '10 minutes'");
+    const c2 = await claim(S, b2, k1);
+    expect(c2.kode).toBe("ok");
+    await oprettet(c2.udbetaling_id!);
+    // Andre kørsler (cron, webhook) og kald uden kørsel: intervallet gælder.
+    expect((await claim(S, b3, k2)).kode).toBe("interval");
+    expect((await claim(S, b3, null)).kode).toBe("interval");
+    // Kørslens første payout er over 1 time gammel: kørslen må ikke fortsætte.
+    await db.query(`update public.saelger_udbetalinger set oprettet = now() - interval '1 day' where id = $1`, [
+      c1.udbetaling_id,
+    ]);
+    expect((await claim(S, b3, k1)).kode).toBe("interval");
+    // Intervallet regnes fra kørslens FØRSTE payout (for 1 dag siden), ikke den seneste (nu).
+    const n = await en<{ dage: string }>(
+      `select round(extract(epoch from public.saelger_naeste_udbetaling_kl($1) - now()) / 86400) as dage`,
+      [S],
+    );
+    expect(Number(n.dage)).toBe(13);
+    await db.query(`update public.saelger_udbetalinger set oprettet = now() - interval '10 minutes' where id = $1`, [
+      c1.udbetaling_id,
+    ]);
+    const c3 = await claim(S, b3, k1);
+    expect(c3.kode).toBe("ok");
+    await oprettet(c3.udbetaling_id!);
+    // En payout fra en ANDEN kørsel inden for 14 dage: heller ikke samme kørsel må fortsætte.
+    await db.query(
+      `insert into public.saelger_udbetalinger (seller_id, stripe_konto, beloeb_oere, valuta, status, betaling_ids, oprettet)
+       values ($1, 'acct_test', 1, 'dkk', 'paid', '{}', now() - interval '13 days')`,
+      [S],
+    );
+    expect((await claim(S, b4, k1)).kode).toBe("interval");
+    expect((await en<{ u: string | null }>(`select saelger_udbetaling_id u from public.betalinger where id = $1`, [b4])).u).toBeNull();
+  });
+
+  it("højst 20 payouts pr. kørsel", async () => {
+    const S = "00000000-0000-4000-8000-0000000000b3";
+    const k = "00000000-0000-4000-8000-00000000c003";
+    await db.query(
+      `insert into public.saelger_udbetalinger (seller_id, stripe_konto, beloeb_oere, valuta, status, betaling_ids, koersel)
+       select $1, 'acct_test', 1, 'dkk', 'oprettet', '{}', $2::uuid from generate_series(1, 20)`,
+      [S, k],
+    );
+    expect((await claim(S, await frigivet(S), k)).kode).toBe("interval");
+    // 19: kørslen må lave den 20.
+    await db.query(
+      `update public.saelger_udbetalinger set status = 'failed' where id = (select id from public.saelger_udbetalinger where koersel = $1 limit 1)`,
+      [k],
+    );
+    expect((await claim(S, await frigivet(S), k)).kode).toBe("ok");
+  });
+
+  it("cron'ens liste: kun sælgere uden ventetid, ældste frigivelse først", async () => {
+    const nyS = "00000000-0000-4000-8000-0000000000b4";
+    const aeldreS = "00000000-0000-4000-8000-0000000000b5";
+    const ikkeKlarS = "00000000-0000-4000-8000-0000000000b6";
+    await frigivet(nyS, "now() - interval '1 day'");
+    await frigivet(aeldreS, "now() - interval '5 days'");
+    // Midlerne er ikke tilgængelige endnu: tæller ikke.
+    const ikkeKlar = await frigivet(ikkeKlarS);
+    await db.query(`update public.betalinger set midler_tilgaengelige_kl = now() + interval '1 day' where id = $1`, [ikkeKlar]);
+    const r = await db.query<{ seller_id: string }>(`select seller_id from public.saelgere_klar_til_udbetaling(500)`);
+    const liste = r.rows.map((x) => x.seller_id);
+    // b2 og b3 har ventetid (payouts inden for 14 dage).
+    expect(liste).not.toContain("00000000-0000-4000-8000-0000000000b2");
+    expect(liste).not.toContain("00000000-0000-4000-8000-0000000000b3");
+    expect(liste).not.toContain(ikkeKlarS);
+    expect(liste.indexOf(aeldreS)).toBeGreaterThanOrEqual(0);
+    expect(liste.indexOf(aeldreS)).toBeLessThan(liste.indexOf(nyS));
+    const en1 = await db.query<{ seller_id: string }>(`select seller_id from public.saelgere_klar_til_udbetaling(1)`);
+    expect(en1.rows.length).toBe(1);
+  });
 });
 
 function tal(b: Betaling) {
   return {
     bud_oere: Number(b.bud_oere),
     koebergebyr_oere: Number(b.koebergebyr_oere),
+    saelgergebyr_oere: Number(b.saelgergebyr_oere),
     fragt_oere: Number(b.fragt_oere),
     beskyttelse_oere: Number(b.beskyttelse_oere),
   };

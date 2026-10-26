@@ -63,8 +63,12 @@
 -- "ny" = efter rettelsen. Afviger kroppen, afbrydes migrationen (intet
 -- ændres).
 --
--- Idempotent (kan køres igen). Én transaktion. KØRES IKKE i produktion uden
--- Filips "ja".
+-- Idempotent (kan køres igen). Én transaktion: filen har bevidst ingen egen
+-- begin;/commit; (repoets mønster) - `npx supabase db query -f` kører den som
+-- én implicit transaktion, og prod-koersel/-filen har begin;/commit; omkring
+-- (se 20261031020000, S5). KØRES IKKE i produktion uden Filips "ja".
+-- Rettet af 20261031020000_prismodel_rettelser.sql (punkt 8: flere payouts i
+-- samme kørsel, så der ikke opstår efterslæb; cron'ens sælgerliste).
 
 set local lock_timeout = '5s';
 

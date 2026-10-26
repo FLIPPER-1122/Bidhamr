@@ -28,16 +28,22 @@ import "server-only";
 //   6. Claim i databasen (låser betalingerne og tjekker blokeringen igen
 //      under lås), derefter payouts.create med idempotency key
 //      bidhamr-payout-<udbetaling>-<forsøg>.
-// Flere handler samles i én payout pr. sælger pr. kørsel (højst 50).
+// Flere handler samles i én payout (højst 50). Har sælgeren flere klar, laver
+// samme kørsel en payout mere, til køen er tom (højst 20 pr. kørsel -
+// 20261031020000, B1).
 //
 // Udbetaling hver 14. dag (Filip, 26. okt. 2026 - 20261031010000): en sælger
 // får højst én payout pr. 14 dage, regnet fra hans seneste payout, der er
 // oprettet hos Stripe eller gennemført (fejlede/annullerede tæller ikke).
 // Første frigivne handel udbetales straks; handler frigivet inden for de 14
 // dage venter på sælgerens Stripe-konto og samles i næste payout (cron).
+// Gælder også firmaer (Filip, 26. okt. 2026).
 // Databasen afgør det under sælgerlåsen (saelger_udbetaling_claim -> kode
-// 'interval'); tjekket her (trin 1b) sparer kun Stripe-kaldene. Alle andre
-// værn er uændrede. Se docs/BETALINGSMODEL-PLAN.md 1.4a.
+// 'interval'); tjekket her (trin 1b) sparer kun Stripe-kaldene. Er der over
+// 50 handler klar, må den SAMME kørsel (p_koersel) lave flere payouts efter
+// hinanden, så der aldrig opstår et efterslæb; intervallet regnes fra
+// kørslens første payout. Alle andre værn er uændrede og tjekkes før hver
+// payout. Se docs/BETALINGSMODEL-PLAN.md 1.4a.
 //
 // Destination er den eneste model (trin 5): alt her virker kun på betalinger
 // med pengemodel 'destination'. Historiske rækker fra den gamle model
@@ -63,6 +69,13 @@ import {
 } from "@/lib/betaling/stripeBetaling";
 
 const MAKS_PR_UDBETALING = 50;
+// Højst så mange payouts i én kørsel (samme grænse i saelger_udbetaling_claim,
+// 20261031020000) og højst så mange kandidater set pr. kørsel (Stripe-kald).
+const MAKS_PAYOUTS_PR_KOERSEL = 20;
+const MAKS_GENNEMSET_PR_KOERSEL = 1000;
+// Højst så mange sælgere pr. cron-kørsel (saelgere_klar_til_udbetaling -
+// ældste frigivelse først; resten tages ved næste kørsel).
+const MAKS_SAELGERE_PR_CRON = 500;
 // En claimet/usikker udbetaling, der er rørt for nylig, kan have et kald i
 // gang hos Stripe (samme idempotency-nøgle) - den overtages først efter
 // dette. Langt over den længste kaldetid (PAYOUT_KALD: 2 x 30 s + backoff).
@@ -479,48 +492,101 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
   if (nFejl && !manglerIDatabasen(nFejl)) throw new Error(`saelger_naeste_udbetaling_kl: ${nFejl.message}`);
   if (typeof naeste === "string" && new Date(naeste).getTime() > Date.now()) return "interval";
 
-  // 2. Kandidater.
-  const { data: raekker, error: kFejl } = await admin
-    .from("betalinger")
-    .select("*")
-    .eq("seller_id", saelgerId)
-    .eq("pengemodel", "destination")
-    .eq("saelger_stripe_konto", konto)
-    .eq("status", "betalt")
-    .not("frigivet_kl", "is", null)
-    .is("saelger_udbetaling_id", null)
-    .is("refusion_anmodet_kl", null)
-    .eq("kraever_opmaerksomhed", false)
-    .order("frigivet_kl", { ascending: true })
-    .limit(MAKS_PR_UDBETALING)
-    .overrideTypes<BetalingRaekke[], { merge: false }>();
-  if (kFejl) throw new Error(`udbetalSaelger: ${kFejl.message}`);
-  const klar: BetalingRaekke[] = [];
-  for (const b of raekker ?? []) {
-    if ((await blokeret(admin, b.id)) !== null) continue;
-    // Har betalingen været med i en fejlet/annulleret udbetaling, skal Stripe
-    // bekræfte, at den payout virkelig ikke gik igennem - ellers ingen ny.
-    if (!(await tidligereUdbetalingBekraeftetFejlet(admin, b))) continue;
-    // 3. F03.
-    if ((await tjekFoerUdbetaling(b)) !== null) continue;
-    klar.push(b);
+  // 2-6. Én kørsel: payouts med højst MAKS_PR_UDBETALING handler hver, efter
+  // hinanden, til sælgerens kø er tom (20261031020000, B1). Databasen lader
+  // kun SAMME kørsel fortsætte inden for 14-dages-intervallet (claim med
+  // p_koersel); alle værn tjekkes igen før hver payout.
+  const koersel = crypto.randomUUID();
+  const sted: Kandidatsted = { efter: null, gennemset: 0 };
+  for (let runde = 0; runde < MAKS_PAYOUTS_PR_KOERSEL; runde++) {
+    let r: { resultat: string; flere: boolean };
+    try {
+      r = await udbetalPortion(admin, saelgerId, konto, koersel, sted);
+    } catch (err) {
+      if (runde === 0) throw err;
+      // En tidligere portion er sendt: den skal ikke skjules af en fejl i den
+      // næste (som prøves igen af cron'en).
+      await logDriftFejl({ kilde: "server", hvor: "betaling/udbetaling", fejl: err, brugerId: saelgerId });
+      return "udbetalt";
+    }
+    if (r.resultat !== "udbetalt") return runde === 0 ? r.resultat : "udbetalt";
+    if (!r.flere) return "udbetalt";
   }
-  if (!klar.length) return "intet";
+  return "udbetalt";
+}
+
+// Hvor langt kørslen er nået i sælgerens kandidater (frigivet_kl, id - samme
+// orden som forespørgslen), så en blokeret eller fravalgt handel ikke ses
+// igen i samme kørsel, og så blokerede handler forrest ikke skjuler resten.
+type Kandidatsted = { efter: { frigivetKl: string; id: string } | null; gennemset: number };
+
+// Én portion: kandidater -> F03 -> konto -> saldo-afstemning -> claim -> payout.
+// flere = portionen var fuld, så der kan ligge flere handler i køen.
+async function udbetalPortion(
+  admin: Admin,
+  saelgerId: string,
+  konto: string,
+  koersel: string,
+  sted: Kandidatsted,
+): Promise<{ resultat: string; flere: boolean }> {
+  // 2. Kandidater (ældste frigivelse først), side for side.
+  const klar: BetalingRaekke[] = [];
+  while (klar.length < MAKS_PR_UDBETALING && sted.gennemset < MAKS_GENNEMSET_PR_KOERSEL) {
+    let q = admin
+      .from("betalinger")
+      .select("*")
+      .eq("seller_id", saelgerId)
+      .eq("pengemodel", "destination")
+      .eq("saelger_stripe_konto", konto)
+      .eq("status", "betalt")
+      .not("frigivet_kl", "is", null)
+      .is("saelger_udbetaling_id", null)
+      .is("refusion_anmodet_kl", null)
+      .eq("kraever_opmaerksomhed", false);
+    if (sted.efter) {
+      const t = sted.efter.frigivetKl;
+      q = q.or(`frigivet_kl.gt."${t}",and(frigivet_kl.eq."${t}",id.gt.${sted.efter.id})`);
+    }
+    const { data: side, error: kFejl } = await q
+      .order("frigivet_kl", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(MAKS_PR_UDBETALING)
+      .overrideTypes<BetalingRaekke[], { merge: false }>();
+    if (kFejl) throw new Error(`udbetalSaelger: ${kFejl.message}`);
+    const raekker = side ?? [];
+    let i = 0;
+    for (; i < raekker.length && klar.length < MAKS_PR_UDBETALING && sted.gennemset < MAKS_GENNEMSET_PR_KOERSEL; i++) {
+      const b = raekker[i];
+      sted.efter = { frigivetKl: b.frigivet_kl as string, id: b.id };
+      sted.gennemset++;
+      if ((await blokeret(admin, b.id)) !== null) continue;
+      // Har betalingen været med i en fejlet/annulleret udbetaling, skal Stripe
+      // bekræfte, at den payout virkelig ikke gik igennem - ellers ingen ny.
+      if (!(await tidligereUdbetalingBekraeftetFejlet(admin, b))) continue;
+      // 3. F03.
+      if ((await tjekFoerUdbetaling(b)) !== null) continue;
+      klar.push(b);
+    }
+    // Hele siden er set, og den var ikke fuld: køen er tom.
+    if (i === raekker.length && raekker.length < MAKS_PR_UDBETALING) break;
+  }
+  if (!klar.length) return { resultat: "intet", flere: false };
 
   // 4. Kontoen frisk.
   let stripeKonto: Stripe.Account;
   try {
     stripeKonto = await getStripe().accounts.retrieve(konto);
   } catch (err) {
-    if (err instanceof Stripe.errors.StripePermissionError) return "konto_ingen_adgang";
+    if (err instanceof Stripe.errors.StripePermissionError) return { resultat: "konto_ingen_adgang", flere: false };
     throw err;
   }
   await spejlConnectKonto(stripeKonto);
   if (!stripeKonto.payouts_enabled || stripeKonto.settings?.payouts?.schedule?.interval !== "manual") {
-    return "konto_ikke_klar";
+    return { resultat: "konto_ikke_klar", flere: false };
   }
 
-  // 5. Saldo-afstemning.
+  // 5. Saldo-afstemning (frisk før hver portion - den forrige payout har
+  // trukket fra saldoen).
   const saldo = await getStripe().balance.retrieve({}, { stripeAccount: konto });
   const tilgaengelig = dkk(saldo.available, true);
   const iAlt = dkk(saldo.available, false) + dkk(saldo.pending, false);
@@ -534,7 +600,7 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
       fejl: `Saldo-afstemning: sælgerkonto ${konto} har mindre på saldoen (tilgængelig + afventende) end de betalte, ikke-udbetalte handler kræver. Udbetalinger til sælgeren er stoppet - kontrollér kontoen i Stripe.`,
       brugerId: saelgerId,
     });
-    return "saldo_afviger";
+    return { resultat: "saldo_afviger", flere: false };
   }
   await lukTilfaelde(`saldo:${konto}`);
   const valgte: BetalingRaekke[] = [];
@@ -554,24 +620,27 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
   } else {
     await lukTilfaelde(`saldo-tilgaengelig:${konto}`);
   }
-  if (!valgte.length) return "venter_saldo";
+  if (!valgte.length) return { resultat: "venter_saldo", flere: false };
+  // Saldoen dækkede ikke alt: ingen flere portioner i denne kørsel.
+  const flere = klar.length >= MAKS_PR_UDBETALING && valgte.length === klar.length;
 
   // 6. Claim og payout.
   const { data: claim, error: cFejl } = await admin.rpc("saelger_udbetaling_claim", {
     p_saelger: saelgerId,
     p_konto: konto,
     p_betalinger: valgte.map((b) => b.id),
+    p_koersel: koersel,
   });
   if (cFejl) throw new Error(`saelger_udbetaling_claim: ${cFejl.message}`);
   const c = claim as { kode: string; udbetaling_id?: string; beloeb_oere?: number };
-  if (c.kode !== "ok" || !c.udbetaling_id) return c.kode;
+  if (c.kode !== "ok" || !c.udbetaling_id) return { resultat: c.kode, flere: false };
   if (Number(c.beloeb_oere) > tilgaengelig) {
     await admin.rpc("saelger_udbetaling_afvist", {
       p_udbetaling: c.udbetaling_id,
       p_fejl: "Saldoen dækkede ikke beløbet ved claim",
       p_marker: false,
     });
-    return "venter_saldo";
+    return { resultat: "venter_saldo", flere: false };
   }
   const { data: u, error: hFejl } = await admin
     .from("saelger_udbetalinger")
@@ -579,7 +648,7 @@ export async function udbetalSaelger(saelgerId: string): Promise<string> {
     .eq("id", c.udbetaling_id)
     .single<UdbetalingRaekke>();
   if (hFejl || !u) throw new Error(`saelger_udbetalinger: ${hFejl?.message}`);
-  return opretPayout(admin, u);
+  return { resultat: await opretPayout(admin, u), flere };
 }
 
 // En ældre claim er blokeret, før den er sendt (igen). Den frigøres kun, når
@@ -946,26 +1015,16 @@ export async function udbetalVentende(saelgerId?: string): Promise<number> {
   if (saelgerId) {
     saelgere.add(saelgerId);
   } else {
-    const nu = new Date().toISOString();
-    const { data, error } = await admin
-      .from("betalinger")
-      .select("seller_id")
-      .eq("pengemodel", "destination")
-      .eq("status", "betalt")
-      .not("frigivet_kl", "is", null)
-      .is("saelger_udbetaling_id", null)
-      .is("refusion_anmodet_kl", null)
-      .eq("kraever_opmaerksomhed", false)
-      .lte("midler_tilgaengelige_kl", nu)
-      .or(`udbetal_tidligst.is.null,udbetal_tidligst.lte."${nu}"`)
-      .limit(1000);
+    // Distinkte sælgere, der er klar (frigivne, ublokerede handler og intet
+    // 14-dages-interval), ældste frigivelse først (20261031020000, B2).
+    const { data, error } = await admin.rpc("saelgere_klar_til_udbetaling", { p_graense: MAKS_SAELGERE_PR_CRON });
     if (error) {
       // Migrationen er ikke kørt endnu (kolonne/funktion mangler): ingen alarm.
       if (manglerIDatabasen(error)) return 0;
       await logDriftFejl({ kilde: "cron", sti: "betalings-cron", hvor: "Udbetaling til sælger", fejl: error });
       return 0;
     }
-    for (const r of data ?? []) saelgere.add(r.seller_id as string);
+    for (const r of (data ?? []) as { seller_id: string }[]) saelgere.add(r.seller_id);
     const { data: uaf, error: uafFejl } = await admin
       .from("saelger_udbetalinger")
       .select("seller_id")

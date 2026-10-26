@@ -14,6 +14,7 @@ import { logIndSom } from "./session";
 import {
   betaling,
   forberedSaelger,
+  forventet,
   fuldRefusion,
   leverBetalingsWebhooks,
   opretHandel,
@@ -31,6 +32,9 @@ vi.mock("next/headers", () => ({
 
 let h: TestHandel;
 let konto: string;
+// Bud 300 kr.: købergebyr 7 % + 5 = 26 kr., sælgergebyr 5 % + 5 = 20 kr.,
+// fragt 42 kr. -> total 368 kr., gebyr 88 kr.
+const X = forventet(30_000);
 
 async function token(b: PengeBruger): Promise<string> {
   const k = await logIndSom(b.id, b.email);
@@ -99,8 +103,9 @@ describe("appens betalings-endpoints", () => {
   it("betal: destination charge, application fee, 3DS, metadata - og samme PaymentIntent igen", async () => {
     const s = await kald("betal", { trade_id: h.tradeId }, KOEBER);
     expect(s.status).toBe(200);
-    // bud 300 + købergebyr 15 + fragt 40 = 355 kr.
-    expect(s.body.totalOere).toBe(35_500);
+    // bud 300 + gebyr 26 + fragt 42 = 368 kr.
+    expect(X.total).toBe(36_800);
+    expect(s.body.totalOere).toBe(X.total);
     expect(String(s.body.publishableKey)).toMatch(/^pk_test_/);
     expect(String(s.body.customerId)).toMatch(/^cus_/);
     // Gemt kort: kun en kundesession (forudfylder) - ingen ephemeral key.
@@ -110,8 +115,9 @@ describe("appens betalings-endpoints", () => {
     const pi = await stripe().paymentIntents.retrieve(id);
     expect(pi.on_behalf_of).toBe(konto);
     expect(pi.transfer_data?.destination).toBe(konto);
-    // købergebyr 15 + sælgergebyr 15 + fragt 40
-    expect(pi.application_fee_amount).toBe(7_000);
+    // købergebyr 26 + sælgergebyr 20 + fragt 42
+    expect(X.gebyr).toBe(8_800);
+    expect(pi.application_fee_amount).toBe(X.gebyr);
     expect(pi.customer).toBe(s.body.customerId);
     expect(pi.setup_future_usage ?? null).toBeNull();
     expect(pi.metadata.handel_id).toBe(h.tradeId);
