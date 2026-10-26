@@ -24,6 +24,13 @@ export const ADMIN_FIRMA = {
     opsigesFra: (d: string) => `Stopper ${d}`,
     eksklMoms: "ekskl. moms",
     brugtAf: (brugt: number, max: number) => `${brugt} af ${max}`,
+    brugtUbegraenset: (brugt: number) => `${brugt} (ubegrænset)`,
+    ekstra: (n: number) => `heraf ${n} ekstra fra BidHamr`,
+    gratisTil: (d: string) => `Gratis til ${d}`,
+    derefter: (kr: string) => `Derefter ${kr} ekskl. moms`,
+    medIntro: (pct: number) => `med ${pct} % introrabat`,
+    gratisVedStart: (n: number) =>
+      n === 1 ? "1 gratis måned, når firmaet betaler" : `${n} gratis måneder, når firmaet betaler`,
   },
 
   kraever: {
@@ -51,6 +58,8 @@ export const ADMIN_FIRMA = {
     sendVelkomst: "Send velkomstmail igen",
     velkomstSendt: "Velkomstmailen er sendt igen.",
     seUgensButik: "Se Ugens butik",
+    kortUdloeber: (kort: string) => `Firmaets betalingskort (${kort}) udløber snart.`,
+    sendKortMail: "Send mail om nyt kort",
   },
 
   hurtig: {
@@ -61,16 +70,88 @@ export const ADMIN_FIRMA = {
       under: "Gælder med det samme",
       dialog: "Skift pakke",
       forklaring:
-        "Pakken skifter med det samme. Har firmaet et abonnement i Stripe, gælder den nye pris fra firmaets næste betaling. En evt. forskel for denne periode aftaler du med firmaet.",
+        "Pakken skifter med det samme. Har firmaet et abonnement i Stripe, gælder den nye pris fra firmaets næste betaling. En evt. forskel for denne periode aftaler du med firmaet. Firmaet får en mail.",
       nu: "nu",
       prisIkkeSat: "pris ikke sat",
-      // Auktioner pr. måned (0 = ubegrænset) - pakkerne fra 26. okt. 2026.
-      pr: (n: number) => (n === 0 ? "ubegrænset antal auktioner" : `${n} auktion${n === 1 ? "" : "er"} pr. måned`),
+      // Auktioner pr. måned (null = ubegrænset) - pakkerne fra 26. okt. 2026.
+      pr: (n: number | null) => (n == null ? "ubegrænset antal auktioner" : `${n} auktion${n === 1 ? "" : "er"} pr. måned`),
       eksklMoms: (kr: string) => `${kr} pr. måned ekskl. moms`,
       skjult: "skjult",
-      note: "Note til loggen (valgfri)",
+      fremh: (n: number) => (n === 0 ? "ingen fremhævninger" : `${n} fremhævninger pr. måned`),
+      saerprisBortfalder: "Firmaet har en særpris. Den bortfalder, når pakken skiftes.",
+      begrundelse: "Begrundelse (gemmes i loggen)",
+      begrundelsePladsholder: "Fx aftalt med ejeren i telefonen",
       bekraeft: "Skift pakke",
       skiftet: "Pakken er skiftet.",
+    },
+    gratis: {
+      titel: "Gratis periode",
+      dialog: "Giv gratis måneder",
+      forklaring:
+        "Er firmaet i sin gratis periode, forlænges den. Ellers starter de gratis måneder, når den betalte periode slutter. Firmaet får en mail.",
+      under: (til: string | null, vedStart: number) =>
+        til ? `Gratis til ${til}` : vedStart > 0 ? `${vedStart} gratis ved start` : "Ingen gratis periode nu",
+      antal: "Antal måneder",
+      maaned: (n: number) => (n === 1 ? "1 måned" : `${n} måneder`),
+      begrundelsePladsholder: "Fx kompensation for nedetid 3/11",
+      bekraeft: "Giv gratis måneder",
+    },
+    intro: {
+      titel: "Introrabat",
+      dialog: "Introrabat",
+      forklaring:
+        "Rabatten trækkes fra på firmaets regninger. Den gælder hele beløbet ekskl. moms. Firmaet får en mail.",
+      under: (pct: number | null, mdr: number | null, tilstand: "planlagt" | "koerer" | "slut" | null) =>
+        pct == null || mdr == null
+          ? "Ingen"
+          : `${pct} % i ${mdr} mdr. (${tilstand === "koerer" ? "kører" : tilstand === "slut" ? "slut" : "planlagt"})`,
+      nu: (pct: number, mdr: number, fra: string, til: string | null) =>
+        `Nu: ${pct} % i ${mdr} måneder ${fra === "straks" ? "fra start" : "efter den gratis periode"}${til ? ` – til ${til}` : ""}`,
+      saet: "Sæt eller ret introrabat",
+      fjern: "Fjern introrabatten",
+      fjernInfo: "Fra næste regning betaler firmaet den almindelige pris.",
+      procent: "Rabat i procent (1-100)",
+      maaneder: "Antal måneder (1-24)",
+      fraEfterGratis: "Efter den gratis periode (standard)",
+      fraStraks: "Fra nu – en gratis periode bruger af månederne",
+      ugyldig: "Skriv hele tal: 1-100 % og 1-24 måneder.",
+      begrundelsePladsholder: "Fx Filip har ringet til firmaet",
+      bekraeft: "Gem introrabat",
+      bekraeftFjern: "Fjern introrabat",
+    },
+    saerpris: {
+      titel: "Særpris",
+      dialog: "Særpris for firmaet",
+      forklaring:
+        "En fast månedspris ekskl. moms for firmaets nuværende pakke. Den bortfalder, hvis pakken skiftes. Firmaet får en mail.",
+      under: (saerpris: string | null) => (saerpris ? `${saerpris} ekskl. moms` : "Ingen – pakkens pris"),
+      pakkensPris: (navn: string, kr: string) => `Pakkens pris: ${navn} ${kr} pr. måned ekskl. moms`,
+      nu: (kr: string) => `Nu: særpris ${kr} pr. måned ekskl. moms`,
+      saet: "Sæt eller ret særpris",
+      fjern: "Fjern særprisen – brug pakkens pris",
+      pris: "Pris pr. måned ekskl. moms (hele kroner)",
+      inklMoms: (kr: string) => `${kr} inkl. moms`,
+      fraNaeste: "Fra firmaets næste betaling (standard)",
+      fraStraks: "Fra i dag – forskellen for resten af perioden kommer på næste regning",
+      ugyldig: "Skriv prisen i hele kroner, mindst 1 kr.",
+      aftale: "Aftalen (gemmes i loggen – kun for staff)",
+      aftalePladsholder: "Fx aftalt med Hans 26/10: 2 års binding",
+      bekraeft: "Gem særpris",
+      bekraeftFjern: "Fjern særpris",
+    },
+    ekstra: {
+      auktionerTitel: "Ekstra auktioner",
+      fremhTitel: "Ekstra fremhævninger",
+      auktionerDialog: "Ekstra auktioner i denne måned",
+      fremhDialog: "Ekstra fremhævninger i denne måned",
+      forklaring:
+        "Gælder kun den indeværende kalendermåned (nulstilles den 1.). Skriv et minus for at trække fra.",
+      under: (n: number) => (n === 0 ? "Ingen ekstra i denne måned" : `${n} ekstra i denne måned`),
+      ubegraenset: "Pakken har ubegrænset antal auktioner",
+      antal: "Antal (fx 5 eller -2)",
+      ugyldig: "Skriv et helt tal, der ikke er 0.",
+      begrundelsePladsholder: "Fx julesalg – aftalt med ejeren",
+      bekraeft: "Gem",
     },
     status: {
       titel: "Pause, genaktivér eller opsig",
@@ -164,10 +245,50 @@ export const ADMIN_FIRMA = {
     ingen: "Ingen",
     stripeTitel: "Betaling (Stripe)",
     retPriser: "Ret pakkernes standardpriser",
+    prisTitel: "Pris og rabat",
+    firmaetBetaler: "Firmaet betaler",
+    prisPrMaaned: (kr: string) => `${kr} pr. måned ekskl. moms`,
+    saerpris: "Særpris",
+    saerprisAftale: "Aftale",
+    introrabat: "Introrabat",
+    introTekst: (pct: number, mdr: number, fra: string) =>
+      `${pct} % i ${mdr} ${mdr === 1 ? "måned" : "måneder"} ${fra === "straks" ? "fra start" : "efter den gratis periode"}`,
+    introStatus: (tilstand: "planlagt" | "koerer" | "slut", til: string | null) =>
+      tilstand === "koerer"
+        ? `Kører – til ${til}`
+        : tilstand === "slut"
+          ? `Slut ${til}`
+          : "Planlagt – kommer på, når abonnementet kører",
+    gratis: "Gratis periode",
+    gratisTil: (d: string) => `Til ${d}`,
+    gratisBrugt: "Brugt",
+    gratisVedStart: (n: number) => (n === 1 ? "1 måned, når firmaet betaler" : `${n} måneder, når firmaet betaler`),
+    kortTitel: "Betalingskort",
+    kort: (maerke: string | null, sidste4: string) => `${maerke ? `${maerke.toUpperCase()} ` : ""}•••• ${sidste4}`,
+    kortUdloeb: "Udløber",
+    kortUdloeberSnart: "Udløber snart",
+    ingenKort: "Firmaet har ikke givet et kort endnu.",
   },
 
   kvoter: {
     auktionerTitel: "Auktioner denne måned",
+    pakken: "Pakken",
+    ekstra: "Ekstra fra BidHamr",
+    iAlt: "I alt",
+    ubegraenset: "Ubegrænset",
+    fremhTitel: "Fremhævninger denne måned",
+    fremhTilbage: "Tilbage",
+    fremhListe: "Seneste fremhævninger",
+    ingenFremh: "Firmaet har ikke fremhævet auktioner endnu.",
+    fremhAktiv: (til: string) => `Fremhævet til ${til}`,
+    fremhSlut: (til: string) => `Sluttede ${til}`,
+    fremhStoppet: (kl: string, tilbage: boolean) => `Stoppet ${kl}${tilbage ? " – givet tilbage" : ""}`,
+    fremhFejl: "Fremhævningerne kunne ikke hentes. Prøv at genindlæse siden.",
+    stop: "Stop",
+    stopTitel: "Stop fremhævningen?",
+    stopTekst: "Auktionen er ikke længere øverst i kategori og søgning, og mærket \"Annonce\" forsvinder.",
+    stopTilbage: "Giv fremhævningen tilbage til firmaets kvote i denne måned",
+    stopBekraeft: "Stop fremhævningen",
     brugt: "Brugt",
     nulstilles: (d: string) => `Nulstilles ${d}.`,
     alleOptaget: "Firmaet har brugt alle månedens auktioner.",
@@ -261,7 +382,13 @@ export const ADMIN_FIRMA = {
     } as Record<string, string>,
     pdf: "PDF",
     se: "Se",
-    refusionAbonnement: "Abonnementsregninger kan endnu ikke refunderes her.",
+    refusionAbonnement: "En betalt regning kan refunderes helt (ingen delvis refusion). Abonnementet fortsætter.",
+    refunder: "Refundér",
+    refunderTitel: "Refundér regningen?",
+    refunderTekst: (kr: string) =>
+      `Hele beløbet (${kr} inkl. moms) sendes tilbage til firmaets kort, og der laves en kreditnota i Stripe. Abonnementet fortsætter. Det kan ikke fortrydes.`,
+    refunderBegrundelsePladsholder: "Fx dobbelt betaling – aftalt med ejeren",
+    refunderBekraeft: "Refundér hele beløbet",
     fejl: "Regningerne kunne ikke hentes. Prøv at genindlæse siden.",
   },
 

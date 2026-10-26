@@ -271,8 +271,25 @@ export type FirmaAuktioner = {
   }[];
 };
 
-// firma_statistik()
+// firma_fremhaevninger()
+export type FirmaFremhaevninger = {
+  kvote: FremhaevningKvote;
+  naeste_maaned: string;
+  fremhaevninger: {
+    id: string;
+    auktion_id: string;
+    titel: string;
+    start_kl: string;
+    slut_kl: string;
+    stoppet_kl: string | null;
+    aktiv: boolean;
+  }[];
+};
+
+// firma_statistik(). niveau efter pakken: 'ingen' (tomme lister),
+// 'statistik' (kun maaneder) eller 'fuld' (også auktioner).
 export type FirmaStatistik = {
+  niveau?: "ingen" | "statistik" | "fuld";
   // maaned: "2026-10"
   maaneder: { maaned: string; visninger: number; bud: number; solgte: number; omsaetning: number }[];
   auktioner: {

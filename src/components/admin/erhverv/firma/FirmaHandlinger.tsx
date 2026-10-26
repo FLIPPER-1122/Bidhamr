@@ -24,10 +24,23 @@ import {
   bookUgensButikAction,
   saetUgensButikFirmaRabatAction,
 } from "@/app/actions/adminUgensButik";
+import {
+  fjernFirmaIntrorabat,
+  givFirmaEkstraAuktioner,
+  givFirmaEkstraFremhaevninger,
+  givFirmaGratisPeriode,
+  refunderFirmaRegning,
+  saetFirmaIntrorabat,
+  saetFirmaSaerpris,
+  sendFirmaNytKortMail,
+  skiftFirmaPakkeAdmin,
+  stopFirmaFremhaevning,
+} from "@/app/actions/adminErhvervAbonnement";
 import { ADMIN_FIRMA as T } from "@/lib/tekster/adminFirma";
 import { ABONNEMENT_STATUS_NAVN, type AbonnementStatus } from "@/lib/erhverv/regler";
-import { kr, krFraOere } from "@/lib/erhverv/visning";
-import { KORT, mandag } from "@/components/admin/erhverv/firma/stil";
+import { BEGRUNDELSE, GRATIS_MAANEDER_MAKS, INTRO_GRAENSER, INTRO_STANDARD } from "@/lib/erhverv/abonnementRegler";
+import { kr, krFraOere, langDato } from "@/lib/erhverv/visning";
+import { KORT, introTilstand, mandag, oereInklMoms } from "@/components/admin/erhverv/firma/stil";
 
 const FELT =
   "mt-1.5 w-full border border-kant-staerk bg-white px-3 py-2.5 text-base text-tekst focus:border-groen focus:outline-2 focus:outline-groen/25 sm:text-sm";
@@ -113,12 +126,14 @@ function Begrundelse({
 
 export function EtKlikKnap({
   firmaId,
+  handling,
   label,
   className = "btn btn-primaer btn-lille",
 }: {
   firmaId: string;
   // Genaktivér har sin egen dialog med begrundelse (GenaktiverKnap).
-  handling: "gensendVelkomst";
+  // kortMail: mail til firmaet om at skifte betalingskort.
+  handling: "gensendVelkomst" | "kortMail";
   label: string;
   className?: string;
 }) {
@@ -128,6 +143,16 @@ export function EtKlikKnap({
   function koer() {
     setFejl(null);
     start(async () => {
+      if (handling === "kortMail") {
+        const svar = await sendFirmaNytKortMail(firmaId);
+        if ("fejl" in svar) {
+          setFejl(svar.fejl);
+          return;
+        }
+        visKvittering(svar.besked);
+        router.refresh();
+        return;
+      }
       const svar = await gensendFirmaVelkomst(firmaId);
       if ("fejl" in svar) {
         setFejl(svar.fejl);
@@ -189,52 +214,454 @@ export type PakkeValg = {
   id: string;
   navn: string;
   maanedspris: number | null;
-  auktioner_pr_uge: number;
+  auktioner_pr_maaned: number | null;
+  ubegraenset: boolean;
+  fremhaevninger_pr_maaned: number;
   aktiv: boolean;
+  arkiveret: boolean;
 };
 
-export function SkiftPakkeKort({ firmaId, pakkeId, pakker }: { firmaId: string; pakkeId: string; pakker: PakkeValg[] }) {
+// Begrundelsen skal være 3-500 tegn (adminErhvervAbonnement.ts).
+function begrundelseOk(v: string): boolean {
+  const n = v.trim().replace(/\s+/g, " ").length;
+  return n >= BEGRUNDELSE.min && n <= BEGRUNDELSE.maks;
+}
+
+function Info({ children }: { children: ReactNode }) {
+  return <p className="bg-groen-lys px-3 py-2 text-sm text-groen-mork">{children}</p>;
+}
+
+function FeltFejl({ children }: { children: ReactNode }) {
+  return <p className="mt-1 text-xs font-medium text-fejl-tekst">{children}</p>;
+}
+
+function TalFelt({
+  label,
+  value,
+  onChange,
+  fortegn = false,
+  ugyldig,
+  hjaelp,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  // Tillad minus (ekstra auktioner kan trækkes fra).
+  fortegn?: boolean;
+  ugyldig?: boolean;
+  hjaelp?: string;
+}) {
+  const id = useId();
+  return (
+    <div>
+      <label htmlFor={id} className={LABEL}>
+        {label}
+      </label>
+      <input
+        id={id}
+        inputMode={fortegn ? "text" : "numeric"}
+        value={value}
+        aria-invalid={ugyldig || undefined}
+        aria-describedby={hjaelp ? `${id}-h` : undefined}
+        onChange={(e) => onChange(e.target.value.replace(fortegn ? /[^\d-]/g : /\D/g, "").slice(0, 7))}
+        className={FELT}
+      />
+      {hjaelp && (
+        <p id={`${id}-h`} className="mt-1 text-xs text-tekst-daempet">
+          {hjaelp}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function SkiftPakkeKort({
+  firmaId,
+  pakkeId,
+  pakker,
+  harSaerpris,
+}: {
+  firmaId: string;
+  pakkeId: string;
+  pakker: PakkeValg[];
+  harSaerpris: boolean;
+}) {
   const router = useRouter();
+  const P = T.hurtig.pakke;
   const [valgt, setValgt] = useState(pakkeId);
-  const [note, setNote] = useState("");
-  // Skjulte pakker kan ikke vælges - undtagen firmaets nuværende.
-  const valg = pakker.filter((p) => p.aktiv || p.id === pakkeId);
+  const [grund, setGrund] = useState("");
+  // Skjulte og arkiverede pakker kan ikke vælges - undtagen firmaets nuværende.
+  const valg = pakker.filter((p) => (p.aktiv && !p.arkiveret) || p.id === pakkeId);
   return (
     <BekraeftDialog
       triggerClassName={KORT}
-      triggerIcon={<KortTitel>{T.hurtig.pakke.titel}</KortTitel>}
-      triggerLabel={T.hurtig.pakke.under}
-      title={T.hurtig.pakke.dialog}
-      description={T.hurtig.pakke.forklaring}
-      confirmLabel={T.hurtig.pakke.bekraeft}
-      confirmDisabled={valgt === pakkeId}
+      triggerIcon={<KortTitel>{P.titel}</KortTitel>}
+      triggerLabel={P.under}
+      title={P.dialog}
+      description={P.forklaring}
+      confirmLabel={P.bekraeft}
+      confirmDisabled={valgt === pakkeId || !begrundelseOk(grund)}
       onConfirm={async () => {
-        const svar = await opdaterFirma({ firmaId, pakkeId: valgt, note: note.trim() || null });
+        const svar = await skiftFirmaPakkeAdmin({ firmaId, pakkeId: valgt, begrundelse: grund });
         if ("fejl" in svar) return { fejl: svar.fejl };
-        visKvittering(svar.besked ?? T.hurtig.pakke.skiftet);
+        visKvittering(svar.besked);
       }}
       onSuccess={() => {
-        setNote("");
+        setGrund("");
         router.refresh();
       }}
     >
       <div className="space-y-3">
         <fieldset className="space-y-2">
-          <legend className="sr-only">{T.hurtig.pakke.titel}</legend>
+          <legend className="sr-only">{P.titel}</legend>
           {valg.map((p) => (
             <Valg key={p.id} name="pakke" value={p.id} valgt={valgt} onVaelg={setValgt}>
               <span className="font-semibold">{p.navn}</span>
-              {p.id === pakkeId && <span className="text-tekst-daempet"> ({T.hurtig.pakke.nu})</span>}
-              {!p.aktiv && <span className="text-tekst-daempet"> – {T.hurtig.pakke.skjult}</span>}
+              {p.id === pakkeId && <span className="text-tekst-daempet"> ({P.nu})</span>}
+              {(!p.aktiv || p.arkiveret) && <span className="text-tekst-daempet"> – {P.skjult}</span>}
               <span className="block text-tekst-daempet">
-                {p.maanedspris == null ? T.hurtig.pakke.prisIkkeSat : T.hurtig.pakke.eksklMoms(kr(p.maanedspris))} ·{" "}
-                {T.hurtig.pakke.pr(p.auktioner_pr_uge)}
+                {p.maanedspris == null ? P.prisIkkeSat : P.eksklMoms(kr(p.maanedspris))} ·{" "}
+                {P.pr(p.ubegraenset ? null : p.auktioner_pr_maaned)} · {P.fremh(p.fremhaevninger_pr_maaned)}
               </span>
             </Valg>
           ))}
         </fieldset>
-        <Begrundelse value={note} onChange={setNote} label={T.hurtig.pakke.note} paakraevet={false} />
+        {harSaerpris && valgt !== pakkeId && <Info>{P.saerprisBortfalder}</Info>}
+        <Begrundelse value={grund} onChange={setGrund} label={P.begrundelse} pladsholder={P.begrundelsePladsholder} />
       </div>
+    </BekraeftDialog>
+  );
+}
+
+// --- Gratis periode ----------------------------------------------------------------
+
+export function GratisPeriodeKort({ firmaId, gratisTil, vedStart }: { firmaId: string; gratisTil: string | null; vedStart: number }) {
+  const router = useRouter();
+  const G = T.hurtig.gratis;
+  const [maaneder, setMaaneder] = useState("1");
+  const [grund, setGrund] = useState("");
+  return (
+    <BekraeftDialog
+      triggerClassName={KORT}
+      triggerIcon={<KortTitel>{G.titel}</KortTitel>}
+      triggerLabel={G.under(gratisTil, vedStart)}
+      title={G.dialog}
+      description={G.forklaring}
+      confirmLabel={G.bekraeft}
+      confirmDisabled={!begrundelseOk(grund)}
+      onConfirm={async () => {
+        const svar = await givFirmaGratisPeriode({ firmaId, maaneder: Number(maaneder), begrundelse: grund });
+        if ("fejl" in svar) return { fejl: svar.fejl };
+        visKvittering(svar.besked);
+      }}
+      onSuccess={() => {
+        setGrund("");
+        setMaaneder("1");
+        router.refresh();
+      }}
+    >
+      <div className="space-y-3">
+        {gratisTil && <Info>{T.status.gratisTil(gratisTil)}</Info>}
+        <fieldset className="space-y-2">
+          <legend className={LABEL}>{G.antal}</legend>
+          {Array.from({ length: GRATIS_MAANEDER_MAKS }, (_, i) => String(i + 1)).map((v) => (
+            <Valg key={v} name="gratis" value={v} valgt={maaneder} onVaelg={setMaaneder}>
+              {G.maaned(Number(v))}
+            </Valg>
+          ))}
+        </fieldset>
+        <Begrundelse value={grund} onChange={setGrund} label={T.hurtig.status.begrundelse} pladsholder={G.begrundelsePladsholder} />
+      </div>
+    </BekraeftDialog>
+  );
+}
+
+// --- Introrabat ----------------------------------------------------------------------
+
+export type IntroTilstand = {
+  procent: number;
+  maaneder: number;
+  fra: "efter_gratis" | "straks";
+  status: "planlagt" | "aktiv";
+  til: string | null;
+} | null;
+
+export function IntrorabatKort({ firmaId, intro }: { firmaId: string; intro: IntroTilstand }) {
+  const router = useRouter();
+  const I = T.hurtig.intro;
+  const [valg, setValg] = useState<"saet" | "fjern">("saet");
+  const [procent, setProcent] = useState(String(intro?.procent ?? INTRO_STANDARD.procent));
+  const [maaneder, setMaaneder] = useState(String(intro?.maaneder ?? INTRO_STANDARD.maaneder));
+  const [fra, setFra] = useState<"efter_gratis" | "straks">(intro?.fra ?? "efter_gratis");
+  const [grund, setGrund] = useState("");
+  const p = Number(procent);
+  const m = Number(maaneder);
+  const gyldig =
+    valg === "fjern" ||
+    (/^\d+$/.test(procent) && /^\d+$/.test(maaneder) &&
+      p >= INTRO_GRAENSER.procentMin && p <= INTRO_GRAENSER.procentMaks &&
+      m >= INTRO_GRAENSER.maanederMin && m <= INTRO_GRAENSER.maanederMaks);
+  return (
+    <BekraeftDialog
+      triggerClassName={KORT}
+      triggerIcon={<KortTitel>{I.titel}</KortTitel>}
+      triggerLabel={I.under(intro?.procent ?? null, intro?.maaneder ?? null, intro ? introTilstand(intro.til) : null)}
+      title={I.dialog}
+      description={I.forklaring}
+      confirmLabel={valg === "fjern" ? I.bekraeftFjern : I.bekraeft}
+      confirmDisabled={!gyldig || !begrundelseOk(grund)}
+      onConfirm={async () => {
+        const svar =
+          valg === "fjern"
+            ? await fjernFirmaIntrorabat({ firmaId, begrundelse: grund })
+            : await saetFirmaIntrorabat({ firmaId, procent: p, maaneder: m, fra, begrundelse: grund });
+        if ("fejl" in svar) return { fejl: svar.fejl };
+        visKvittering(svar.besked);
+      }}
+      onSuccess={() => {
+        setGrund("");
+        setValg("saet");
+        router.refresh();
+      }}
+    >
+      <div className="space-y-3">
+        {intro && <Info>{I.nu(intro.procent, intro.maaneder, intro.fra, intro.til ? langDato(intro.til) : null)}</Info>}
+        {intro && (
+          <fieldset className="space-y-2">
+            <legend className="sr-only">{I.titel}</legend>
+            <Valg name="intro-valg" value="saet" valgt={valg} onVaelg={(v) => setValg(v as "saet" | "fjern")}>
+              {I.saet}
+            </Valg>
+            <Valg name="intro-valg" value="fjern" valgt={valg} onVaelg={(v) => setValg(v as "saet" | "fjern")}>
+              {I.fjern}
+            </Valg>
+          </fieldset>
+        )}
+        {valg === "fjern" ? (
+          <Info>{I.fjernInfo}</Info>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <TalFelt label={I.procent} value={procent} onChange={setProcent} ugyldig={!gyldig} />
+              <TalFelt label={I.maaneder} value={maaneder} onChange={setMaaneder} ugyldig={!gyldig} />
+            </div>
+            {!gyldig && <FeltFejl>{I.ugyldig}</FeltFejl>}
+            <fieldset className="space-y-2">
+              <legend className="sr-only">{I.titel}</legend>
+              <Valg name="intro-fra" value="efter_gratis" valgt={fra} onVaelg={(v) => setFra(v as "efter_gratis" | "straks")}>
+                {I.fraEfterGratis}
+              </Valg>
+              <Valg name="intro-fra" value="straks" valgt={fra} onVaelg={(v) => setFra(v as "efter_gratis" | "straks")}>
+                {I.fraStraks}
+              </Valg>
+            </fieldset>
+          </>
+        )}
+        <Begrundelse value={grund} onChange={setGrund} label={T.hurtig.status.begrundelse} pladsholder={I.begrundelsePladsholder} />
+      </div>
+    </BekraeftDialog>
+  );
+}
+
+// --- Særpris --------------------------------------------------------------------------
+
+export function SaerprisKort({
+  firmaId,
+  saerpris,
+  pakkeNavn,
+  pakkePris,
+}: {
+  firmaId: string;
+  // Hele kroner ekskl. moms; null = pakkens pris.
+  saerpris: number | null;
+  pakkeNavn: string;
+  pakkePris: number | null;
+}) {
+  const router = useRouter();
+  const S = T.hurtig.saerpris;
+  const [valg, setValg] = useState<"saet" | "fjern">("saet");
+  const [pris, setPris] = useState(saerpris != null ? String(saerpris) : "");
+  const [fra, setFra] = useState<"naeste_betaling" | "straks">("naeste_betaling");
+  const [aftale, setAftale] = useState("");
+  const n = Number(pris);
+  const gyldig = valg === "fjern" || (/^\d+$/.test(pris) && n >= 1 && n <= 1_000_000);
+  return (
+    <BekraeftDialog
+      triggerClassName={KORT}
+      triggerIcon={<KortTitel>{S.titel}</KortTitel>}
+      triggerLabel={S.under(saerpris != null ? kr(saerpris) : null)}
+      title={S.dialog}
+      description={S.forklaring}
+      confirmLabel={valg === "fjern" ? S.bekraeftFjern : S.bekraeft}
+      confirmDisabled={!gyldig || !begrundelseOk(aftale) || (valg === "saet" && n === saerpris)}
+      onConfirm={async () => {
+        const svar = await saetFirmaSaerpris({
+          firmaId,
+          maanedsprisEksklMoms: valg === "fjern" ? null : n,
+          fra,
+          aftale,
+        });
+        if ("fejl" in svar) return { fejl: svar.fejl };
+        visKvittering(svar.besked);
+      }}
+      onSuccess={() => {
+        setAftale("");
+        setValg("saet");
+        router.refresh();
+      }}
+    >
+      <div className="space-y-3">
+        <Info>
+          {pakkePris != null ? S.pakkensPris(pakkeNavn, kr(pakkePris)) : `${pakkeNavn}: ${T.hurtig.pakke.prisIkkeSat}`}
+          {saerpris != null && <span className="block">{S.nu(kr(saerpris))}</span>}
+        </Info>
+        {saerpris != null && (
+          <fieldset className="space-y-2">
+            <legend className="sr-only">{S.titel}</legend>
+            <Valg name="saerpris-valg" value="saet" valgt={valg} onVaelg={(v) => setValg(v as "saet" | "fjern")}>
+              {S.saet}
+            </Valg>
+            <Valg name="saerpris-valg" value="fjern" valgt={valg} onVaelg={(v) => setValg(v as "saet" | "fjern")}>
+              {S.fjern}
+            </Valg>
+          </fieldset>
+        )}
+        {valg === "saet" && (
+          <div>
+            <TalFelt
+              label={S.pris}
+              value={pris}
+              onChange={setPris}
+              ugyldig={!gyldig && pris !== ""}
+              hjaelp={gyldig && pris !== "" ? S.inklMoms(krFraOere(oereInklMoms(n))) : undefined}
+            />
+            {!gyldig && pris !== "" && <FeltFejl>{S.ugyldig}</FeltFejl>}
+          </div>
+        )}
+        <fieldset className="space-y-2">
+          <legend className="sr-only">{S.titel}</legend>
+          <Valg name="saerpris-fra" value="naeste_betaling" valgt={fra} onVaelg={(v) => setFra(v as "naeste_betaling" | "straks")}>
+            {S.fraNaeste}
+          </Valg>
+          <Valg name="saerpris-fra" value="straks" valgt={fra} onVaelg={(v) => setFra(v as "naeste_betaling" | "straks")}>
+            {S.fraStraks}
+          </Valg>
+        </fieldset>
+        <Begrundelse value={aftale} onChange={setAftale} label={S.aftale} pladsholder={S.aftalePladsholder} />
+      </div>
+    </BekraeftDialog>
+  );
+}
+
+// --- Ekstra auktioner og fremhævninger (indeværende måned) ---------------------------
+
+export function EkstraKort({ firmaId, hvad, ekstra }: { firmaId: string; hvad: "auktioner" | "fremhaevninger"; ekstra: number }) {
+  const router = useRouter();
+  const E = T.hurtig.ekstra;
+  const [antal, setAntal] = useState("");
+  const [grund, setGrund] = useState("");
+  const n = Number(antal);
+  const gyldig = /^-?\d+$/.test(antal) && n !== 0 && Math.abs(n) <= (hvad === "auktioner" ? 1000 : 100);
+  const titel = hvad === "auktioner" ? E.auktionerTitel : E.fremhTitel;
+  return (
+    <BekraeftDialog
+      triggerClassName={KORT}
+      triggerIcon={<KortTitel>{titel}</KortTitel>}
+      triggerLabel={E.under(ekstra)}
+      title={hvad === "auktioner" ? E.auktionerDialog : E.fremhDialog}
+      description={E.forklaring}
+      confirmLabel={E.bekraeft}
+      confirmDisabled={!gyldig || !begrundelseOk(grund)}
+      onConfirm={async () => {
+        const input = { firmaId, antal: n, begrundelse: grund };
+        const svar = hvad === "auktioner" ? await givFirmaEkstraAuktioner(input) : await givFirmaEkstraFremhaevninger(input);
+        if ("fejl" in svar) return { fejl: svar.fejl };
+        visKvittering(svar.besked);
+      }}
+      onSuccess={() => {
+        setAntal("");
+        setGrund("");
+        router.refresh();
+      }}
+    >
+      <div className="space-y-3">
+        <Info>{E.under(ekstra)}</Info>
+        <div>
+          <TalFelt label={E.antal} value={antal} onChange={setAntal} fortegn ugyldig={antal !== "" && !gyldig} />
+          {antal !== "" && !gyldig && <FeltFejl>{E.ugyldig}</FeltFejl>}
+        </div>
+        <Begrundelse value={grund} onChange={setGrund} label={T.hurtig.status.begrundelse} pladsholder={E.begrundelsePladsholder} />
+      </div>
+    </BekraeftDialog>
+  );
+}
+
+// --- Stop en fremhævning (fanen Kvoter) ------------------------------------------------
+
+export function StopFremhaevningKnap({ id }: { id: string }) {
+  const router = useRouter();
+  const K = T.kvoter;
+  const [tilbage, setTilbage] = useState(true);
+  const [grund, setGrund] = useState("");
+  return (
+    <BekraeftDialog
+      triggerClassName="btn btn-sekundaer btn-lille"
+      triggerLabel={K.stop}
+      title={K.stopTitel}
+      description={K.stopTekst}
+      confirmLabel={K.stopBekraeft}
+      confirmDisabled={!begrundelseOk(grund)}
+      onConfirm={async () => {
+        const svar = await stopFirmaFremhaevning({ id, tilbage, begrundelse: grund });
+        if ("fejl" in svar) return { fejl: svar.fejl };
+        visKvittering(svar.besked);
+      }}
+      onSuccess={() => {
+        setGrund("");
+        router.refresh();
+      }}
+    >
+      <div className="space-y-3">
+        <label className="flex items-start gap-3 border border-kant px-3 py-2.5 text-sm text-tekst">
+          <input
+            type="checkbox"
+            checked={tilbage}
+            onChange={(e) => setTilbage(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-groen"
+          />
+          <span className="min-w-0">{K.stopTilbage}</span>
+        </label>
+        <Begrundelse value={grund} onChange={setGrund} label={T.hurtig.status.begrundelse} />
+      </div>
+    </BekraeftDialog>
+  );
+}
+
+// --- Refundér en abonnementsregning (fanen Regninger) -----------------------------------
+
+export function RefunderRegningKnap({ regningId, beloebOere }: { regningId: string; beloebOere: number }) {
+  const router = useRouter();
+  const R = T.regninger;
+  const [grund, setGrund] = useState("");
+  return (
+    <BekraeftDialog
+      triggerClassName="btn btn-sekundaer btn-lille"
+      triggerLabel={R.refunder}
+      title={R.refunderTitel}
+      description={R.refunderTekst(krFraOere(beloebOere))}
+      confirmLabel={R.refunderBekraeft}
+      confirmDisabled={!begrundelseOk(grund)}
+      onConfirm={async () => {
+        const svar = await refunderFirmaRegning({ regningId, begrundelse: grund });
+        if ("fejl" in svar) return { fejl: svar.fejl };
+        visKvittering(svar.besked);
+      }}
+      onSuccess={() => {
+        setGrund("");
+        router.refresh();
+      }}
+    >
+      <Begrundelse value={grund} onChange={setGrund} label={T.hurtig.status.begrundelse} pladsholder={R.refunderBegrundelsePladsholder} />
     </BekraeftDialog>
   );
 }

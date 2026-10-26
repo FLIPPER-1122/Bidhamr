@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import type { SkiftPakkeSvar } from "@/app/actions/erhverv";
 import { kaldOffentligHandling } from "@/lib/offentligHandling";
-import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA as X, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
+import { FIRMA_ABONNEMENT as FA, FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA as X, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
 import { erStoerrePakke, type ErhvervPakke } from "@/lib/erhverv/regler";
 import { kr } from "@/lib/erhverv/visning";
 import { E_KNAP_PRIMAER, E_KNAP_SEKUNDAER, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
@@ -43,6 +43,7 @@ export default function PakkeValg({
   naestePeriode,
   kanSkifte,
   afventerId,
+  iGratisPeriode = false,
 }: {
   nuvaerende: ErhvervPakke;
   andre: ErhvervPakke[];
@@ -52,6 +53,8 @@ export default function PakkeValg({
   kanSkifte: boolean;
   // Pakken, der venter på betaling (vises som valgt).
   afventerId: string | null;
+  // I den gratis periode gælder et pakkeskift med det samme uden betaling.
+  iGratisPeriode?: boolean;
 }) {
   const router = useRouter();
   const [aaben, setAaben] = useState<string | null>(null);
@@ -127,17 +130,23 @@ export default function PakkeValg({
                   className={`${op ? E_KNAP_PRIMAER : E_KNAP_SEKUNDAER} mt-4 w-full sm:w-auto`}
 
                 >
-                  {op ? A.knapOpgrader : A.knapNedgrader}
+                  {op ? A.knapOpgrader : iGratisPeriode ? FA.knapSkiftNu : A.knapNedgrader}
                 </button>
               ) : null}
 
               {erAaben && (
                 <div role="group" aria-labelledby={`skift-${p.id}`} className="mt-4 rounded-xl bg-groen-lys p-4">
                   <p id={`skift-${p.id}`} className="text-[19px] font-semibold text-tekst">
-                    {op ? A.bekraeftOpgraderTitel(p.navn) : A.bekraeftNedgraderTitel(p.navn)}
+                    {op || iGratisPeriode ? A.bekraeftOpgraderTitel(p.navn) : A.bekraeftNedgraderTitel(p.navn)}
                   </p>
                   <p className={`mt-2 ${E_TEKST}`}>
-                    {op ? X.bekraeftOpgraderTekstAfventer : A.bekraeftNedgraderTekst(naestePeriode)}
+                    {iGratisPeriode
+                      ? op
+                        ? FA.bekraeftOpgraderGratis
+                        : FA.bekraeftNedgraderGratis
+                      : op
+                        ? X.bekraeftOpgraderTekstAfventer
+                        : A.bekraeftNedgraderTekst(naestePeriode)}
                   </p>
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                     <button
@@ -148,7 +157,7 @@ export default function PakkeValg({
                       className={E_KNAP_PRIMAER}
                     >
                       {sender && <span className="btn-spinner" aria-hidden="true" />}
-                      {op ? A.bekraeftOpgraderJa(p.navn) : A.bekraeftNedgraderJa}
+                      {op ? A.bekraeftOpgraderJa(p.navn) : iGratisPeriode ? FA.bekraeftNedgraderGratisJa : A.bekraeftNedgraderJa}
                     </button>
                     <button type="button" onClick={() => setAaben(null)} disabled={sender} className={E_KNAP_SEKUNDAER}>
                       {A.knapAnnuller}
