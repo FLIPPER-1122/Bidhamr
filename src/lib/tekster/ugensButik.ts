@@ -1,6 +1,6 @@
 // Tekster til "Ugens butik" - betalt forsideplads for firmaer (Filip, 26.
 // okt. 2026, ROADMAP-BESLUTNINGER.md "Ugens butik" og "Regler for Ugens
-// butik"). Korte pladsholdere - indhold-agenten finpudser dem.
+// butik").
 //
 // Husk:
 // - Pladsen er en annonce og skal altid markeres som "Annonce"
@@ -35,13 +35,13 @@ export const UGENS_FIRMA = {
   titel: "Ugens butik",
   intro: "Din butik øverst på forsiden i en hel uge – ét firma ad gangen.",
 
-  // TODO indhold-agenten: endelig forklaring.
   forklaringTitel: "Sådan virker det",
   forklaring: [
-    "Dit firmanavn står som stor overskrift øverst på BidHamrs forside, og dine aktive auktioner vises ét billede ad gangen.",
-    "En uge går fra mandag kl. 00 til søndag kl. 24. Du kan også købe den uge, vi er i gang med. Prisen er den samme, uanset hvilken dag du køber.",
-    "Feltet er markeret som annonce. Har du ingen aktive auktioner, vises feltet ikke.",
+    "Dit firmanavn står som overskrift øverst på BidHamrs forside, og dine aktive auktioner bliver vist ét billede ad gangen. Der er kun ét firma pr. uge.",
+    "En uge går fra mandag kl. 00 til mandag kl. 00 ugen efter (dansk tid). Du kan også købe den uge, vi er i gang med. Prisen er den samme, uanset hvilken dag du køber.",
+    "Feltet er markeret som annonce. Har du ingen aktive auktioner, bliver feltet ikke vist. Sørg derfor for at have auktioner i gang hele ugen.",
     "Du kan højst have pladsen 4 uger i træk. Derefter skal der gå 2 uger, før du kan få den igen.",
+    "Bliver din konto sat på pause eller suspenderet i en uge, du har betalt for, bliver feltet skjult. Pengene sendes ikke automatisk tilbage.",
   ],
 
   prisTitel: "Pris",

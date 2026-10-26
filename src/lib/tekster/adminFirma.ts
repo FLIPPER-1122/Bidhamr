@@ -100,7 +100,7 @@ export const ADMIN_FIRMA = {
       titel: "Introrabat",
       dialog: "Introrabat",
       forklaring:
-        "Rabatten trækkes fra på firmaets regninger. Den gælder hele beløbet ekskl. moms. Firmaet får en mail.",
+        "Rabatten trækkes fra på firmaets regninger og gælder hele månedsprisen. Momsen beregnes af det nedsatte beløb. Firmaet får en mail.",
       under: (pct: number | null, mdr: number | null, tilstand: "planlagt" | "koerer" | "slut" | null) =>
         pct == null || mdr == null
           ? "Ingen"
@@ -113,7 +113,7 @@ export const ADMIN_FIRMA = {
       procent: "Rabat i procent (1-100)",
       maaneder: "Antal måneder (1-24)",
       fraEfterGratis: "Efter den gratis periode (standard)",
-      fraStraks: "Fra nu – en gratis periode bruger af månederne",
+      fraStraks: "Fra nu – måneder i en gratis periode tæller med",
       ugyldig: "Skriv hele tal: 1-100 % og 1-24 måneder.",
       begrundelsePladsholder: "Fx Filip har ringet til firmaet",
       bekraeft: "Gem introrabat",
@@ -135,7 +135,7 @@ export const ADMIN_FIRMA = {
       fraStraks: "Fra i dag – forskellen for resten af perioden kommer på næste regning",
       ugyldig: "Skriv prisen i hele kroner, mindst 1 kr.",
       aftale: "Aftalen (gemmes i loggen – kun for staff)",
-      aftalePladsholder: "Fx aftalt med Hans 26/10: 2 års binding",
+      aftalePladsholder: "Fx aftalt med ejeren i telefonen 26/10",
       bekraeft: "Gem særpris",
       bekraeftFjern: "Fjern særpris",
     },
