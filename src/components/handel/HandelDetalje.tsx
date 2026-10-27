@@ -35,6 +35,7 @@ import { hentAfsendelsesfristAnnullering } from "@/lib/betaling/afsendelsesfrist
 import { hentAfhentningsfristAnnullering } from "@/lib/betaling/afhentningsfrist";
 import { hentIkkeAfhentet } from "@/lib/betaling/ikkeAfhentet";
 import { kroner } from "@/lib/kroner";
+import { erNyPrivatPrismodel } from "@/lib/betaling/beregn";
 import { afhentningTilbagebetalKl, afhentningsfristTekst } from "@/lib/afhentningsfrist";
 import ForlaengAfhentningsfrist from "@/components/ForlaengAfhentningsfrist";
 import FragtlabelBoks from "@/components/fragt/FragtlabelBoks";
@@ -1241,7 +1242,7 @@ export default async function HandelDetalje({
             koeberId={user.id}
             muligheder={muligheder}
             erhverv={erhvervHandel}
-            nyPrismodel={kvittering?.rolle === "koeber" && kvittering.prismodel === "ny"}
+            nyPrismodel={kvittering?.rolle === "koeber" && erNyPrivatPrismodel(kvittering.prismodel)}
           />
         )}
         {muligheder &&

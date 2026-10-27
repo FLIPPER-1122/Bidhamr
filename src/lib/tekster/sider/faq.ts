@@ -78,7 +78,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvad koster det?",
-          svar: "Sælges varen for op til 7.500 kr., betaler køber 7 % + 5 kr. (højst 300 kr.), og sælger betaler 5 % + 5 kr. (højst 95 kr.). Over 7.500 kr. betaler køber 3 % + 15 kr. (højst 650 kr.), og sælger betaler 2 % + 15 kr. (højst 450 kr.). Købers gebyr indeholder altid BidHamr Beskyttelse, når varen sendes. Fragt betales af køberen og koster fra 42 kr. til en pakkeshop eller fra 60 kr. med levering til døren, alt efter pakkens størrelse. Alle priser er inkl. moms. Ved auktionen ser du gebyret i kroner og den samlede pris, før du byder.",
+          svar: "Sælges varen for op til 7.500 kr., betaler køber 7 % + 5 kr. (højst 300 kr.), og sælger betaler 5 % + 5 kr. (højst 95 kr.). Over 7.500 kr. betaler køber 300 kr. + 3 % af den del af prisen, der er over 7.500 kr. (højst 650 kr.), og sælger betaler 95 kr. + 2 % af den del, der er over 7.500 kr. (højst 450 kr.). Sælges varen fx for 10.000 kr., betaler køber 375 kr., og sælger betaler 145 kr. Købers gebyr indeholder altid BidHamr Beskyttelse, når varen sendes. Fragt betales af køberen og koster fra 42 kr. til en pakkeshop eller fra 60 kr. med levering til døren, alt efter pakkens størrelse. Alle priser er inkl. moms. Ved auktionen ser du gebyret i kroner og den samlede pris, før du byder.",
         },
         {
           spoergsmaal: "Hvad er det højeste, jeg kan byde?",

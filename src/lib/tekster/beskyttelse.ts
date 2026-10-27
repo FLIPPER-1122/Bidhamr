@@ -71,7 +71,7 @@ export const SEKTION_PRIS: Sektion = {
   punkter: [
     "BidHamr Beskyttelse koster ikke ekstra. Den er en del af det gebyr, du betaler som køber.",
     "Gebyret er 7 % af buddet + 5 kr., dog højst 300 kr., når varen sælges for op til 7.500 kr.",
-    "Sælges varen for mere end 7.500 kr., er gebyret 3 % af buddet + 15 kr., dog højst 650 kr.",
+    "Sælges varen for mere end 7.500 kr., er gebyret 300 kr. + 3 % af den del af buddet, der er over 7.500 kr., dog højst 650 kr. Ved 10.000 kr. er gebyret fx 375 kr.",
     "Du skal ikke vælge noget, og du kan ikke fravælge den. Den er med, når varen bliver sendt.",
     "Ved auktionen ser du gebyret i kroner og den samlede pris, før du byder.",
     "Alle beløb er inkl. moms.",
@@ -135,7 +135,7 @@ export const BIDPANEL = {
   tidSlut: "Auktionen er slut – resultatet kommer om lidt",
 } as const;
 
-// Sager i den nye prismodel (betalinger.prismodel = 'ny', Filip 26. okt. 2026):
+// Sager i den nye prismodel (betalinger.prismodel = 'ny' eller 'ny2', Filip 26. okt. 2026):
 // ved medhold får køberen kun buddet tilbage. Vises i "Opret sag" og ved en
 // åben sag - ikke for gamle handler eller erhverv.
 export const SAG_REFUSION_NY =

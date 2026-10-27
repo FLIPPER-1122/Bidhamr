@@ -116,7 +116,7 @@ export const SAADAN_VIRKER_DET: Tekstside = {
       ],
       punkter: [
         "Sælges varen for op til 7.500 kr.: køber betaler 7 % + 5 kr. (højst 300 kr.), og sælger betaler 5 % + 5 kr. (højst 95 kr.).",
-        "Sælges varen for mere end 7.500 kr.: køber betaler 3 % + 15 kr. (højst 650 kr.), og sælger betaler 2 % + 15 kr. (højst 450 kr.).",
+        "Sælges varen for mere end 7.500 kr.: køber betaler 300 kr. + 3 % af den del af prisen, der er over 7.500 kr. (højst 650 kr.), og sælger betaler 95 kr. + 2 % af den del, der er over 7.500 kr. (højst 450 kr.). Ved 10.000 kr. betaler køber fx 375 kr., og sælger betaler 145 kr.",
         "Købers gebyr indeholder altid BidHamr Beskyttelse, når varen sendes. Den koster ikke ekstra og skal ikke vælges.",
         "Sælgers gebyr trækkes fra, før pengene udbetales.",
         "Fragt betales af køberen. Til en pakkeshop koster det 42 kr. (Lille, op til 1 kg), 52 kr. (Mellem, op til 5 kg) eller 67 kr. (Stor, op til 15 kg). Levering hjem koster fra 60 kr. Store pakker kan kun sendes til en pakkeshop. Varer over 15 kg kan kun afhentes.",
