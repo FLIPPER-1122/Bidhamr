@@ -120,6 +120,10 @@ const OFFENTLIGE_RUTER = [
   "/dsa",
   "/api/dsa",
   "/api/offentlig",
+  // BidHamr-bot (også uden login efter lancering). Route handlerne tjekker
+  // selv lanceringen og adgangen (src/lib/bot/synlig.ts) og loftet.
+  "/api/bot",
+  "/api/app/bot",
 ];
 
 // Rene læsesider, der skal kunne læses af alle uden login, også før lancering

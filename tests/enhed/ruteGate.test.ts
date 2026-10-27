@@ -107,6 +107,11 @@ const OFFENTLIGE_RUTER: Record<string, Exclude<Klasse, "login" | "admin-vaert" |
   "/api/auktion/app/[handling]": "offentlig",
   "/api/dsa/anmeld": "offentlig",
   "/api/offentlig/[handling]": "offentlig",
+  // BidHamr-bot: tjekker selv lancering, adgang og loft (src/lib/bot/synlig.ts).
+  "/api/bot": "offentlig",
+  "/api/bot/medarbejder": "offentlig",
+  "/api/app/bot": "offentlig",
+  "/api/app/bot/medarbejder": "offentlig",
 };
 
 // Alle ruter under src/app som skabeloner (/auktion/[id]).

@@ -8,6 +8,7 @@ import BetaFejlKnap from "@/components/betafejl/BetaFejlKnap";
 import LukketHeader from "@/components/lukket/LukketHeader";
 import LukketFooter from "@/components/lukket/LukketFooter";
 import { visLukketUdgave } from "@/lib/lukketUdgave";
+import BotBoble from "@/components/bot/BotBoble";
 
 export default async function AppLayout({
   children,
@@ -41,6 +42,13 @@ export default async function AppLayout({
       {!lukket && (
         <Suspense fallback={null}>
           <BetaFejlKnap />
+        </Suspense>
+      )}
+      {/* BidHamr-bot (kun med ANTHROPIC_API_KEY og, før lancering, kun med
+          adgang til den lukkede app - src/lib/bot/synlig.ts). */}
+      {!lukket && (
+        <Suspense fallback={null}>
+          <BotBoble />
         </Suspense>
       )}
     </FavoritterProvider>

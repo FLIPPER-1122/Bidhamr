@@ -7,7 +7,7 @@ import { harMindstRolle, type StaffRole } from "@/lib/adminAuth";
 // adgang til, vises ikke - siderne tjekker stadig selv adgangen.
 // Tallene kommer fra menuens tællere (delt via cache(), intet ekstra kald).
 
-export async function HenvendelserFaner({ aktiv }: { aktiv: "kontakt" | "chats" }) {
+export async function HenvendelserFaner({ aktiv }: { aktiv: "kontakt" | "chats" | "bot" }) {
   const t = await hentStaffTal();
   return (
     <AdminFaner
@@ -16,6 +16,7 @@ export async function HenvendelserFaner({ aktiv }: { aktiv: "kontakt" | "chats" 
       faner={[
         { id: "kontakt", label: "Kontaktformular", href: "/admin/kontakt", antal: t.kontakt, tone: "gul" },
         { id: "chats", label: "Chats", href: "/admin/chats", antal: t.chats, tone: "gul" },
+        { id: "bot", label: "BidHamr-bot", href: "/admin/bot" },
       ]}
     />
   );
