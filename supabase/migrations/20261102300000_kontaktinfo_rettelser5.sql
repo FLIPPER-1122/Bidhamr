@@ -35,6 +35,19 @@
 --      (måned 1-12, dag 1-31, ikke fortsat med . / -). Følger en blok på
 --      6-10 cifre lige efter datoen, springes årstallet IKKE over ("Konto
 --      01-01-2024 12345678", "konto 15.03.2024 12345678" stoppes).
+--   f) Passivformerne "overføres" og "overført" er ikke bankord (p_bankord og
+--      p_bankord_staerk; overfør, overføre, overførsel, overførslen,
+--      overførte ... er stadig). Er de det eneste bankord - også efter
+--      chatfilterets liste (indbetal, bankkort ...) - skjules numre efter en
+--      mærkat for chatfilteret til sidst ("Garanti overføres, kvittering nr
+--      1234 5678 90"). Tilladt nu: "Garantien overføres, EAN 1234 567890".
+--      Stadig stoppet: "Overfør til varenr 1234 1234567", "Beløbet overføres
+--      til 1234 1234567" (chatfilteret), "Overført til 5470 1234567".
+--   g) En ISO-dato (åååå-mm-dd, også . og /, måned 1-12, dag 1-31 - samme
+--      regel som v_dato) er ikke et telefonnummer, når hele cifferkæden er
+--      datoen og der intet kontaktord står: "Købt 2023-11-24", "Garanti til
+--      2026-02-28". Stadig stoppet: "Ring 2023-11-24", "Købt 2023-13-24",
+--      "2233-4455", "22-33-44-55". Chatfilteret er uændret.
 --   Testblok: samme eksempler som tests/enhed/auktionKontaktinfoEksempler.ts.
 --
 -- Kendte rester:
@@ -47,8 +60,11 @@
 --     kontonummer efter en ISO-dato ("Konto 2024-03-15 12345678").
 --   - E-mail som "hans på outlook", "hans icloud", "hans123 icloud" (brugernavn
 --     uden . eller _ og uden "på") og "på mail" uden kontaktverbum.
---   - "overføres" tæller som bankord: "Garantien overføres, EAN 1234 567890"
---     afvises.
+--   - "overføres"/"overført" + et nummer efter en mærkat slipper igennem,
+--     også når det er et kontonummer ("Beløbet overføres til nr 1234
+--     1234567", "Beløbet overføres, EAN 1234 567890").
+--   - Et telefonnummer skrevet som en gyldig ISO-dato uden kontaktord
+--     ("Købt 2023-11-24" = 20 23 11 24).
 --
 -- Drift-tjek (md5 af kroppen, CRLF -> LF, uden rene kommentarlinjer) af alt,
 -- der bygges på - før noget ændres. Idempotent (kan køres igen). Kan kun
@@ -90,9 +106,11 @@ begin
   if v_md5 <> '536d4763774bb5f1693e095900466f25' then
     raise exception 'auktion_kontaktinfo_kandidater er ikke udgaven fra 20261102220000 (md5 %). Tjek den først.', v_md5;
   end if;
-  -- 280000 (før) eller denne fil (efter) - kan kun køres efter 20261102280000.
+  -- 280000 (før), en tidligere udgave af denne fil (kun kørt på testdatabasen)
+  -- eller denne fil (efter) - kan kun køres efter 20261102280000.
   v_md5 := pg_temp.krop_md5('public.auktion_kontaktinfo_grund(text, boolean)'::regprocedure);
-  if v_md5 not in ('78961878cea77268a1a9452eda8ea620', '13c6ba2e5c27adc553964f8b5a556e4f') then
+  if v_md5 not in ('78961878cea77268a1a9452eda8ea620', '13c6ba2e5c27adc553964f8b5a556e4f',
+                   '6a587d7f5814eabde944670d12c59f6d') then
     raise exception 'auktion_kontaktinfo_grund er ikke udgaven fra 20261102280000 (md5 %). Kør 20261102280000_kontaktinfo_rettelser4.sql først, eller tjek den, før den erstattes.', v_md5;
   end if;
   -- Afvisningen kalder filteret - uændret af denne fil.
@@ -127,6 +145,7 @@ declare
   v_bank boolean;
   v_staerk boolean;
   v_dato boolean;
+  v_ny text;
   v_kaede text;
   v_kontekst text;
   v_kand text;
@@ -215,10 +234,12 @@ declare
   -- Bankord til "4 cifre + 6-10 cifre": fast liste med ordstart ("powerbank"
   -- tæller ikke). "reg" kun som reg.nr/regnr/reg nr eller reg + 4 cifre
   -- ("reg. højde" tæller ikke). "overfør..." skal stå i starten af et ord.
+  -- Passivformerne "overføres" og "overført" er ikke bankord ("Garantien
+  -- overføres, EAN 1234 567890").
   p_bankord constant text :=
     '\m(bank|banken|netbank|netbanken|bankkonto|bankkontoen|bankoverførsel|bankoverførslen'
     || '|konto|kontoen|kontonr|kontonummer|kontonummeret|regnr|registreringsnummer|registreringsnr|iban'
-    || '|overf(ø|o)r[a-zæøå]*)\M'
+    || '|overf(ø|o)r(?!(es|t)\M)[a-zæøå]*)\M'
     || '|\mreg\.?\s*nr\M|\mreg[.:]?\s*[0-9]{4}(?![0-9])';
   -- De stærke bankord (alt undtagen "bank"/"banken"/"netbank"/"netbanken"):
   -- står et af dem i teksten, gælder undtagelsen for vareord ikke, og 4 + 6-10
@@ -226,8 +247,16 @@ declare
   p_bankord_staerk constant text :=
     '\m(bankkonto|bankkontoen|bankoverførsel|bankoverførslen'
     || '|konto|kontoen|kontonr|kontonummer|kontonummeret|regnr|registreringsnummer|registreringsnr|iban'
-    || '|overf(ø|o)r[a-zæøå]*)\M'
+    || '|overf(ø|o)r(?!(es|t)\M)[a-zæøå]*)\M'
     || '|\mreg\.?\s*nr\M|\mreg[.:]?\s*[0-9]{4}(?![0-9])';
+  -- Passivformerne "overføres"/"overført". Chatfilteret læser dem som
+  -- bankord; er de det eneste bankord, skjules numre efter en mærkat for
+  -- chatfilteret til sidst ("Garanti overføres, kvittering nr 1234 5678 90").
+  p_passiv constant text := '\moverf(ø|o)r(es|t)\M';
+  -- Chatfilterets bankord (p_bank_ord i besked_spam_grund, 20261102080000).
+  p_bankord_chat constant text :=
+    '\m(bank[a-zæøå]*|konto[a-zæøå]*|overf(ø|o)r[a-zæøå]*|indbetal[a-zæøå]*|indsæt[a-zæøå]*|iban'
+    || '|regnr|registreringsn[a-zæøå]*|reg\.?\s*(nr|nummer))\M';
   -- En enhed lige efter et nummer: så er det ikke et kontonummer ("145000 km").
   p_enhed_efter constant text := '^\s*((km|kr|kroner|dkk|kg|gram|g|cm|mm|ml|l)\M|,-|\.-)';
   -- Et vareord: varenummer, art.nr., produktnr., reservedelsnr., delnr., SKU, EAN.
@@ -453,6 +482,32 @@ begin
     end if;
   end loop;
 
+  -- En ISO-dato (åååå-mm-dd, måned 1-12, dag 1-31 - samme regel som
+  -- kontoreglen, v_dato) er ikke et telefonnummer: "Købt 2023-11-24". Kun når
+  -- hele kæden er datoen og uden kontaktord ("Ring 2023-11-24" stoppes).
+  if not v_kontakt then
+    v_ny := '';
+    v_pos := 1;
+    loop
+      v_start := regexp_instr(v, p_kaede, v_pos);
+      exit when v_start = 0;
+      v_kaede := regexp_substr(v, p_kaede, v_pos);
+      v_blokke := regexp_split_to_array(v_kaede, '[^0-9]+');
+      -- v_skille[k + 1] står mellem blok k og k + 1.
+      v_skille := regexp_split_to_array(v_kaede, '[0-9]+');
+      v_dato := cardinality(v_blokke) = 3
+                and length(v_blokke[1]) = 4 and v_blokke[1] ~ p_aar
+                and length(v_blokke[2]) <= 2 and length(v_blokke[3]) <= 2
+                and v_skille[2] ~ '^[./-]$' and v_skille[3] ~ '^[./-]$'
+                and v_blokke[2] ~ '^(0?[1-9]|1[0-2])$'
+                and v_blokke[3] ~ '^(0?[1-9]|[12][0-9]|3[01])$';
+      v_ny := v_ny || substring(v from v_pos for v_start - v_pos)
+              || case when v_dato then ' # ' else v_kaede end;
+      v_pos := v_start + char_length(v_kaede);
+    end loop;
+    v := v_ny || substring(v from v_pos);
+  end if;
+
   -- Bankoplysninger skrevet som et varenummer (kræver et bankord).
   v_bank := v ~ p_bankord;
   -- Undtagelsen for vareord gælder kun med de svage bankord (bank, netbank).
@@ -547,6 +602,11 @@ begin
     v := regexp_replace(v, p_vareord, ' # ', 'g');
     v := regexp_replace(v, p_signal, ' # ', 'g');
   end if;
+  -- Er "overføres"/"overført" det eneste bankord, læser chatfilteret ikke
+  -- numrene efter en mærkat (8 cifre er allerede tjekket ovenfor).
+  if not v_bank and v ~ p_passiv and regexp_replace(v, p_passiv, ' ', 'g') !~ p_bankord_chat then
+    v := regexp_replace(v, p_maerkat, ' # ', 'g');
+  end if;
   g := public.besked_spam_grund(v);
   if g is not null then
     return g;
@@ -561,7 +621,7 @@ end;
 $function$;
 
 comment on function public.auktion_kontaktinfo_grund(text, boolean) is
-  'Kontaktoplysninger i en auktions titel/beskrivelse: grund som besked_spam_grund, ''for_lang'' (over 2.000 tegn) eller null. 8 cifre stoppes altid (alle skilletegn, alle Unicode-cifre, kombinationstegn, formattegn og Default_Ignorable-tegn fjernes, 0/00/45/0045 foran, 4-4 og 2-2-2-2 inde i et længere nummer). %XX og HTML-entiteter afkodes. MobilePay som ord og bankoplysninger skrevet som varenummer stoppes (ikke powerbank, reg. højde, datoer uden 6-10 cifre lige efter, eller 4 + 6-7 cifre efter et vareord med kun bank/netbank). Firmaer (p_erhverv) må skrive links (kun værtsnavnet fjernes; 7+ cifre i et link, beskedtjenester, sociale medier, betalingsapps og linkforkortere stoppes). Varenumre med andre længder, IKEA-numre (kun med "ikea") og signalværdier (1-4 cifre) tæller ikke uden kontaktord. Intern. SPEJL: auktionKontaktGrund() i src/lib/auktionKontaktinfo.ts. 20261102300000.';
+  'Kontaktoplysninger i en auktions titel/beskrivelse: grund som besked_spam_grund, ''for_lang'' (over 2.000 tegn) eller null. 8 cifre stoppes altid (alle skilletegn, alle Unicode-cifre, kombinationstegn, formattegn og Default_Ignorable-tegn fjernes, 0/00/45/0045 foran, 4-4 og 2-2-2-2 inde i et længere nummer). %XX og HTML-entiteter afkodes. MobilePay som ord og bankoplysninger skrevet som varenummer stoppes (ikke powerbank, reg. højde, overføres/overført, datoer uden 6-10 cifre lige efter, eller 4 + 6-7 cifre efter et vareord med kun bank/netbank). En ISO-dato uden kontaktord er ikke et telefonnummer. Firmaer (p_erhverv) må skrive links (kun værtsnavnet fjernes; 7+ cifre i et link, beskedtjenester, sociale medier, betalingsapps og linkforkortere stoppes). Varenumre med andre længder, IKEA-numre (kun med "ikea") og signalværdier (1-4 cifre) tæller ikke uden kontaktord. Intern. SPEJL: auktionKontaktGrund() i src/lib/auktionKontaktinfo.ts. 20261102300000.';
 
 -- Intern: hverken hjemmesiden eller appen kalder den direkte. Triggeren,
 -- "Sæt op igen" og genopsætning kalder den via auktion_kontaktinfo_afvis
@@ -839,7 +899,28 @@ begin
       (E'Sofa 2\U000e00412\U000e00413\U000e00413\U000e00414\U000e00414\U000e00415\U000e00415', 'telefon', 'telefon'),
       (E'Sofa 2\U000e007f2\U000e007f3\U000e007f3\U000e007f4\U000e007f4\U000e007f5\U000e007f5', 'telefon', 'telefon'),
       (E'Sofa 2\u00ad2\u00ad3\u00ad3\u00ad4\u00ad4\u00ad5\u00ad5', 'telefon', 'telefon'),
-      (E'Sofa 2\u20602\u20603\u20603\u20604\u20604\u20605\u20605', 'telefon', 'telefon')
+      (E'Sofa 2\u20602\u20603\u20603\u20604\u20604\u20605\u20605', 'telefon', 'telefon'),
+      -- Passivformerne overføres/overført er ikke bankord.
+      ('Garantien overføres, EAN 1234 567890', null, null),
+      ('Kan overføres til ny ejer, varenr 1234 567890', null, null),
+      ('Garanti kan overføres. EAN 5701234567890', null, null),
+      ('Garanti 2 år, kan overføres. Serienummer 1234567890', null, null),
+      ('Licens overføres til køber, ordrenr 12345678901', null, null),
+      ('Garanti overføres, kvittering nr 1234 5678 90', null, null),
+      ('Beløbet overføres til 1234 1234567', 'bank', 'bank'),
+      ('Overført til 5470 1234567', 'bank', 'bank'),
+      ('Indbetal, overføres, nr 1234 567890', 'bank', 'bank'),
+      ('Overførte, kvittering nr 1234 5678 90', 'bank', 'bank'),
+      -- ISO-datoer er ikke telefonnumre (uden kontaktord).
+      ('Købt 2023-11-24', null, null),
+      ('Garanti til 2026-02-28', null, null),
+      ('Udløber 2027-08-31', null, null),
+      ('2233-4455', 'telefon', 'telefon'),
+      ('22-33-44-55', 'telefon', 'telefon'),
+      ('Ring 2023-11-24', 'telefon', 'telefon'),
+      ('Købt 2023-13-24', 'telefon', 'telefon'),
+      ('Købt 2023-11-32', 'telefon', 'telefon'),
+      ('Købt 2023-11-24, ring 22 33 44 55', 'telefon', 'telefon')
     ) as x(tekst, privat, firma)
   loop
     v_n := v_n + 1;
@@ -854,8 +935,8 @@ begin
                                  r.tekst, coalesce(r.firma, 'null'), coalesce(v_firma, 'null'));
     end if;
   end loop;
-  if v_n <> 254 then
-    v_fejl := v_fejl || format(E'\n  forventet 254 eksempler, fik %s', v_n);
+  if v_n <> 273 then
+    v_fejl := v_fejl || format(E'\n  forventet 273 eksempler, fik %s', v_n);
   end if;
   if public.auktion_kontaktinfo_grund(null, false) is not null
      or public.auktion_kontaktinfo_grund('   ', true) is not null then
