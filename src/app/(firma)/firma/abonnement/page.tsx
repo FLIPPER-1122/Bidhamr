@@ -123,11 +123,15 @@ export default async function FirmaAbonnement({
   // Starts gratis velkomstmåned: et skift op til Butik/Pro koster halv pris
   // nu (ikke gratis). En gratis periode fra BidHamr (særaftale) er gratis.
   const velkomstGratis = !!gratisTil && (await erVelkomstGratisPeriode(bruger.id));
-  // Rabatten på første betaling ved det skift (samme regel som
-  // opgraderFraVelkomst): særpris 0 %, en introrabat dens procent, ellers 50 %.
-  const velkomstRabatProcent = velkomstSkiftRabat({
+  // Rabatten på første betaling ved det skift og dens slags (samme regel som
+  // opgraderFraVelkomst): særpris 0 %, en introrabat dens procent til dens
+  // slutdato, ellers velkomstens 50 % (kun måned 1).
+  const velkomstRabat = velkomstSkiftRabat({
     saerprisGaelder: ab?.saerpris != null,
-    introProcent: intro && (introKoerer || introPlanlagt) ? intro.procent : null,
+    intro:
+      intro && (introKoerer || introPlanlagt)
+        ? { procent: intro.procent, til: introKoerer && intro.til ? langDato(intro.til) : null, maaneder: intro.maaneder }
+        : null,
   });
   const pauseFra = f.betaling_mislykket_kl
     ? new Date(new Date(f.betaling_mislykket_kl).getTime() + 7 * 24 * 3600 * 1000).toISOString()
@@ -280,7 +284,7 @@ export default async function FirmaAbonnement({
             afventerId={o.afventende_opgradering?.id ?? null}
             iGratisPeriode={!!gratisTil}
             velkomstGratis={velkomstGratis}
-            velkomstRabatProcent={velkomstRabatProcent}
+            velkomstRabat={velkomstRabat}
           />
           {f.abonnement_status !== "aktiv" && <p className={`mt-4 ${E_TEKST_DAEMPET}`}>{T.abonnement.betalingIkkeSatOpSkift}</p>}
         </Kort>

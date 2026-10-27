@@ -242,13 +242,24 @@ export function maaned1Regel(input: {
 }
 
 // Rabatten på første betaling ved et skift op fra Starts gratis velkomstmåned
-// til Butik/Pro (opgraderFraVelkomst): særpris -> 0 (ingen fordel, og
-// særprisen bortfalder ved pakkeskiftet); en introrabat på abonnementet ->
-// dens procent (den bliver liggende i stedet for 50 %); ellers 50 %.
-export function velkomstSkiftRabat(input: { saerprisGaelder: boolean; introProcent: number | null }): number {
-  if (input.saerprisGaelder) return 0;
-  if (input.introProcent != null) return input.introProcent;
-  return VELKOMST_RABAT_PROCENT;
+// til Butik/Pro (opgraderFraVelkomst) - og HVILKEN slags rabat det er, så
+// teksten ikke skal gætte ud fra procenten (en introrabat kan også være 50 %):
+//   saerpris: 0 % (ingen velkomstfordel, og særprisen bortfalder ved skiftet)
+//   intro:    introrabattens procent (den bliver liggende i stedet for 50 %)
+//             til dens slutdato (til; null, hvis den ikke er sat på endnu)
+//   velkomst: 50 % nu, fuld pris fra næste måned.
+export type VelkomstSkiftRabat =
+  | { slags: "velkomst"; procent: number }
+  | { slags: "intro"; procent: number; til: string | null; maaneder: number }
+  | { slags: "saerpris"; procent: 0 };
+
+export function velkomstSkiftRabat(input: {
+  saerprisGaelder: boolean;
+  intro: { procent: number; til: string | null; maaneder: number } | null;
+}): VelkomstSkiftRabat {
+  if (input.saerprisGaelder) return { slags: "saerpris", procent: 0 };
+  if (input.intro) return { slags: "intro", procent: input.intro.procent, til: input.intro.til, maaneder: input.intro.maaneder };
+  return { slags: "velkomst", procent: VELKOMST_RABAT_PROCENT };
 }
 
 // Beløbet ekskl. og inkl. moms i hele øre (moms 25 %, afrundet til nærmeste

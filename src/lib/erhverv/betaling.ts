@@ -1253,6 +1253,15 @@ async function opgraderFraVelkomst(
   let planFrigivet = false;
   let annulleret = 0;
   try {
+    // Introrabatten tjekkes FØR noget ændres (ingen plan frigives og ingen
+    // gammel opgradering annulleres, hvis skiftet alligevel afvises). Kun en
+    // aftale, der stadig er 'planlagt' (betalings-cron'en sætter den på inden
+    // for minutter - introTilStripe), får skiftet til at vente; ellers fik
+    // firmaet 50 % nu OG introrabatten bagefter.
+    const foer = await hentAbonnement(sub.id);
+    if (f.intro_status === "planlagt" && !foer.discounts.some(erIntroRabat)) {
+      throw new IntroVenter(`Firma ${f.id}: introrabatten er aftalt, men ikke sat på ${sub.id} endnu`);
+    }
     const prisId = await firmaPris(f, skift.til_pakke_id);
     planFrigivet = await frigivPlan(sub);
     let frisk = await hentAbonnement(sub.id);
@@ -1268,11 +1277,17 @@ async function opgraderFraVelkomst(
     // introrabat (på abonnementet ELLER aftalt i databasen - planlagt eller
     // kørende, introGaelder) eller en særpris (særprisen udelukker
     // velkomstfordelen og bortfalder ved pakkeskiftet; Filip, 27. okt. 2026).
-    // Er introrabatten aftalt, men endnu ikke sat på abonnementet (cron'en gør
-    // det), venter skiftet - ellers fik firmaet 50 % nu OG introrabatten bagefter.
     const harIntro = frisk.discounts.some(erIntroRabat);
-    if (introGaelder(f) && !harIntro) {
-      throw new IntroVenter(`Firma ${f.id}: introrabatten er aftalt, men ikke sat på ${sub.id} endnu`);
+    if (introGaelder(f) && !harIntro && f.intro_status !== "planlagt") {
+      // Står som kørende ('aktiv') i databasen, men kuponen er ikke på
+      // abonnementet (fx fjernet direkte i Stripe). Skiftet spærres IKKE (det
+      // kunne vare i måneder): det fortsætter uden 50 % - introrabatten sættes
+      // på igen af staff (admin), ellers fik firmaet for meget rabat.
+      await logDriftFejl({
+        kilde: "server",
+        hvor: "erhverv/velkomst-intro-mangler",
+        fejl: `Firma ${f.id}: introrabatten står som aktiv i databasen, men ligger ikke på ${sub.id}. Skiftet op fra den gratis måned (skift ${skift.id}) fortsætter uden 50 %-kuponen - sæt introrabatten på igen i admin, eller tjek abonnementet i Stripe.`,
+      });
     }
     const kupon = harIntro || introGaelder(f) || saerprisGaelder(f) ? null : await sikrVelkomstKupon();
 
@@ -1322,6 +1337,33 @@ async function opgraderFraVelkomst(
 // Introrabatten er aftalt, men ikke sat på abonnementet endnu (fx
 // månedsskifte - betalings-cron'en prøver igen hvert 5. minut).
 class IntroVenter extends Error {}
+
+const INTRO_VENTER_ALARM_MINUTTER = 30;
+
+// Betalings-cron'en: en planlagt introrabat blev afvist eller venter. Over 30
+// minutter: én drift-alarm pr. aftale (20261102180000 - uden migrationen,
+// PGRST202, ingen alarm). Kaster ikke.
+async function introVenterAlarm(firmaId: string, svar: { kode: string; fejl: string }): Promise<void> {
+  try {
+    const { data, error } = await createAdminClient().rpc("firma_intro_venter_alarm", {
+      p_firma: firmaId,
+      p_minutter: INTRO_VENTER_ALARM_MINUTTER,
+    });
+    if (error) {
+      if (error.code !== "PGRST202") throw new Error(`firma_intro_venter_alarm: ${error.message}`);
+      return;
+    }
+    const r = (data ?? {}) as { alarm?: boolean; ventet_min?: number };
+    if (!r.alarm) return;
+    await logDriftFejl({
+      kilde: "cron",
+      hvor: "erhverv/intro-venter",
+      fejl: `Firma ${firmaId}: introrabatten har ventet ${r.ventet_min ?? INTRO_VENTER_ALARM_MINUTTER} minutter på at komme på abonnementet (${svar.kode}: ${svar.fejl}). Et skift op fra den gratis måned venter også - løs årsagen i admin eller Stripe.`,
+    });
+  } catch (err) {
+    await logDriftFejl({ kilde: "cron", hvor: "erhverv/intro-venter", fejl: `Firma ${firmaId}: ${fejltekst(err)}` });
+  }
+}
 const INTRO_VENTER_BESKED = FIRMA_ABONNEMENT.skiftVenterRabat;
 
 function stopHvisOpsagt(sub: Stripe.Subscription): void {
@@ -2136,12 +2178,16 @@ async function laasKunKortMedGraense(
     if (erPermanentStripeFejl(err)) {
       const { data, error } = await admin.rpc("firma_kort_laas_fejl", { p_firma: firmaId, p_subscription_id: sub.id });
       if (!error) {
-        const svar = (data ?? {}) as { forsoeg?: number; opgivet?: boolean };
-        if (svar.opgivet && svar.forsoeg === KORT_LAAS_MAKS_FORSOEG) {
+        const svar = (data ?? {}) as { forsoeg?: number; opgivet?: boolean; alarm?: boolean };
+        // alarm (20261102180000): true for præcis ét kald, når forsoeg >= 3 og
+        // alarmen ikke er givet for abonnementet - også ved samtidige kald.
+        // Uden migrationen: som før (præcis 3).
+        const alarm = typeof svar.alarm === "boolean" ? svar.alarm : svar.forsoeg === KORT_LAAS_MAKS_FORSOEG;
+        if (svar.opgivet && alarm) {
           await logDriftFejl({
             kilde,
             hvor: "erhverv/kun-kort",
-            fejl: `Firma ${firmaId} (${sub.id}): abonnementet kunne ikke låses til kun kort efter ${KORT_LAAS_MAKS_FORSOEG} forsøg - der prøves ikke igen. Sæt payment_settings.payment_method_types = [card] på abonnementet i Stripe: ${fejltekst(err)}`,
+            fejl: `Firma ${firmaId} (${sub.id}): abonnementet kunne ikke låses til kun kort efter ${svar.forsoeg ?? KORT_LAAS_MAKS_FORSOEG} forsøg - der prøves ikke igen. Sæt payment_settings.payment_method_types = [card] på abonnementet i Stripe: ${fejltekst(err)}`,
           });
           return "opgivet";
         }
@@ -3661,6 +3707,12 @@ export async function koerAbonnementSynk(): Promise<{ priser: number; gratis: nu
     else if (svar.status === "fejl") {
       ud.fejl++;
       await logDriftFejl({ kilde: "cron", hvor: "erhverv/intro", fejl: `Firma ${r.id}: ${svar.fejl}` });
+    } else if (svar.status === "afvist") {
+      // Afvist eller venter (fx pakkeskift, månedsskifte): normalt kun i
+      // minutter. Har aftalen ventet over 30 minutter, gives ÉN alarm pr.
+      // aftale (firma_intro_venter_alarm), så staff opdager det - et skift op
+      // fra Starts gratis måned venter så længe (opgraderFraVelkomst).
+      await introVenterAlarm(r.id, svar);
     }
   }
 

@@ -13,7 +13,7 @@ import { kaldOffentligHandling } from "@/lib/offentligHandling";
 import { FIRMA_ABONNEMENT as FA, FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA as X, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
 import { erStoerrePakke, type ErhvervPakke } from "@/lib/erhverv/regler";
 import { kr, krFraOere } from "@/lib/erhverv/visning";
-import { oereMedRabat, VELKOMST_RABAT_PROCENT } from "@/lib/erhverv/abonnementRegler";
+import { oereMedRabat, VELKOMST_RABAT_PROCENT, type VelkomstSkiftRabat } from "@/lib/erhverv/abonnementRegler";
 import { E_KNAP_PRIMAER, E_KNAP_SEKUNDAER, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
 import { erStripeAdresse } from "@/components/erhverv/StripeKnap";
 
@@ -46,7 +46,7 @@ export default function PakkeValg({
   afventerId,
   iGratisPeriode = false,
   velkomstGratis = false,
-  velkomstRabatProcent = VELKOMST_RABAT_PROCENT,
+  velkomstRabat = { slags: "velkomst", procent: VELKOMST_RABAT_PROCENT },
 }: {
   nuvaerende: ErhvervPakke;
   andre: ErhvervPakke[];
@@ -61,9 +61,9 @@ export default function PakkeValg({
   // Den gratis periode er kun Starts velkomstmåned: et skift op til en pakke
   // med halv pris i måned 1 (Butik/Pro) koster 50 % nu (Filip, 27. okt. 2026).
   velkomstGratis?: boolean;
-  // Rabatten på den første betaling ved det skift (velkomstSkiftRabat: 50,
-  // introrabattens procent eller 0 ved særpris).
-  velkomstRabatProcent?: number;
+  // Rabatten på den første betaling ved det skift og dens slags
+  // (velkomstSkiftRabat: velkomst 50 %, introrabattens procent eller særpris 0 %).
+  velkomstRabat?: VelkomstSkiftRabat;
 }) {
   const router = useRouter();
   const [aaben, setAaben] = useState<string | null>(null);
@@ -155,10 +155,10 @@ export default function PakkeValg({
                           ? FA.bekraeftOpgraderFraGratisMaaned(
                               p.navn,
                               FA.beloebMedMoms(
-                                krFraOere(oereMedRabat(p.maanedspris, velkomstRabatProcent).ekskl),
-                                krFraOere(oereMedRabat(p.maanedspris, velkomstRabatProcent).inkl),
+                                krFraOere(oereMedRabat(p.maanedspris, velkomstRabat.procent).ekskl),
+                                krFraOere(oereMedRabat(p.maanedspris, velkomstRabat.procent).inkl),
                               ),
-                              velkomstRabatProcent,
+                              velkomstRabat,
                             )
                           : FA.bekraeftOpgraderGratis
                         : FA.bekraeftNedgraderGratis
