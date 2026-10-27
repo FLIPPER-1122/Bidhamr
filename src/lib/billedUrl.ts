@@ -7,3 +7,11 @@ const OPTIMERBAR =
 export function kanOptimeres(url: string): boolean {
   return OPTIMERBAR.test(url);
 }
+
+// ".." eller et kodet punktum (%2e/%2E, også dobbeltkodet %252e) i stien -
+// eller en backslash - kan få fetch eller lagringen til at gå ud af
+// /object/public/. Bruges af delebilledet (auktion/[id]/opengraph-image.tsx),
+// som selv henter billedet på serveren.
+export function farligBilledSti(url: string): boolean {
+  return /\.\.|%(?:25)*2e|\\/i.test(url);
+}

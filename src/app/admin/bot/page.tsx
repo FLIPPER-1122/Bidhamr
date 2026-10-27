@@ -56,14 +56,18 @@ export default async function AdminBotSide({ searchParams }: { searchParams: Pro
   const side = laesSide((await searchParams).side);
   const erChef = rolle === "chef";
 
-  const [samtalerSvar, oversigtSvar] = await Promise.all([
+  const [samtalerSvar, oversigtSvar, indstillingerSvar] = await Promise.all([
     admin
       .from("bot_samtaler")
       .select("id, bruger_id, kilde, email, overdraget_kl, oprettet_kl, opdateret_kl", { count: "exact" })
       .order("opdateret_kl", { ascending: false })
       .range((side - 1) * PR_SIDE, side * PR_SIDE - 1),
     erChef ? admin.rpc("bot_forbrug_oversigt") : Promise.resolve({ data: null, error: null }),
+    erChef
+      ? admin.from("bot_indstillinger").select("doegnloft_usd, doegnloft_anon").maybeSingle<{ doegnloft_usd: number; doegnloft_anon: number }>()
+      : Promise.resolve({ data: null, error: null }),
   ]);
+  const indstillinger = indstillingerSvar.data;
   const samtaler = (samtalerSvar.data ?? []) as Samtale[];
   const i_alt = samtalerSvar.count ?? samtaler.length;
   const oversigt = oversigtSvar.data as Oversigt | null;
@@ -84,13 +88,21 @@ export default async function AdminBotSide({ searchParams }: { searchParams: Pro
 
       {!botAktiv() && (
         <p className="border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
-          BidHamr-bot er slået fra (ANTHROPIC_API_KEY er ikke sat). Chatten vises ikke for brugerne.
+          {botModel() === null
+            ? "BidHamr-bot er slået fra: BIDHAMR_BOT_MODEL er ikke en tilladt model (claude-haiku-5-5, claude-sonnet-5-5 eller claude-opus-5-5). Chatten vises ikke for brugerne."
+            : "BidHamr-bot er slået fra (ANTHROPIC_API_KEY er ikke sat). Chatten vises ikke for brugerne."}
         </p>
       )}
 
       {erChef && (
         <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-tekst">Forbrug og pris (model: {botModel()})</h2>
+          <h2 className="text-sm font-semibold text-tekst">Forbrug og pris (model: {botModel() ?? "ukendt"})</h2>
+          {indstillinger && (
+            <p className="text-xs text-tekst-svag">
+              Døgnloft: {usd(indstillinger.doegnloft_usd)} i alt og {antal(indstillinger.doegnloft_anon)} beskeder uden login. Ændres i
+              tabellen bot_indstillinger.
+            </p>
+          )}
           {oversigtSvar.error || !oversigt ? (
             <AdminFejl hvad="Forbruget" />
           ) : (

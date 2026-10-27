@@ -169,16 +169,21 @@ Migration `20261102230000_henvis_en_ven.sql`. Samme kald som hjemmesidens `/kont
 
 - Firmakonto: `200 { ok: true, kan_henvise: false, grund: "erhverv" }` - vis "Henvis en ven er kun for private".
 - Privat: `200 { ok: true, kan_henvise: true, kode, sti: "/?ven=KODE", url: "https://bidhamr.dk/?ven=KODE",
-  kan_faa_point, grund: null | "spaerret", optjening_aaben (false = før lancering: ingen point endnu), point_pr_ven (10),
+  kan_faa_point, grund: null | "spaerret", mitid_verificeret (false = brugeren er ikke selv bekræftet med MitID og
+  får ingen point - vis en MitID-knap; feltet kom med `20261102270000_henvis_rettelser.sql`), optjening_aaben (false = før lancering: ingen point endnu), point_pr_ven (10),
   maks_pr_maaned (10), maaned ("ÅÅÅÅ-MM"), belonnet_denne_maaned, tilbage_denne_maaned, antal_venner, antal_afventer,
   antal_belonnet, point_i_alt, venner: [{ navn, status, point, oprettet_kl, vurderet_kl }] }`.
 - `navn` er vennens korte visningsnavn ("Kasper K."). `status`: `afventer` (venter på MitID), `belonnet`, `loft`,
-  `firma`, `spaerret`, `foer_lancering`, `samme_person`, `tidligere_konto` (teksterne står i
+  `firma`, `spaerret`, `foer_lancering`, `samme_person`, `tidligere_konto`, `henviser_uverificeret` (du var ikke
+  selv MitID-verificeret, da vennen blev det - 0 point; ny i `20261102270000_henvis_rettelser.sql`) (teksterne står i
   `src/lib/tekster/henvisning.ts`).
 - Del-knappen: systemets delingsmenu (`Share.share`) med `url`. Kopiér: udklipsholderen.
 - **Oprettelse:** åbner appen et link `https://bidhamr.dk/?ven=KODE` (Universal Link / App Link), gemmer appen
   koden og sender den som `henvisningskode` til `POST /api/konto/bekraeft` (docs/APP-SIGNUP.md). Kun en NY konto
-  knyttes; svaret er det samme, uanset om koden blev brugt.
+  knyttes; svaret er det samme, uanset om koden blev brugt. Hjemmesiden bruger ingen cookie (Filip, 27. okt. 2026):
+  koden står i et synligt felt "Henvisningskode" på opret konto, som brugeren kan rette - appen bør gøre det samme.
+- **Kun henviseren med MitID:** henviseren skal selv have en aktiv MitID-verificering, når vennen bliver
+  verificeret - ellers `henviser_uverificeret` (0 point, endeligt).
 - Pointene gives af databasen, når vennen bliver MitID-verificeret (også via appens `/api/mitid/app/afslut`), og
   står i `mine_point().historik` med `type: "henvisning"` ("Henvist en ven").
 
@@ -219,7 +224,7 @@ Det viste beløb er det trukne (måned 1-reglen, rettelser 4, 27. okt. 2026):
 
 ## BidHamr-bot: GET/POST /api/app/bot og POST /api/app/bot/medarbejder
 
-Migration `20261102240000_bidhamr_bot.sql`. Samme kerne som hjemmesidens chatboble (`src/lib/bot/motor.ts`).
+Migrationer `20261102240000_bidhamr_bot.sql` og `20261102290000_bot_rettelser.sql`. Samme kerne som hjemmesidens chatboble (`src/lib/bot/motor.ts`).
 `Authorization: Bearer <token>` er **valgfri**: uden header er brugeren "ikke logget ind" (botten svarer på regler,
 men slår ingen egne data op). Sendes en header, skal tokenet være gyldigt, ellers `401 ikke_logget_ind`.
 
@@ -243,6 +248,18 @@ men slår ingen egne data op). Sendes en header, skal tokenet være gyldigt, ell
 
 UI-krav (som hjemmesiden): øverst "Du skriver med en AI – ikke et menneske." Under chatten: "Svarene er vejledende.
 Det er BidHamrs regler og handelsbetingelser, der gælder."
+
+Ændret i `20261102290000_bot_rettelser.sql` (27. okt. 2026):
+- **Uden login følger samtalen IP-adressen** (IPv6 pr. /64). Skifter telefonen net (wifi/mobil), svarer
+  `POST /api/app/bot` `409 ukendt_samtale` og `/medarbejder` `404 ukendt_samtale`: start en ny samtale uden
+  `samtaleId`. Indloggede er ikke ramt.
+- **`429 loft_alle`** kommer nu også, når botten har nået døgnloftet i pris eller for besøgende uden login. Vis
+  `fejl`-teksten (den henviser til /kontakt) og knappen til kontaktformularen.
+- **`429 for_mange` på `/medarbejder`** kan nu også skyldes kontaktformularens lofter (pr. e-mail, pr. bruger og
+  globalt) - samme tekst.
+- **Samtalen skal ryddes, når en anden logger ind, eller brugeren logger ud** (gem ikke `samtaleId` og beskederne
+  på tværs af brugere). Samtaler, der er ældre end 90 dage, kan ikke fortsættes (`409 ukendt_samtale`).
+- Bottens tekst filtreres for ordet "forsikring" (bliver til "BidHamr Beskyttelse") - intet at gøre i appen.
 
 ## Ændret i eksisterende endpoints
 

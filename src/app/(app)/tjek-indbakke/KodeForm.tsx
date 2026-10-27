@@ -12,7 +12,17 @@ import { useHydreret } from "@/lib/useHydreret";
 // fra cookien (signup eller login med ubekræftet e-mail), vises den bare -
 // ellers skal den skrives. Koden verificeres på serveren med rate limit
 // (verificerSignupKode i src/app/actions/auth.ts).
-export default function KodeForm({ kendtEmail, startVentetid }: { kendtEmail: string | null; startVentetid: boolean }) {
+// henvisningskode: Henvis en ven - koden fra adressen (?ven=KODE), sendt med
+// til serveren, som kun knytter den efter en vellykket bekræftelse.
+export default function KodeForm({
+  kendtEmail,
+  startVentetid,
+  henvisningskode = null,
+}: {
+  kendtEmail: string | null;
+  startVentetid: boolean;
+  henvisningskode?: string | null;
+}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [kode, setKode] = useState("");
@@ -37,7 +47,7 @@ export default function KodeForm({ kendtEmail, startVentetid }: { kendtEmail: st
     }
     setSender(true);
     setFejl(null);
-    const svar = await verificerSignupKode(kode, kendtEmail ? undefined : email.trim());
+    const svar = await verificerSignupKode(kode, kendtEmail ? undefined : email.trim(), henvisningskode);
     if ("fejl" in svar) {
       setSender(false);
       setFejl(svar.fejl);

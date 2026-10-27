@@ -151,7 +151,8 @@ export default async function AdminKontaktSide({
 
                 <p className="mt-3 whitespace-pre-wrap break-words text-sm text-tekst">{h.besked}</p>
                 {h.bot_samtale_id && (
-                  <p className="mt-2 text-xs">
+                  <p className="mt-2 text-xs text-tekst-svag">
+                    Teksten ovenfor er en kopi, og brugerens linjer står efter &quot;&gt; &quot;. Den rigtige samtale står her:{" "}
                     <Link href={`/admin/bot/${h.bot_samtale_id}`} className="font-medium text-groen hover:underline">
                       Se hele samtalen med BidHamr-bot
                     </Link>

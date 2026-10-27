@@ -2,6 +2,7 @@ import "server-only";
 import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
+import { ipNoegle } from "@/lib/ipNoegle";
 
 // Lille Postgres-baseret rate limiter (tabel rate_limits + funktionen
 // rate_limit_tjek, kun service_role). Ingen betalt tjeneste.
@@ -85,10 +86,12 @@ export const GRAENSER = {
   kontakt_email: { maks: 5, vindueSek: 60 * 60 },
   kontakt_alle: { maks: 300, vindueSek: 60 * 60 },
   // BidHamr-bot (POST /api/bot og /api/app/bot): et kort loft mod hamren,
-  // før databasen spørges. Døgnloftet (30 pr. bruger/IP) står i databasen
-  // (bot_ny_besked, 20261102240000_bidhamr_bot.sql).
+  // før databasen spørges. Nøglen er klientIpNoegle() (IPv6 pr. /64).
+  // Døgnlofterne (30 pr. bruger/IP, uden login samlet og i USD) står i
+  // databasen (bot_ny_besked, 20261102290000_bot_rettelser.sql).
   bot_ip: { maks: 20, vindueSek: 60 },
-  // "Kontakt en rigtig medarbejder" fra botten.
+  // "Kontakt en rigtig medarbejder" fra botten. Derudover kontakt_email,
+  // kontakt_bruger og kontakt_alle (samme lofter som kontaktformularen).
   bot_medarbejder_ip: { maks: 10, vindueSek: 60 * 60 },
   // Søgning/"Vis flere" på /auktioner (offentlig server action). Klienten
   // venter 300 ms mellem tastetryk, så en rigtig bruger når sjældent 60 pr.
@@ -266,6 +269,14 @@ export async function klientIp(): Promise<string> {
   if (real) return real;
   const fwd = h.get("x-forwarded-for")?.split(",")[0].trim();
   return fwd || "ukendt";
+}
+
+// Klientens IP som nøgle til lofter: IPv6 pr. /64 (en bruger har typisk et
+// helt /64-net og kan skifte adresse frit inden for det), IPv4 uændret
+// (src/lib/ipNoegle.ts). Bruges af BidHamr-bot. klientIp() er uændret, så
+// de andre lofter tæller som før.
+export async function klientIpNoegle(): Promise<string> {
+  return ipNoegle(await klientIp());
 }
 
 type GraenseSvar = "ok" | "for_mange" | "fejl";

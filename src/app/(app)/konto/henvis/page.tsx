@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import KontoSideHoved from "@/components/konto/KontoSideHoved";
 import DelLink from "@/components/henvisning/DelLink";
+import { MitIDKnap } from "@/components/mitid/MitIDKraeves";
 import { hentMinHenvisning } from "@/lib/henvisning/status";
 import { HENVISNING_TEKST as T } from "@/lib/tekster/henvisning";
 
@@ -52,6 +53,14 @@ export default async function HenvisSide() {
               <p role="status" className="mt-4 rounded-lg border border-kant bg-groen-lys p-3 text-sm text-tekst">
                 {T.foerLancering}
               </p>
+            )}
+            {h.kan_faa_point && !h.mitid_verificeret && (
+              <div role="status" className="mt-4 rounded-lg border border-advarsel-kant bg-advarsel-bg p-3 text-sm text-advarsel-tekst">
+                <p>{T.ikkeVerificeret}</p>
+                <div className="mt-3">
+                  <MitIDKnap retur="/konto/henvis" />
+                </div>
+              </div>
             )}
             {!h.kan_faa_point && (
               <p role="status" className="mt-4 rounded-lg border border-advarsel-kant bg-advarsel-bg p-3 text-sm text-advarsel-tekst">
