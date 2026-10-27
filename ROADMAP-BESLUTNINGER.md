@@ -358,6 +358,7 @@ Baggrund og research: `ERHVERV-OVERBLIK.md`. Lovspørgsmålene er sendt til advo
   - **Rabat på Ugens butik** tælles pr. kalenderår (nulstilles 1. januar).
   - **1 måned gratis** for alle nye firmaer.
   - **Introrabat:** firmaer, Filip selv rækker ud til, får **50 % i 6 måneder efter den gratis måned** (måned 1 gratis, måned 2–7 halv pris). Sættes manuelt i admin.
+  - **Betaling af abonnement (Filip, 27. okt. 2026):** firmaer betaler som standard via **Stripe med automatisk korttræk** (Stripe Billing). Ingen manuelle fakturaer som standard – det koster mere i tid (afstemning, rykkere, manuel pause) end Stripe-gebyret (ca. 2–2,5 %). **Betaling via faktura** (bankoverførsel, faktura fra Dinero) bygges først, når et firma beder om det, og gives kun som **særaftale** (markering i admin, så kortet ikke trækkes). Stripes satser tjekkes igen tæt på lanceringen.
   - **Eksisterende firmaer** flyttes: Basis → Start, Plus → Butik, Pro/Max → Pro. De gamle pakker arkiveres (slettes ikke).
   - **Sælger-rollen kan lige så meget som chefen på firmasiden (Filip, 26. okt. 2026):** skifte pakke, gratis periode, introrabat, særpris, ekstra auktioner/fremhævninger, booke/annullere Ugens butik, pause/opsig og refundere firmaets regninger (abonnement og Ugens butik). Alt logges med navn.
   - **Sælger-rollen må se købers e-mail i klager over firmaer (Filip, 26. okt. 2026)** – så den kan håndtere klagerne selv (GDPR: need to know; visningen logges). Købsoplysninger på firmaets salg (`firma_faktura_salg` for et andet firma) er stadig kun for chefen.
