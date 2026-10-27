@@ -46,6 +46,7 @@ const OVERBLIK: { href: string; ikon: IkonNavn; titel: string; tekst: string }[]
   { href: MINE_HANDLER_HREF, ikon: "handler", titel: "Mine handler", tekst: "Køb og salg, du er i gang med" },
   { href: "/konto/fakturaer", ikon: "faktura", titel: "Fakturaer", tekst: "Fakturaer fra BidHamr på gebyrer" },
   { href: "/konto/boost", ikon: "statistik", titel: "Boost-point", tekst: "Saldo, historik og køb af point" },
+  { href: "/konto/henvis", ikon: "gave", titel: "Henvis en ven", tekst: "Del dit link og få boost-point" },
   { href: "/konto/skat", ikon: "laas", titel: "Skatteoplysninger", tekst: "Indberetning til Skattestyrelsen (DAC7)" },
 ];
 

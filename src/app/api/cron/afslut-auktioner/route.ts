@@ -6,6 +6,7 @@ import { driftFejlSamler, logDriftFejl, renFejltekst } from "@/lib/drift";
 import { koerFragtCron } from "@/lib/fragt/server";
 import { koerReturfragtCron } from "@/lib/betaling/returfragt";
 import { koerBoostCron } from "@/lib/betaling/boost";
+import { koerHenvisningCron } from "@/lib/henvisning/server";
 import { koerUgensButikCron } from "@/lib/betaling/ugensButik";
 import { koerEkstraFragtCron } from "@/lib/betaling/ekstraFragt";
 import { harCronAdgang } from "@/lib/cronAdgang";
@@ -270,7 +271,16 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Ekstra fragt: oprydning af dokumentation", fejl: err });
     }
-    const r = { ...betaling, fragt, returfragt, boost, ugensButik, ekstraFragt, dac7, erhvervLuk, erhvervSynk, betaFejlOprydning, ekstraFragtOprydning };
+    // Henvis en ven (20261102230000): starter optjeningen, når siden er
+    // lanceret, og vurderer henvisninger, hvor triggeren ved MitID fejlede.
+    // Flytter ingen penge - fejl her tæller ikke som trinfejl.
+    let henvisning: Awaited<ReturnType<typeof koerHenvisningCron>> = null;
+    try {
+      henvisning = await koerHenvisningCron();
+    } catch (err) {
+      await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Henvis en ven", fejl: err });
+    }
+    const r = { ...betaling, fragt, returfragt, boost, ugensButik, ekstraFragt, dac7, erhvervLuk, erhvervSynk, betaFejlOprydning, ekstraFragtOprydning, henvisning };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);

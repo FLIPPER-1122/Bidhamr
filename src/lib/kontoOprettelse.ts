@@ -45,6 +45,7 @@ import { erVilkaarVersion } from "@/lib/vilkaar";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import { betaAuthBruger, betaTilmeldingTilladt } from "@/lib/beta";
 import { hentKontoStatus, type KontoStatus } from "@/lib/kontoStatus";
+import { knytHenvisning } from "@/lib/henvisning/server";
 
 export function renEmail(email: unknown): string | null {
   if (typeof email !== "string") return null;
@@ -379,9 +380,19 @@ async function gemProfil(brugerId: string, profil: SignupProfil | null): Promise
 // cookies (createAnonClient).
 export async function bekraeftKode(
   supabase: AuthKlient,
-  input: { email: string; kode: string; ip: string; adgangskode: string | null; profil: SignupProfil | null },
+  input: {
+    email: string;
+    kode: string;
+    ip: string;
+    adgangskode: string | null;
+    profil: SignupProfil | null;
+    // Henvis en ven: koden fra linket (hjemmesidens cookie bh_ven eller
+    // appens felt henvisningskode). Knyttes kun til en NY konto - databasen
+    // afgør det (henvisning_knyt). Fejl stopper aldrig bekræftelsen.
+    henvisningskode?: string | null;
+  },
 ): Promise<BekraeftSvar> {
-  const { email, kode, ip, adgangskode, profil } = input;
+  const { email, kode, ip, adgangskode, profil, henvisningskode } = input;
   const graense = await tjekGraenserLukket([
     ["signup_kode_ip", ip],
     ["signup_kode_email_ip", `${email}|${ip}`],
@@ -445,5 +456,7 @@ export async function bekraeftKode(
   }
 
   const { navnSat, vilkaarSat } = await gemProfil(data.user.id, profil);
+  // Kun den, der har koden fra mailen, kan knytte kontoen til en henviser.
+  if (henvisningskode) await knytHenvisning(data.user.id, henvisningskode);
   return { ok: true, user: data.user, session: data.session, adgangskodeSat, navnSat, vilkaarSat };
 }
