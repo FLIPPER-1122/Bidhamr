@@ -11,6 +11,7 @@ import {
   type Tilbagerul,
 } from "@/lib/erhverv/betaling";
 import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
+import { erVelkomstVisning } from "@/lib/erhverv/abonnementRegler";
 
 // Firmaets pakkeskift - ÉN vej for både hjemmesiden (/api/offentlig
 // firma-skift-pakke -> skiftFirmaPakke) og appen (POST /api/firma/skift-pakke
@@ -59,8 +60,12 @@ function stripeFejl(b: Extract<BetalingsStatus, { status: "fejl" }>): SkiftPakke
   return { fejl: b.rulletTilbage ? FIRMA_OVERSIGT_EKSTRA.pakkeskiftFejl : FIRMA_OVERSIGT_EKSTRA.opgraderingBetalingFejl, kode: "stripe_fejl" };
 }
 
-export async function skiftPakkeForBruger(brugerId: string, pakkeId: unknown): Promise<SkiftPakkeSvar> {
+// visning: hvad siden viste for et skift op fra Starts gratis måned
+// (velkomstVisning, fx "velkomst:50"). Er rabatten ændret imens, afvises
+// skiftet, før noget trækkes. Mangler den (fx appen), tjekkes det ikke.
+export async function skiftPakkeForBruger(brugerId: string, pakkeId: unknown, visning?: unknown): Promise<SkiftPakkeSvar> {
   if (typeof pakkeId !== "string" || !UUID.test(pakkeId)) return { fejl: "Vælg en pakke.", kode: "ugyldig_pakke" };
+  const vist = erVelkomstVisning(visning) ? visning : null;
 
   const { data, error } = await createAdminClient().rpc("firma_skift_pakke_server", {
     p_bruger: brugerId,
@@ -75,7 +80,7 @@ export async function skiftPakkeForBruger(brugerId: string, pakkeId: unknown): P
   }
   const svar = (data ?? null) as DbSvar | null;
   try {
-    return await stripeDel(brugerId, svar);
+    return await stripeDel(brugerId, svar, vist);
   } finally {
     // Stripe-delen er færdig (eller rullet tilbage): et nyt skift må startes.
     // Fejler det, udløber markeringen selv efter 5 minutter.
@@ -92,13 +97,13 @@ export async function skiftPakkeForBruger(brugerId: string, pakkeId: unknown): P
   }
 }
 
-async function stripeDel(brugerId: string, svar: DbSvar | null): Promise<SkiftPakkeSvar> {
+async function stripeDel(brugerId: string, svar: DbSvar | null, vist: string | null): Promise<SkiftPakkeSvar> {
   const tilbagerul = svar?.tilbagerul ?? null;
   // Tilbagerulning rydder kun vores egen lås (firma_pakkeskift_rul_tilbage).
   const laas = svar?.laas ?? null;
 
   if (svar?.kode === "opgradering_afventer_betaling" && svar.pakke && svar.skift_id) {
-    const betaling = await startOpgradering(svar.skift_id, tilbagerul, laas);
+    const betaling = await startOpgradering(svar.skift_id, tilbagerul, laas, vist);
     // Kun "Din pakke er nu X", når betalingen er gået igennem og pakken
     // faktisk er aktiveret.
     if (betaling.status === "betalt") {
