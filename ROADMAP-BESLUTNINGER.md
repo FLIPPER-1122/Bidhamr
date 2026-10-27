@@ -71,6 +71,7 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
 - (Historik: før 26. okt. 2026 var det 5 % for sælger og 5 % for køber uden minimum/maksimum.)
 
 ## 4. BidHamr Beskyttelse (tilkøb for køber)
+- **Appens nye design (7B) er godkendt (Filip, 27. okt. 2026)** – showcase: `showcase/app-design-showcase.html`. Bundmenu: Hjem · Søg · Sælg · Mine handler · Konto. Firmaer kan ikke købe abonnement inde i iOS-appen (Apples regler) – appen henviser til bidhamr.dk.
 - **Oprettelse af en sag skal være så nem som overhovedet muligt – og præcis ens i appen og på hjemmesiden (Filip, 27. okt. 2026).** Det er en af de vigtigste funktioner. Forslag til det nye flow: `showcase/opret-sag-showcase.html` (til godkendelse).
 - **Ændret (Filip, 26. okt. 2026): BidHamr Beskyttelse er inkluderet i ALLE handler og betales via købergebyret (se afsnit 3). Den kan ikke længere til- eller fravælges.** Reglerne nedenfor om, hvad der dækkes, gælder nu for alle købere. (Historik: før var det et frivilligt tilkøb på **5%** oveni købergebyret, **minimum 25 kr og maksimum 250 kr** (Filip, 1. oktober 2026).) Vælges af køber på auktionssiden, når han byder (ikke forvalgt). Er den valgt, indgår den i betalingen på checkout-siden. Valget låses ved buddet og kan ikke ændres bagefter.
 - Dækker, hvis varen er **gået i stykker under forsendelsen**: køberen kan oprette en sag og sende varen retur.
