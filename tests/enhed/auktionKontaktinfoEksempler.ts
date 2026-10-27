@@ -1,7 +1,7 @@
 // Eksempler til kontaktoplysninger i auktioner (auktionKontaktGrund i
 // src/lib/auktionKontaktinfo.ts og public.auktion_kontaktinfo_grund i
 // databasen). PRÆCIS samme liste står i testblokken sidst i
-// supabase/migrations/20261102190000_kontaktinfo_rettelser2.sql - ændres en
+// supabase/migrations/20261102220000_kontaktinfo_rettelser3.sql - ændres en
 // regel, SKAL begge steder rettes.
 //
 // [tekst, svar for en privat sælger, svar for et firma]
@@ -135,4 +135,79 @@ export const AUKTION_KONTAKT_EKSEMPLER: AuktionKontaktEksempel[] = [
   ["Fra 2019/2020. Pris 2.500-3.000 ved nypris.", null, null],
   ["Pris 2500 3000 afhængig af stand", null, null],
   ["Åben kl. 20.00-22.00 for afhentning", null, null],
+  // 20261102220000: andre skilletegn, flere i træk og 0/00 foran.
+  ["Ring 22:33:44:55", "telefon", "telefon"],
+  ["Fin sofa (22) 33 44 55", "telefon", "telefon"],
+  ["22, 33, 44, 55", "telefon", "telefon"],
+  ["22_33_44_55", "telefon", "telefon"],
+  ["22|33|44|55", "telefon", "telefon"],
+  ["22+33+44+55", "telefon", "telefon"],
+  ["22*33*44*55", "telefon", "telefon"],
+  ["[22] 33 44 55", "telefon", "telefon"],
+  ["22 -- 33 -- 44 -- 55", "telefon", "telefon"],
+  ["Sofa 022334455", "telefon", "telefon"],
+  ["Sofa 0022334455", "telefon", "telefon"],
+  ["Sofa 00 22 33 44 55", "telefon", "telefon"],
+  ["Varenr 0022334455", "telefon", "telefon"],
+  ["Model nr 022334455", "telefon", "telefon"],
+  // Alle Unicode-cifre læses som 0-9 (arabisk-indiske, fuld bredde).
+  ["٢٢٣٣٤٤٥٥", "telefon", "telefon"],
+  ["Sofa ۲۲ ۳۳ ۴۴ ۵۵", "telefon", "telefon"],
+  ["２２３３４４５５", "telefon", "telefon"],
+  // Klokkeslæt og mål med de nye skilletegn - slipper igennem.
+  ["Afhentning kl. 14:30", null, null],
+  ["Afhentning kl. 20:00-22:00", null, null],
+  ["Åben 20:30 - 21:30", null, null],
+  ["Åben 20.00-22.00, 22.30-23.30", null, null],
+  ["Mål 22,5 x 33,5 x 44 cm", null, null],
+  ["Str. 36, 38, 40, 42", null, null],
+  ["Sko str. 22, 23, 24, 25", null, null],
+  ["Pris 2.500, 3.000 eller 4.000 kr", null, null],
+  ["Nypris 2.999,- sælges 1.499,-", null, null],
+  ["Årgang 2015 2016 2017", null, null],
+  ["Model 2019 2020 2021", null, null],
+  ["Passer til Golf 2008-2012 og Polo 2010-2014", null, null],
+  ["Købt 01.02.2024 - 03.02.2024", null, null],
+  ["Kamera 12 mp, 4k video", null, null],
+  // "kontor" er ikke "konto", og mvh/hilsen er ikke kontaktord.
+  ["Kontorstol IKEA Markus 402.638.47", null, null],
+  ["Kontorbord 120x60, IKEA Bekant 802.145.49", null, null],
+  ["Bankskab IKEA 402.638.47", null, null],
+  ["IKEA Billy 402.638.47 mvh Hans", null, null],
+  ["IKEA Malm 802.145.49 - venlig hilsen Hans", null, null],
+  ["IKEA Billy 402.638.47, overfør til konto", "telefon", "telefon"],
+  // Bankoplysninger skrevet som varenummer (konto, reg eller bank i teksten).
+  ["Varenr 1234 12345678 til min konto", "bank", "bank"],
+  ["Varenr 1234-12345678 reg nr", "bank", "bank"],
+  ["Varenr. 1234 1234567890 netbank", "bank", "bank"],
+  ["EAN 1234 12345678 bankoverførsel", "bank", "bank"],
+  ["Art.nr. 1234 12 34 56 78, betal til banken", "bank", "bank"],
+  ["SKU 12341234567890 kontoen", "bank", "bank"],
+  ["1. reg. 2015, 145000 km", null, null],
+  ["Art.nr 1234 1234567890", null, null],
+  // MobilePay - al betaling går via BidHamr.
+  ["Betal med MobilePay", "mobilepay", "mobilepay"],
+  ["MobilePay box 1234567 velkommen", "mobilepay", "mobilepay"],
+  ["Box 12345 på mp", "mobilepay", "mobilepay"],
+  ["Kontant eller mobile pay", "mobilepay", "mobilepay"],
+  ["Mp-boks 12345", "mobilepay", "mobilepay"],
+  // Telefonnummer delt over signalværdier.
+  ["Signal: 2233 hz 4455 hz", "telefon", "telefon"],
+  ["Signal: 22 db 33 db 44 db 55 db", "telefon", "telefon"],
+  // 9 cifre, der skjuler et telefonnummer (4-4 eller 2-2-2-2 + ét ciffer).
+  ["Varenr 2233/4455/1", "telefon", "telefon"],
+  ["Varenr 2233.4455.9", "telefon", "telefon"],
+  ["Varenr. 1-2233-4455", "telefon", "telefon"],
+  ["Varenr 22.33.44.55.6", "telefon", "telefon"],
+  ["Sofa 1-2233-4455", "telefon", "telefon"],
+  // HTML-entiteter og %XX afkodes.
+  ["salg&#64;firma.dk", "email", "email"],
+  ["salg&#x40;firma&period;dk", "email", "email"],
+  ["%74%2eme/firmaet", "socialt_medie", "socialt_medie"],
+  ["%32%32334455", "telefon", "telefon"],
+  ["&#50;&#50;334455", "telefon", "telefon"],
+  // E-mail med mellemrum eller som "på gmail".
+  ["hans @ gmail . com", "email", "email"],
+  ["hans på gmail", "email", "email"],
+  ["Skriv på mail", "email", "email"],
 ];
