@@ -162,7 +162,7 @@ export default async function AuktionPage({
   const erSælger = bruger?.id === auktion.bruger_id;
 
   // Handelstilstand: cron-jobbet opretter handel + betaling ved auktionsluk.
-  // Betalingen er dermed allerede sket - der er intet "betal nu"-trin.
+  // Vinderen betaler selv på betalingssiden ("Betal nu" i vinderboksen).
   // En auktion kan have flere handler, hvis vinderen ikke betalte og varen
   // gik videre til næste byder (kun én er ikke-annulleret). Den nyeste er
   // den gældende; RLS viser kun handler, brugeren selv er part i.
@@ -556,6 +556,8 @@ export default async function AuktionPage({
                 auktionId={auktion.id}
                 tradeId={handel?.id ?? null}
                 utenChat={erhvervAuktion}
+                vinder
+                tradeStatus={handel?.status ?? null}
               />
             </div>
           )}
@@ -805,8 +807,11 @@ export default async function AuktionPage({
         </div>
       </div>
 
-      {/* Fast budbjælke i bunden på mobil (BidPanel lægger indholdet her) */}
-      <div id="byd-bjaelke" className="sticky bottom-[var(--samtykke-hoejde,0px)] z-20 -mx-4 sm:-mx-6 lg:hidden" />
+      {/* Fast budbjælke i bunden på mobil (BidPanel lægger indholdet her).
+          Containeren fanger aldrig tryk - kun selve bjælken, når den er
+          synlig (pointer-events-auto i BidPanel). Ellers ligger et usynligt
+          lag over "Afgiv bud" nederst på skærmen. */}
+      <div id="byd-bjaelke" className="pointer-events-none sticky bottom-[var(--samtykke-hoejde,0px)] z-20 -mx-4 sm:-mx-6 lg:hidden" />
     </main>
   );
 }
