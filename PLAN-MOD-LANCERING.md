@@ -22,7 +22,7 @@ Princippet:
 | 6 | Dagens arbejde på produktion | Mig | Grundlaget for alt andet. |
 | 7 | Glidende gebyrer + blokering af kontaktinfo | Mig | Priser og regler skal ligge fast før den samlede test. |
 | 8 | Fragt via Shipmondo | Mig | Den sidste store tekniske ukendte. |
-| 9 | Appen: CAPTCHA, nye regler, nye builds | Mig | Skal til Apple tidligt, fordi gennemgangen kan drille. |
+| 9 | Appen: nyt design (7B), statistik, CAPTCHA, nye regler, nye builds | Mig | Appen er den primære platform og skal være helt i orden fra start. Den skal til Apple tidligt, fordi gennemgangen kan drille. |
 | 10 | Admin: staff må ikke kunne spærres ude | Mig | Lille, men skal være lukket før lancering. |
 | 11 | Dine tests i browser og på telefon | Filip | Når funktionerne er færdige. |
 | 12 | Funktionsstop 20. nov. | Alle | Derefter kun fejlrettelser. |
@@ -40,7 +40,7 @@ Princippet:
 3. **Shipmondo** (egne DAO- og GLS-aftaler) i stedet for DAO direkte. Den er bygget og giver retur via API.
 4. **Én udgivelse om ugen.** Jeg samler det, der er færdigt, du pusher, og migrationerne køres samme dag.
 5. **Blød lancering i december** på produktion med inviterede og små rigtige handler.
-6. **Udskydes til efter lanceringen:** statistik i appen og appens nye design (fase 5, 7B).
+6. **Appen er den primære platform** (Filip, 27. okt.): nyt design (7B) og statistik kommer med før lanceringen. Vi starter dem i uge 45, så de er færdige til funktionsstoppet.
 
 ---
 
@@ -71,7 +71,7 @@ Princippet:
 
 ### November: alt bygget og testet
 - **Uge 45-46 (2.-15. nov.)**
-  - Mig: fragt via Shipmondo, appen (CAPTCHA og nye builds) og staff-login.
+  - Mig: fragt via Shipmondo, appen (nyt design 7B, statistik, CAPTCHA og nye builds) og staff-login.
   - Filip: test appen og firma-delen.
 - **Uge 47 (16.-22. nov.)**
   - Mig: fejlrettelser. **Funktionsstop 20. nov.**
@@ -110,8 +110,8 @@ Princippet:
 - [x] En særpris udelukker velkomstrabatten for måned 1 (Filip, 27. okt.) – bygges.
 - [x] En introrabat sat efter, at Starts gratis måned er i gang, gælder i måned 2-7 (Filip, 27. okt.).
 - [x] Chefens pakkeskift i admin i en gratis periode er fortsat gratis for firmaet (Filip, 27. okt.).
-- [ ] Udskyde statistik i appen og appens nye design til efter lanceringen?
-- [ ] Shipmondo i stedet for DAO direkte?
+- [x] Nej – appen er den primære platform, så statistik og nyt design kommer med før lanceringen (Filip, 27. okt.).
+- [x] Shipmondo (med egne DAO- og GLS-aftaler) i stedet for DAO direkte (Filip, 27. okt.).
 
 ## 6. Det, der kan få planen til at skride
 - **Stripe live-aktivering:** kan kræve ekstra dokumenter. Start i dag.
