@@ -80,9 +80,10 @@ import {
   skiftPrisAdmin,
   frigivPakkeskiftLaas,
   udloebetOpgradering,
+  velkomstSkiftForPakke,
 } from "@/lib/erhverv/betaling";
 import { skiftPakkeForBruger } from "@/lib/erhverv/pakkeskift";
-import { introPasser, plusMaaneder } from "@/lib/erhverv/abonnementRegler";
+import { introPasser, plusMaaneder, retRabatAlarmNoegle, velkomstBetaltNote } from "@/lib/erhverv/abonnementRegler";
 import { ADMIN_FIRMA_ABONNEMENT, FIRMA_ABONNEMENT } from "@/lib/tekster/erhverv";
 
 const FIRMA = "26849ab7-6678-47b7-a8bd-4d618dfdf9f3";
@@ -1210,7 +1211,24 @@ describe("regel for måned 1 (20261102070000)", () => {
     await spol(t1);
 
     await nulstilSkiftGraense();
-    expect(await skiftPakkeForBruger(brugerId, PRO)).toMatchObject({ ok: true, kode: "opgraderet" });
+    // Rettelser 4: uden det viste (en app, der ikke har spurgt GET'en) afvises
+    // skiftet, før noget ændres i Stripe.
+    expect(await skiftPakkeForBruger(brugerId, PRO)).toEqual({ fejl: FIRMA_ABONNEMENT.skiftVisningMangler, kode: "visning_mangler" });
+    {
+      const foer = await stripe.subscriptions.retrieve(subId);
+      expect(foer).toMatchObject({ status: "trialing", pending_update: null });
+      expect(foer.items.data[0].price.metadata.pakke_id).toBe(START);
+      expect(await beloeb()).toEqual([]);
+    }
+    // Appens GET: samme beløb, som trækkes.
+    const vist = await velkomstSkiftForPakke(brugerId, PRO);
+    expect(vist).toMatchObject({
+      status: "ok",
+      tilbud: { udfald: "skift", visning: "velkomst:50", beloeb: { eksklOere: PRO_OERE / 2 }, kanSkifte: true },
+    });
+    const visning = vist.status === "ok" && vist.tilbud ? vist.tilbud.visning : "";
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, PRO, visning)).toMatchObject({ ok: true, kode: "opgraderet" });
     const sub = await stripe.subscriptions.retrieve(subId);
     expect(sub.status).toBe("active");
     expect(sub.items.data[0].price).toMatchObject({ unit_amount: PRO_OERE, metadata: { pakke_id: PRO } });
@@ -1221,13 +1239,15 @@ describe("regel for måned 1 (20261102070000)", () => {
     expect(await beloeb()).toEqual([PRO_OERE / 2]);
     const { data: skift } = await db
       .from("firma_pakkeskift")
-      .select("status, stripe_invoice_id")
+      .select("status, stripe_invoice_id, note")
       .eq("firma_id", FIRMA)
       .eq("til_pakke_id", PRO)
       .order("oprettet_kl", { ascending: false })
       .limit(1)
       .single();
     expect(skift).toMatchObject({ status: "gennemfoert" });
+    // Noten med den rigtige rabat (50 % = halv pris).
+    expect(String(skift!.note)).toContain(velkomstBetaltNote(50));
     const { data: regning } = await db
       .from("firma_regninger")
       .select("status, type, beloeb_oere")
@@ -1421,7 +1441,7 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
     const t1 = await startIGratisMaaned("BidHamr maaned1 afvist");
     await nytKort("pm_card_chargeCustomerFail");
     await nulstilSkiftGraense();
-    const svar = await skiftPakkeForBruger(brugerId, PRO);
+    const svar = await skiftPakkeForBruger(brugerId, PRO, "velkomst:50");
     expect(svar).toMatchObject({ ok: true, kode: "betal_forskellen" });
 
     let sub = await stripe.subscriptions.retrieve(subId, { expand: ["latest_invoice"] });
@@ -1470,7 +1490,7 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
     await startIGratisMaaned("BidHamr maaned1 3ds");
     await nytKort("pm_card_authenticationRequiredOnSetup");
     await nulstilSkiftGraense();
-    const svar = await skiftPakkeForBruger(brugerId, PRO);
+    const svar = await skiftPakkeForBruger(brugerId, PRO, "velkomst:50");
     expect(svar).toMatchObject({ ok: true, kode: "betal_forskellen" });
     if ("url" in svar) expect(svar.url).toMatch(/^https:\/\/invoice\.stripe\.com\//);
     let sub = await stripe.subscriptions.retrieve(subId, { expand: ["latest_invoice"] });
@@ -1533,7 +1553,7 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
     await nulstilSkiftGraense();
     // Siden viste "venter" (intet beløb): skiftet sætter introrabatten på og
     // afvises - firmaet skal se den nye pris, før det trækkes.
-    expect(await skiftPakkeForBruger(brugerId, PRO, "venter")).toEqual({ fejl: FIRMA_ABONNEMENT.skiftRabatSatOp, kode: "stripe_fejl" });
+    expect(await skiftPakkeForBruger(brugerId, PRO, "venter")).toEqual({ fejl: FIRMA_ABONNEMENT.skiftRabatSatOp, kode: "rabat_venter" });
     let sub = await stripe.subscriptions.retrieve(subId);
     expect(sub).toMatchObject({ status: "trialing", pending_update: null });
     expect(sub.items.data[0].price.metadata.pakke_id).toBe(START);
@@ -1543,12 +1563,25 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
 
     // Siden viser nu 30 % - men en gammel side (viste 50 %) afvises.
     await nulstilSkiftGraense();
-    expect(await skiftPakkeForBruger(brugerId, PRO, "velkomst:50")).toEqual({ fejl: FIRMA_ABONNEMENT.skiftPrisAendret, kode: "stripe_fejl" });
+    expect(await skiftPakkeForBruger(brugerId, PRO, "velkomst:50")).toEqual({ fejl: FIRMA_ABONNEMENT.skiftPrisAendret, kode: "pris_aendret" });
     expect((await stripe.subscriptions.retrieve(subId)).status).toBe("trialing");
     expect(await beloeb()).toEqual([]);
 
+    // Appens GET viser nu 30 % (rabattens slutdato fra Stripe) - og det beløb trækkes.
+    const vist = await velkomstSkiftForPakke(brugerId, PRO);
+    expect(vist).toMatchObject({
+      status: "ok",
+      tilbud: { udfald: "skift", visning: "intro:30", rabat: { slags: "intro", procent: 30 }, beloeb: { eksklOere: Math.round(PRO_OERE * 0.7) } },
+    });
+    if (vist.status === "ok") expect(vist.tilbud?.rabat).toMatchObject({ til: expect.stringMatching(/^\d{1,2}\. \S+ \d{4}$/) });
+
     await nulstilSkiftGraense();
     expect(await skiftPakkeForBruger(brugerId, PRO, "intro:30")).toMatchObject({ ok: true, kode: "opgraderet" });
+    {
+      const { data: s } = await db.from("firma_pakkeskift").select("note").eq("firma_id", FIRMA).eq("til_pakke_id", PRO).eq("status", "gennemfoert").order("oprettet_kl", { ascending: false }).limit(1).single();
+      // Noten siger 30 % rabat, ikke halv pris.
+      expect(String(s?.note)).toContain(velkomstBetaltNote(30));
+    }
     sub = await stripe.subscriptions.retrieve(subId);
     expect(sub.status).toBe("active");
     const kuponIder = await kuponerPaaAbonnement();
@@ -1567,8 +1600,23 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
     await stripe.subscriptions.update(subId, { discounts: "" });
     const foer = new Date().toISOString();
     await nulstilSkiftGraense();
-    // Også uden det viste (som appen): afvist.
-    expect(await skiftPakkeForBruger(brugerId, PRO)).toEqual({ fejl: FIRMA_ABONNEMENT.skiftRetRabat, kode: "stripe_fejl" });
+    // Uden det viste: afvist, før reglen overhovedet ses (ingen alarm).
+    expect(await skiftPakkeForBruger(brugerId, PRO)).toEqual({ fejl: FIRMA_ABONNEMENT.skiftVisningMangler, kode: "visning_mangler" });
+    expect(await alarmer("erhverv/velkomst-rabat-uenig", foer)).toBe(0);
+    // Siden/appen viste "ret_rabat" (ingen knap), men der trykkes alligevel -
+    // to gange: afvist begge gange, og kun ÉN alarm (dedup pr. firma og aftale).
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, PRO, "ret_rabat")).toEqual({ fejl: FIRMA_ABONNEMENT.skiftRetRabat, kode: "ret_rabat" });
+    expect(await skiftPakkeForBruger(brugerId, PRO, "ret_rabat")).toEqual({ fejl: FIRMA_ABONNEMENT.skiftRetRabat, kode: "ret_rabat" });
+    {
+      const { data: raekker } = await db
+        .from("drift_fejl")
+        .select("antal")
+        .eq("digest", retRabatAlarmNoegle(FIRMA, String((await firma()).intro_noegle)));
+      expect(raekker).toHaveLength(1);
+      expect(Number(raekker![0].antal)).toBeGreaterThanOrEqual(2);
+    }
+    expect(await alarmer("skiftPakke/startOpgradering", foer)).toBe(0);
     const sub = await stripe.subscriptions.retrieve(subId);
     expect(sub).toMatchObject({ status: "trialing", pending_update: null });
     expect(sub.items.data[0].price.metadata.pakke_id).toBe(START);
@@ -1596,10 +1644,15 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
     // om lidt): heller ikke annulleret.
     const pro = await senesteSkift(PRO);
     await db.from("firma_pakkeskift").update({ stripe_invoice_id: null }).eq("id", pro.id);
+    const { data: oprettet } = await db.from("firma_pakkeskift").select("oprettet_kl").eq("id", pro.id).single();
     try {
       expect(await udloebetOpgradering(sub)).toBe("i_gang");
+      // Ældre end en time og stadig uden faktura, men abonnementet venter
+      // stadig på en ændring: "venter" (rettelser 4) - ikke annulleret.
+      await db.from("firma_pakkeskift").update({ oprettet_kl: new Date(Date.now() - 2 * 3600_000).toISOString() }).eq("id", pro.id);
+      expect(await udloebetOpgradering(sub)).toBe("venter");
     } finally {
-      await db.from("firma_pakkeskift").update({ stripe_invoice_id: gammel.id }).eq("id", pro.id);
+      await db.from("firma_pakkeskift").update({ stripe_invoice_id: gammel.id, oprettet_kl: oprettet?.oprettet_kl }).eq("id", pro.id);
     }
     expect((await senesteSkift(PRO)).status).toBe("afventer_betaling");
     expect((await stripe.invoices.retrieve(gammel.id!)).status).toBe("open");
@@ -1622,9 +1675,11 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
     const butik = await senesteSkift(BUTIK);
     const { data: note } = await db.from("firma_pakkeskift").select("note").eq("id", butik.id).single();
     if (String(note?.note ?? "").includes("pending update udløbet")) {
-      expect(svar).toMatchObject({ kode: "stripe_fejl" });
+      // Afvist før noget blev trukket - også hvis tilbagerulningen fejlede.
+      expect(svar).toMatchObject({ kode: expect.stringMatching(/^(rabat_venter|i_gang)$/) });
+      expect("fejl" in svar ? svar.fejl : "").toMatch(/ikke trukket nogen penge/);
     } else {
-      expect(svar).toEqual({ fejl: FIRMA_ABONNEMENT.skiftRabatSatOp, kode: "stripe_fejl" });
+      expect(svar).toEqual({ fejl: FIRMA_ABONNEMENT.skiftRabatSatOp, kode: "rabat_venter" });
     }
     expect(butik.status).not.toBe("afventer_betaling");
     expect((await stripe.invoices.retrieve(gammel.id!)).status).toBe("void");

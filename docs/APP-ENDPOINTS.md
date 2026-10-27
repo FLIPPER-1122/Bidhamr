@@ -199,6 +199,24 @@ på samme måde: policyen `auktion_billeder_slet_ikke_laast` (`auktion_billede_l
 billede i mappen, så længe ejeren har en åben sag (ud over billeder fra auktioner med bud eller handel, som før).
 Svaret er da en tom sletning (intet slettet) - prøv ikke igen.
 
+## GET og POST /api/firma/skift-pakke (firmaets pakkeskift)
+
+Samme kode som Firma oversigt -> Abonnement (`src/lib/erhverv/pakkeskift.ts`, `velkomstSkiftForPakke` i
+`src/lib/erhverv/betaling.ts`). Fuld kontrakt i toppen af `src/app/api/firma/skift-pakke/route.ts`.
+
+Det viste beløb er det trukne (måned 1-reglen, rettelser 4, 27. okt. 2026):
+
+1. Før bekræftelsen: `GET /api/firma/skift-pakke?til=<pakke-id>` (Bearer). Svaret er `velkomstSkift: false`
+   (almindeligt skift - vis de almindelige tekster) eller `velkomstSkift: true` med `udfald` (`skift` / `venter` /
+   `ret_rabat`), `beloeb` (`eksklOere`/`inklOere` - det, der trækkes i dag), `rabat` (slags, procent og `til` =
+   rabattens slutdato som dansk dato), `visning`, `kanSkifte`, `tekst` (bekræftelsen) og `knap`. Ved
+   `kanSkifte: false` (ret_rabat) vises ingen knap.
+2. Ved tryk: `POST { pakkeId, visning }` med `visning` fra GET'en. Ved et skift op fra Starts gratis måned er
+   `visning` krævet: uden den `409 visning_mangler`, før noget ændres.
+3. Afvist før noget er trukket (`409`): `pris_aendret` (hent GET igen og vis den nye pris), `rabat_venter`
+   (introrabatten er sat op eller sættes op - hent GET igen), `ret_rabat` (BidHamr skal rette rabatten - vis
+   `fejl`), `visning_mangler`. En sendt, men ugyldig `visning`: `400 ugyldig_visning`.
+
 ## BidHamr-bot: GET/POST /api/app/bot og POST /api/app/bot/medarbejder
 
 Migration `20261102240000_bidhamr_bot.sql`. Samme kerne som hjemmesidens chatboble (`src/lib/bot/motor.ts`).

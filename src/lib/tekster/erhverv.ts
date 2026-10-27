@@ -674,6 +674,14 @@ export const FIRMA_OVERSIGT_EKSTRA = {
   // Stripe fejlede, og et andet pakkeskift gik i gang imens (det gælder nu).
   pakkeskiftLaasOvertaget:
     "Vi kunne ikke gennemføre dit pakkeskift, og et andet pakkeskift blev sat i gang imens. Se din pakke under Abonnement, før du prøver igen. Er du i tvivl, så skriv til erhverv@bidhamr.dk.",
+  // Som ovenfor, men skiftet blev afvist, før noget blev trukket (skift op
+  // fra den gratis måned).
+  pakkeskiftLaasOvertagetIntetTrukket:
+    "Vi kunne ikke gennemføre dit pakkeskift, og et andet pakkeskift blev sat i gang imens. Der er ikke trukket nogen penge for dette skift. Se din pakke under Abonnement, før du prøver igen. Er du i tvivl, så skriv til erhverv@bidhamr.dk.",
+  // Skiftet blev afvist, før noget blev trukket, men vi kunne ikke sætte
+  // pakkeskiftet tilbage (staff har fået en alarm).
+  pakkeskiftIkkeRulletIntetTrukket:
+    "Vi kunne ikke gennemføre dit pakkeskift. Der er ikke trukket nogen penge. Se din pakke under Abonnement, før du prøver igen. Er du i tvivl, så skriv til erhverv@bidhamr.dk.",
   // Abonnementet i Stripe er ikke aktivt (fx en ubetalt regning).
   pakkeskiftBetalFoerst: "Du kan ikke skifte pakke, før din seneste regning er betalt. Din pakke er ikke ændret.",
   afhentning: (vare: string) => `Køberen skal hente ${vare}. Aftal tid og sted med køberen.`,
@@ -1430,6 +1438,9 @@ export const FIRMA_ABONNEMENT = {
   //  - rabatten er ændret, siden siden blev vist
   skiftPrisAendret:
     "Prisen er ændret, siden du åbnede siden. Se den nye pris, og vælg pakken igen. Der er ikke trukket nogen penge.",
+  //  - siden eller appen sendte ikke, hvilken pris den viste
+  skiftVisningMangler:
+    "Vi kunne ikke se, hvilken pris du fik vist. Opdater siden, se prisen, og vælg pakken igen. Der er ikke trukket nogen penge.",
   // I bekræftelsen, når der ikke kan vises et beløb (velkomstSkiftUdfald):
   //  - venter: introrabatten er aftalt, men ikke sat på endnu
   bekraeftOpgraderVenterRabat:
