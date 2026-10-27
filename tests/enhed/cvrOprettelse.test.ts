@@ -33,6 +33,10 @@ describe("cvrTilOprettelse", () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("netværk"); }));
     expect(cvrTilOprettelse(await slaaCvrOpOffentligt("46836219"))).toBe("utilgaengelig");
   });
+  it("svar for et andet CVR: tillades (utilgaengelig), så et ægte firma ikke afvises", async () => {
+    svar(200, { vat: 46836219, name: "Bidhamr ApS", enddate: null });
+    expect(cvrTilOprettelse(await slaaCvrOpOffentligt("12345674"))).toBe("utilgaengelig");
+  });
   it("ugyldigt CVR afvises uden opslag", async () => {
     const f = vi.fn();
     vi.stubGlobal("fetch", f);

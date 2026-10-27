@@ -2852,11 +2852,21 @@ export async function onboardingLink(
       userId,
     );
 
-    await createAdminClient()
+    const { error: gemKontoFejl } = await createAdminClient()
       .from("betalingsprofiler")
       .update({ stripe_account_id: konto.id, opdateret: new Date().toISOString() })
       .eq("user_id", userId)
       .is("stripe_account_id", null);
+    if (gemKontoFejl) {
+      // Kontoen findes i Stripe, men er ikke gemt hos os - næste forsøg kan
+      // ellers ende med en konto mere. Staff skal sætte id'et på profilen.
+      await logDriftFejl({
+        kilde: "server",
+        hvor: "betaling/connect-gem",
+        fejl: `Connect-konto ${konto.id} blev oprettet, men kunne ikke gemmes på betalingsprofilen: ${gemKontoFejl.message}`,
+        brugerId: userId,
+      });
+    }
     profil = await hentProfil(userId);
   } else {
     // Eksisterende konto: anmod om det, der mangler (fx card_payments), og

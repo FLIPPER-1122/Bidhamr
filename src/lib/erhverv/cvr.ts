@@ -71,7 +71,7 @@ export async function slaaCvrOpOffentligt(input: string): Promise<CvrOpslag> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const url = `https://cvrapi.dk/api?search=${encodeURIComponent(cvr)}&country=dk`;
+    const url = `https://cvrapi.dk/api?vat=${encodeURIComponent(cvr)}&country=dk`;
     const res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
       signal: ctrl.signal,
@@ -83,9 +83,10 @@ export async function slaaCvrOpOffentligt(input: string): Promise<CvrOpslag> {
     if (data.error) {
       return { ok: false, grund: data.error === "NOT_FOUND" ? "ikke_fundet" : "utilgaengelig" };
     }
-    // Svaret skal være for præcis det CVR, vi spurgte om (search kan ellers
-    // matche på navn).
-    if (String(data.vat ?? "") !== cvr) return { ok: false, grund: "ikke_fundet" };
+    // Svaret skal være for præcis det CVR, vi spurgte om. Et svar for et andet
+    // CVR er ikke bevis for, at vores ikke findes - behandles som en fejl i
+    // opslaget (tillades ved oprettelse og logges), så et ægte firma ikke afvises.
+    if (String(data.vat ?? "") !== cvr) return { ok: false, grund: "utilgaengelig" };
     const firmanavn = tekst(data.name, 200);
     if (!firmanavn) return { ok: false, grund: "ikke_fundet" };
     const postnummer = tekst(data.zipcode, 4);
