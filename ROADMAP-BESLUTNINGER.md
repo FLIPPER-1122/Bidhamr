@@ -612,6 +612,7 @@ Alle fire skal være færdige før lanceringen, på både hjemmesiden og i appen
    - Den kan **aldrig ændre noget eller flytte penge**, og den kan ikke se andre brugeres data.
    - Kan den ikke svare, sender den samtalen videre til en medarbejder som en henvendelse i admin. Medarbejderen svarer i Beskeder under "Fra BidHamr".
    - Det skal tydeligt fremgå, at man skriver med en AI (AI-forordningen, art. 50).
+   - **Efter brugerens første besked** vises knappen **"Kontakt en rigtig medarbejder"** (Filip, 27. okt. 2026). Den sender samtalen videre til en medarbejder på samme måde.
 3. **Henvis en ven:** brugeren deler sit eget link. Når en ven, der har oprettet sig via linket, er **MitID-verificeret**, får den, der henviste, **10 boost-point**.
    - Højst 10 venner om måneden (100 point).
    - Kun private kan få point, for firmaer kan ikke bruge boost.
