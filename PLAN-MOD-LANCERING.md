@@ -1,57 +1,74 @@
-# Plan mod lancering 1. marts 2027
+# Plan mod lancering 1. marts 2027 (ny udgave)
 
-Lavet 27. okt. 2026. **Mig** = Claude og agenterne. **Filip** = dig. Datoerne er mål, ikke løfter – rykker noget, rykker vi resten med.
+Lavet 27. okt. 2026. **Regel: fra 1. januar 2027 kodes der ikke.** Alt teknisk skal være færdigt og køre live (rigtige penge, rigtig MitID, rigtig fragt, app i butikkerne) inden jul. Januar og februar er kun marketing, butikker og drift. Kun kritiske fejl rettes efter nytår.
 
-## November 2026 – alt teknisk færdigt
+**Mig** = Claude og agenterne. **Filip** = dig.
+
+## Sådan bliver vi hurtigere
+1. **Start alt, der afhænger af andre, NU – ikke når koden er færdig.** Stripe live-aktivering, advokat, revisor, Idura/MitID-produktion, Dinero, Google Play-konto og DAO-kontrakt tager uger hos andre. De kører parallelt med koden fra i dag.
+2. **Funktionsstop 20. nov.** Derefter kun fejlrettelser, test og live-opsætning. Nye idéer går på en liste til efter lanceringen.
+3. **Vælg Shipmondo nu** (egne DAO- og GLS-aftaler). Adapteren findes allerede, og den giver retur via API. DAO direkte lægges på hylden.
+4. **Én udgivelse om ugen** (fx torsdag): jeg samler det færdige, reviewer og tester, du pusher, migrationerne køres samme dag. Ingen løse ender i flere uger.
+5. **Gå live i det stille i december** (blød lancering på produktion med inviterede og små rigtige handler). Så er januar ikke første gang, noget kører med rigtige penge.
+6. **Skær det fra, der ikke skal bruges til lanceringen:** statistik i appen og appens nye design (fase 5, 7B) flyttes til efter lanceringen, medmindre du siger andet.
+
+## Nu – uge 44 (27. okt. – 1. nov.)
+**Filip (start i dag, de tager tid)**
+- Stripe: start live-aktiveringen (firma, bank, ID). Den kan aktiveres uden at gå live.
+- Advokat: send betingelser, privatlivspolitik og `jura/noter-til-advokat.md`, og aftal svar senest 30. nov.
+- Revisor: fakturaer, bogføring af Stripe-fakturaer (nr. 100) og DAC7, svar senest 30. nov.
+- Idura: bestil MitID-produktion.
+- Dinero: vælg den betalte plan.
+- Google Play-udviklerkonto. Tjek, at Apple Developer er aktiv.
+- Underskriv DAO-kontrakten, og bekræft Shipmondo (Essentials eller Pro) med Dea.
+- Opgrader Resend.
+
 **Mig**
-- Gør dagens arbejde færdigt: måned 1-regel, fakturaer, skift af e-mail, kontaktinfo i beskrivelser, glidende gebyrer → review, samlet test, prod-migrationer (med dit ja).
-- Fragt: koble DAO på via Shipmondo med rigtige nøgler, slå labels og retur til, test med forsendelser der aldrig indleveres.
-- Appen: nyt TestFlight-build med al ny kode, CAPTCHA i appen, test alle app-punkter på telefon (fase 5 "mangler test på telefon"), Android-build.
-- Admin: staff må ikke kunne spærres ude via login-loftet.
+- Gør dagens arbejde færdigt: måned 1-regel, fakturaer, skift af e-mail, kontaktinfo i beskrivelser, glidende gebyrer. Review, samlet test og prod-migrationer med dit ja.
 
-**Filip**
-- Underskriv DAO-kontrakten (gælder fra 1. marts) og send Allans svar om Shipmondo videre.
-- Advokat: send betingelser, privatlivspolitik og `jura/noter-til-advokat.md` (inkl. Cloudflare nr. 138-139).
-- Revisor: fakturaer (Dinero), bogføring af Stripe-fakturaer (nr. 100) og DAC7.
-- Resend: opgrader planen (kvoten slap op under test).
-- Test firma-rejsen og opret auktion som nyt firma i almindelig browser.
+## November – alt bygget og testet
+**Uge 45-46 (2.-15. nov.)**
+- Mig: fragt via Shipmondo med rigtige nøgler (labels, retur, sporing, ikke-afhentet). Appen: CAPTCHA, kode `indsigelse`, nyt TestFlight- og Android-build. Admin: staff må ikke kunne spærres ude.
+- Filip: test appen på telefonen via TestFlight, og test firma-rejsen.
 
-## December 2026 – klar til rigtige penge
-**Mig**
-- Go-live-generalprøve i Stripe live (betalingsmetoder, webhooks, Connect, fakturaopsætning) – efter du har aktiveret kontoen.
-- Indarbejd advokatens og revisorens svar.
-- Sikkerhedsgennemgang nr. 2 af hele siden og appen, belastningstest, overvågning og backup/genskabelse.
-- Appens sider i App Store og Google Play: tekster, skærmbilleder, privatlivsoplysninger.
-- **Kodefrys 20. dec.**: kun fejlrettelser hen over jul.
+**Uge 47 (16.-22. nov.)**
+- Mig: fejlrettelser fra dine tests. **Funktionsstop 20. nov.**
+- Filip: send listen over det, der ikke virker.
 
-**Filip**
-- Aktivér Stripe live (firma- og bankoplysninger, ID).
-- Idura/MitID i produktion.
-- Dinero live.
-- Google Play-udviklerkonto (og Apple Developer, hvis ikke på plads).
+**Uge 48 (23.-30. nov.)**
+- Mig: stor sluttest af hele siden og appen, sikkerhedsgennemgang nr. 2, belastningstest, overvågning og backup.
+- Filip: advokatens og revisorens svar skal være kommet.
 
-## Januar 2027 – lukket beta og marketing
-**Mig**
-- Lukket beta på bidhamr.dk med inviterede (beta-invitationer) og små rigtige handler.
-- Ret fejl fra betaen hurtigt.
-- Send appen til App Store- og Play-gennemgang (midt i januar).
+## December – live
+**Uge 49 (1.-6. dec.)**
+- Mig: indarbejd advokatens og revisorens svar. Stripe live-opsætning (betalingsmetoder, webhooks, Connect, fakturaer, branding). MitID og Dinero i produktion.
+- Filip: godkend betingelser og privatlivspolitik, og skift Vercel til live-nøgler sammen med mig.
 
-**Filip**
-- Start videoerne efter udgivelsesplanen og byg ventelisten.
-- Onboard de første butikker (firmapakker), og sælg Ugens butik for marts.
-- Møder med samarbejdspartnere.
+**Uge 50 (7.-13. dec.)**
+- Mig: send appen til App Store- og Play-gennemgang med sider, skærmbilleder og privatlivsoplysninger.
+- Alle: **blød lancering**. Siden kører live med rigtige penge for inviterede (dig, familie, de første butikker). Små rigtige handler hele vejen igennem: betaling, fragt, udbetaling og faktura.
 
-## Februar 2027 – generalprøve
-**Mig**
-- Gå hele go-live-listen igennem (`HUSKELISTE.md`, `docs/GO-LIVE-STRIPE.md`, `docs/FRAGT.md`): alle flag og nøgler i Vercel og Supabase.
-- Slå CAPTCHA og beskyttelse mod lækkede adgangskoder til.
-- Sidste fulde test på produktion.
-- **Kodefrys 20. feb.**
+**Uge 51 (14.-20. dec.)**
+- Mig: ret alt fra den bløde lancering. Appen godkendt (sat til manuel udgivelse 1. marts).
+- **Teknik færdig 20. dec.** Herefter kun kritiske fejl.
 
-**Filip**
-- Appen godkendt og klar til udgivelse 1. marts.
-- Presse og marketing-push, firmaer klar med auktioner.
+**Jul**
+- Siden kører i lukket tilstand. Jeg holder øje med drift.
+
+## Januar 2027 – marketing og butikker (ingen kodning)
+- Filip: videoerne efter udgivelsesplanen, venteliste og sociale medier. Onboard butikker (firmapakker), sælg Ugens butik for marts. Møder og presse.
+- Mig: drift, overvågning og svar på spørgsmål. Kun kritiske fejl rettes.
+
+## Februar 2027 – generalprøve (ingen kodning)
+- Filip: butikkerne har auktioner klar til 1. marts. Pressemeddelelse.
+- Mig: gennemgå go-live-listen (`HUSKELISTE.md`, `docs/GO-LIVE-STRIPE.md`, `docs/FRAGT.md`). Slå CAPTCHA og beskyttelse mod lækkede adgangskoder til. Sidste test på produktion 25. feb.
 
 ## 1. marts 2027 – lancering
-- Slå `LANCERET`, `TILMELDING_AABEN` og `SEO_INDEKSERING` til (se `HUSKELISTE.md`), luk invitationsværnet, udgiv appen.
+- Slå `LANCERET`, `TILMELDING_AABEN` og `SEO_INDEKSERING` til, luk invitationsværnet, og udgiv appen.
 - Jeg holder øje med drift, betalinger og fejl hele dagen.
+
+## Det, der kan få planen til at skride
+- **Stripe live-aktivering:** kan kræve ekstra dokumenter. Start i dag.
+- **Advokat og revisor:** aftal en fast svardato.
+- **Apples gennemgang:** første app kan blive afvist en eller to gange. Derfor sendes den allerede uge 50.
+- **Idura/MitID-produktion:** kræver aftale og opsætning hos dem.
