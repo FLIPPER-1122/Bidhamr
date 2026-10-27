@@ -1,7 +1,7 @@
 // Eksempler til kontaktoplysninger i auktioner (auktionKontaktGrund i
 // src/lib/auktionKontaktinfo.ts og public.auktion_kontaktinfo_grund i
 // databasen). PRÆCIS samme liste står i testblokken sidst i
-// supabase/migrations/20261102280000_kontaktinfo_rettelser4.sql - ændres en
+// supabase/migrations/20261102300000_kontaktinfo_rettelser5.sql - ændres en
 // regel, SKAL begge steder rettes.
 //
 // [tekst, svar for en privat sælger, svar for et firma]
@@ -250,4 +250,48 @@ export const AUKTION_KONTAKT_EKSEMPLER: AuktionKontaktEksempel[] = [
   // Kombinationstegn fjernes.
   ["2\u03012\u03013\u03013\u03014\u03014\u03015\u03015\u0301", "telefon", "telefon"],
   ["Ring 2\u03302\u0330 33 44 55", "telefon", "telefon"],
+  // 20261102300000: bogstaver + cifre er ikke et brugernavn ved iCloud/Outlook.
+  ["iPhone13 iCloud låst op", null, null],
+  ["iphone12 icloud fri", null, null],
+  ["iPad Air2 iCloud fjernet", null, null],
+  ["iCloud ios17 opdateret", null, null],
+  ["Office2019 outlook", null, null],
+  ["Win10 outlook installeret", null, null],
+  ["Mp3 afspiller icloud", null, null],
+  ["Outlook 365, office2021", null, null],
+  ["hans @outlook", "email", "email"],
+  // Stærke bankord (konto, kontonr, reg.nr, iban, overfør ...): undtagelsen for vareord gælder ikke.
+  ["Kontonr: varenr 1234 1234567", "bank", "bank"],
+  ["Overfør til varenr 1234 1234567", "bank", "bank"],
+  ["Varenr 1234 1234567 til min konto", "bank", "bank"],
+  ["EAN 1234 123456 bankoverførsel", "bank", "bank"],
+  ["Varenr. 9570 0123456789 overfør", "bank", "bank"],
+  ["Varenr 1234 1234567, overførsel", "bank", "bank"],
+  ["Overfør til 1234 1234567", "bank", "bank"],
+  ["Powerbank, varenr 1234 567890, netbank", null, null],
+  // Datoer: åååå-mm-dd springes over; en blok på 6-10 cifre efter datoen gør ikke.
+  ["Købt 2024-03-15 10:30, netbank", null, null],
+  ["Konto 01-01-2024 12345678", "bank", "bank"],
+  ["konto 15.03.2024 12345678", "bank", "bank"],
+  ["konto 15.03.2024 123456", "bank", "bank"],
+  ["Konto 2015-12-34-56-78", "bank", "bank"],
+  // Usynlige formattegn mellem cifrene fjernes.
+  ["Sofa 2\u{115f}2\u{115f}3\u{115f}3\u{115f}4\u{115f}4\u{115f}5\u{115f}5", "telefon", "telefon"],
+  ["Sofa 2\u{1160}2\u{1160}3\u{1160}3\u{1160}4\u{1160}4\u{1160}5\u{1160}5", "telefon", "telefon"],
+  ["Sofa 2\u{3164}2\u{3164}3\u{3164}3\u{3164}4\u{3164}4\u{3164}5\u{3164}5", "telefon", "telefon"],
+  ["Sofa 2\u{ffa0}2\u{ffa0}3\u{ffa0}3\u{ffa0}4\u{ffa0}4\u{ffa0}5\u{ffa0}5", "telefon", "telefon"],
+  ["Sofa 2\u{2800}2\u{2800}3\u{2800}3\u{2800}4\u{2800}4\u{2800}5\u{2800}5", "telefon", "telefon"],
+  ["Sofa 2\u{180e}2\u{180e}3\u{180e}3\u{180e}4\u{180e}4\u{180e}5\u{180e}5", "telefon", "telefon"],
+  ["Sofa 2\u{61c}2\u{61c}3\u{61c}3\u{61c}4\u{61c}4\u{61c}5\u{61c}5", "telefon", "telefon"],
+  ["Sofa 2\u{202a}2\u{202a}3\u{202a}3\u{202a}4\u{202a}4\u{202a}5\u{202a}5", "telefon", "telefon"],
+  ["Sofa 2\u{202e}2\u{202e}3\u{202e}3\u{202e}4\u{202e}4\u{202e}5\u{202e}5", "telefon", "telefon"],
+  ["Sofa 2\u{2066}2\u{2066}3\u{2066}3\u{2066}4\u{2066}4\u{2066}5\u{2066}5", "telefon", "telefon"],
+  ["Sofa 2\u{2069}2\u{2069}3\u{2069}3\u{2069}4\u{2069}4\u{2069}5\u{2069}5", "telefon", "telefon"],
+  ["Sofa 2\u{1d173}2\u{1d173}3\u{1d173}3\u{1d173}4\u{1d173}4\u{1d173}5\u{1d173}5", "telefon", "telefon"],
+  ["Sofa 2\u{1d17a}2\u{1d17a}3\u{1d17a}3\u{1d17a}4\u{1d17a}4\u{1d17a}5\u{1d17a}5", "telefon", "telefon"],
+  ["Sofa 2\u{e0000}2\u{e0000}3\u{e0000}3\u{e0000}4\u{e0000}4\u{e0000}5\u{e0000}5", "telefon", "telefon"],
+  ["Sofa 2\u{e0041}2\u{e0041}3\u{e0041}3\u{e0041}4\u{e0041}4\u{e0041}5\u{e0041}5", "telefon", "telefon"],
+  ["Sofa 2\u{e007f}2\u{e007f}3\u{e007f}3\u{e007f}4\u{e007f}4\u{e007f}5\u{e007f}5", "telefon", "telefon"],
+  ["Sofa 2\u{ad}2\u{ad}3\u{ad}3\u{ad}4\u{ad}4\u{ad}5\u{ad}5", "telefon", "telefon"],
+  ["Sofa 2\u{2060}2\u{2060}3\u{2060}3\u{2060}4\u{2060}4\u{2060}5\u{2060}5", "telefon", "telefon"],
 ];
