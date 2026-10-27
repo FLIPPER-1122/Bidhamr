@@ -1503,66 +1503,144 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
     expect(await betalt()).toEqual([]);
   }, 400_000);
 
-  it("R4. introrabat aftalt, men ikke på abonnementet: skiftet venter; derefter kun introrabatten (30 %), ingen 50 %", async () => {
+  // Introkuponerne på abonnementet (id'er).
+  async function kuponerPaaAbonnement(): Promise<string[]> {
+    const sub = await stripe.subscriptions.retrieve(subId, { expand: ["discounts", "discounts.source.coupon"] });
+    return sub.discounts.map((d) => (typeof d === "string" ? d : ((d.source.coupon as Stripe.Coupon)?.id ?? "")));
+  }
+
+  async function alarmer(hvor: string, fra: string): Promise<number> {
+    const { data, error } = await db.from("drift_fejl").select("besked").gte("oprettet_kl", fra).like("besked", `${hvor}:%${FIRMA}%`);
+    if (error) throw new Error(error.message);
+    return data?.length ?? 0;
+  }
+
+  function introGem(begrundelse: string): Promise<Record<string, unknown>> {
+    return rpc("erhverv_firma_intro_gem", {
+      p_staff: SAELGERROLLE,
+      p_firma: FIRMA,
+      p_procent: 30,
+      p_maaneder: 3,
+      p_fra: "efter_gratis",
+      p_begrundelse: begrundelse,
+    });
+  }
+
+  it("R4. introrabat aftalt, men ikke på abonnementet: skiftet sætter den på og afvises (intet trukket); derefter kun introrabatten (30 %), ingen 50 % (20261102200000)", async () => {
     await startIGratisMaaned("BidHamr maaned1 intro-skift");
-    expect(
-      await rpc("erhverv_firma_intro_gem", {
-        p_staff: SAELGERROLLE,
-        p_firma: FIRMA,
-        p_procent: 30,
-        p_maaneder: 3,
-        p_fra: "efter_gratis",
-        p_begrundelse: "Stripe-test: introrabat i den gratis måned",
-      }),
-    ).toMatchObject({ kode: "ok" });
+    expect(await introGem("Stripe-test: introrabat i den gratis måned")).toMatchObject({ kode: "ok" });
+    expect((await firma()).intro_status).toBe("planlagt");
     await nulstilSkiftGraense();
-    expect(await skiftPakkeForBruger(brugerId, PRO)).toEqual({ fejl: FIRMA_ABONNEMENT.skiftVenterRabat, kode: "stripe_fejl" });
+    // Siden viste "venter" (intet beløb): skiftet sætter introrabatten på og
+    // afvises - firmaet skal se den nye pris, før det trækkes.
+    expect(await skiftPakkeForBruger(brugerId, PRO, "venter")).toEqual({ fejl: FIRMA_ABONNEMENT.skiftRabatSatOp, kode: "stripe_fejl" });
     let sub = await stripe.subscriptions.retrieve(subId);
     expect(sub).toMatchObject({ status: "trialing", pending_update: null });
     expect(sub.items.data[0].price.metadata.pakke_id).toBe(START);
-    expect((await firma()).pakke_id).toBe(START);
+    expect((await kuponerPaaAbonnement()).some((k) => k.startsWith("bidhamr_intro_30_"))).toBe(true);
+    expect(await firma()).toMatchObject({ pakke_id: START, intro_status: "aktiv" });
+    expect(await beloeb()).toEqual([]);
 
-    expect(await introTilStripe(FIRMA)).toMatchObject({ status: "ok" });
+    // Siden viser nu 30 % - men en gammel side (viste 50 %) afvises.
     await nulstilSkiftGraense();
-    expect(await skiftPakkeForBruger(brugerId, PRO)).toMatchObject({ ok: true, kode: "opgraderet" });
-    sub = await stripe.subscriptions.retrieve(subId, { expand: ["discounts", "discounts.source.coupon"] });
+    expect(await skiftPakkeForBruger(brugerId, PRO, "velkomst:50")).toEqual({ fejl: FIRMA_ABONNEMENT.skiftPrisAendret, kode: "stripe_fejl" });
+    expect((await stripe.subscriptions.retrieve(subId)).status).toBe("trialing");
+    expect(await beloeb()).toEqual([]);
+
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, PRO, "intro:30")).toMatchObject({ ok: true, kode: "opgraderet" });
+    sub = await stripe.subscriptions.retrieve(subId);
     expect(sub.status).toBe("active");
-    const kuponIder = sub.discounts.map((d) => (typeof d === "string" ? d : ((d.source.coupon as Stripe.Coupon)?.id ?? "")));
+    const kuponIder = await kuponerPaaAbonnement();
     expect(kuponIder.some((k) => k.startsWith("bidhamr_intro_30_"))).toBe(true);
     expect(kuponIder).not.toContain("bidhamr_velkomst_50_once");
+    // Præcis det viste beløb: 70 % af Pro.
     expect(await beloeb()).toEqual([Math.round(PRO_OERE * 0.7)]);
   }, 400_000);
 
-  it("R4b. introrabat 'aktiv' i databasen, men fjernet fra abonnementet: skiftet spærres ikke - fuld pris, ingen 50 %, drift-alarm (20261102180000)", async () => {
+  it("R4b. introrabat 'aktiv' i databasen, men fjernet fra abonnementet: skiftet afvises, før noget ændres - intet trukket, drift-alarm (20261102200000)", async () => {
     await startIGratisMaaned("BidHamr maaned1 intro-mangler");
-    expect(
-      await rpc("erhverv_firma_intro_gem", {
-        p_staff: SAELGERROLLE,
-        p_firma: FIRMA,
-        p_procent: 30,
-        p_maaneder: 3,
-        p_fra: "efter_gratis",
-        p_begrundelse: "Stripe-test: introrabat fjernet i Stripe",
-      }),
-    ).toMatchObject({ kode: "ok" });
+    expect(await introGem("Stripe-test: introrabat fjernet i Stripe")).toMatchObject({ kode: "ok" });
     expect(await introTilStripe(FIRMA)).toMatchObject({ status: "ok" });
     expect((await firma()).intro_status).toBe("aktiv");
     // Kuponen fjernes direkte i Stripe (databasen står stadig 'aktiv').
     await stripe.subscriptions.update(subId, { discounts: "" });
     const foer = new Date().toISOString();
     await nulstilSkiftGraense();
-    expect(await skiftPakkeForBruger(brugerId, PRO)).toMatchObject({ ok: true, kode: "opgraderet" });
-    const sub = await stripe.subscriptions.retrieve(subId, { expand: ["discounts", "discounts.source.coupon"] });
-    expect(sub.status).toBe("active");
-    expect(sub.discounts).toEqual([]);
-    // Ingen 50 % (ellers fik firmaet for meget rabat, når introrabatten sættes på igen).
-    expect(await beloeb()).toEqual([PRO_OERE]);
-    const { data: alarmer } = await db
-      .from("drift_fejl")
-      .select("besked")
-      .gte("oprettet_kl", foer)
-      .like("besked", `erhverv/velkomst-intro-mangler:%${FIRMA}%`);
-    expect(alarmer?.length).toBe(1);
+    // Også uden det viste (som appen): afvist.
+    expect(await skiftPakkeForBruger(brugerId, PRO)).toEqual({ fejl: FIRMA_ABONNEMENT.skiftRetRabat, kode: "stripe_fejl" });
+    const sub = await stripe.subscriptions.retrieve(subId);
+    expect(sub).toMatchObject({ status: "trialing", pending_update: null });
+    expect(sub.items.data[0].price.metadata.pakke_id).toBe(START);
+    expect(sub.metadata.skift_id ?? "").toBe("");
+    expect(await kuponerPaaAbonnement()).toEqual([]);
+    expect((await firma()).pakke_id).toBe(START);
+    expect(await beloeb()).toEqual([]);
+    expect((await senesteSkift(PRO)).status).not.toBe("afventer_betaling");
+    expect(await alarmer("erhverv/velkomst-rabat-uenig", foer)).toBe(1);
+  }, 400_000);
+
+  it("R4c. ventende opgradering (3D Secure) + planlagt introrabat: skiftet annullerer den gamle faktura og sætter introrabatten på nu - intet trukket (20261102200000)", async () => {
+    await startIGratisMaaned("BidHamr maaned1 intro-laas");
+    await nytKort("pm_card_authenticationRequiredOnSetup");
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, PRO, "velkomst:50")).toMatchObject({ ok: true, kode: "betal_forskellen" });
+    let sub = await stripe.subscriptions.retrieve(subId, { expand: ["latest_invoice"] });
+    expect(sub.pending_update).not.toBeNull();
+    const gammel = sub.latest_invoice as Stripe.Invoice;
+    expect(gammel.status).toBe("open");
+    // En forsinket/fremmed pending_update_expired-hændelse, mens abonnementet
+    // stadig venter på netop skiftets faktura: skiftet annulleres ikke.
+    expect(await udloebetOpgradering(sub)).toBe("venter");
+    // Et skift uden faktura endnu (i gang - efterOpgraderingsKald gemmer den
+    // om lidt): heller ikke annulleret.
+    const pro = await senesteSkift(PRO);
+    await db.from("firma_pakkeskift").update({ stripe_invoice_id: null }).eq("id", pro.id);
+    try {
+      expect(await udloebetOpgradering(sub)).toBe("i_gang");
+    } finally {
+      await db.from("firma_pakkeskift").update({ stripe_invoice_id: gammel.id }).eq("id", pro.id);
+    }
+    expect((await senesteSkift(PRO)).status).toBe("afventer_betaling");
+    expect((await stripe.invoices.retrieve(gammel.id!)).status).toBe("open");
+
+    // Staff aftaler en introrabat nu: den kan ikke sættes på, mens
+    // opgraderingen venter (cron'en og staff venter).
+    expect(await introGem("Stripe-test: introrabat mod en ventende opgradering")).toMatchObject({ kode: "ok" });
+    expect(await introTilStripe(FIRMA)).toMatchObject({ status: "afvist", kode: "skift_venter" });
+
+    // Firmaet vælger Butik i stedet: den gamle faktura annulleres, og
+    // introrabatten sættes på - men intet trækkes (siden viste ikke 30 %).
+    await nytKort("pm_card_visa");
+    await nulstilSkiftGraense();
+    const svar = await skiftPakkeForBruger(brugerId, BUTIK, "venter");
+    // Voiding af den gamle faktura får Stripe til at sende
+    // pending_update_expired. Testserverens webhook (samme database) kører den
+    // udrullede kode: før denne rettelse er udrullet, kan den annullere det
+    // nye skift midt i forløbet (så får firmaet den generelle fejl). Pengene
+    // skal være i orden uanset hvad - det tjekkes herunder.
+    const butik = await senesteSkift(BUTIK);
+    const { data: note } = await db.from("firma_pakkeskift").select("note").eq("id", butik.id).single();
+    if (String(note?.note ?? "").includes("pending update udløbet")) {
+      expect(svar).toMatchObject({ kode: "stripe_fejl" });
+    } else {
+      expect(svar).toEqual({ fejl: FIRMA_ABONNEMENT.skiftRabatSatOp, kode: "stripe_fejl" });
+    }
+    expect(butik.status).not.toBe("afventer_betaling");
+    expect((await stripe.invoices.retrieve(gammel.id!)).status).toBe("void");
+    sub = await stripe.subscriptions.retrieve(subId);
+    expect(sub).toMatchObject({ status: "trialing", pending_update: null });
+    expect(sub.items.data[0].price.metadata.pakke_id).toBe(START);
+    expect((await kuponerPaaAbonnement()).some((k) => k.startsWith("bidhamr_intro_30_"))).toBe(true);
+    expect(await firma()).toMatchObject({ pakke_id: START, intro_status: "aktiv" });
+    expect(await betalt()).toEqual([]);
+
+    // Nu med den viste pris (30 %): Butik til 70 % i dag.
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, BUTIK, "intro:30")).toMatchObject({ ok: true, kode: "opgraderet" });
+    expect((await stripe.subscriptions.retrieve(subId)).status).toBe("active");
+    expect(await betalt()).toEqual([Math.round(BUTIK_OERE * 0.7)]);
+    expect(await firma()).toMatchObject({ pakke_id: BUTIK });
   }, 400_000);
 
   it("R5. CVR-historik: det gamle CVR på et firma med abonnement tæller stadig som 'har haft abonnement før'", async () => {
