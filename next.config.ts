@@ -60,6 +60,8 @@ const nextConfig: NextConfig = {
     "/privatliv": ["./jura/privatlivspolitik-udkast.md"],
     // "Download dine data" som PDF læser skrifttypen (æøå) ved runtime.
     "/konto/data": ["./src/lib/pdf/skrifter/*.ttf"],
+    // Auktionens delebillede (opengraph-image.tsx) læser skrift og logo ved runtime.
+    "/auktion/**": ["./src/lib/pdf/skrifter/*.ttf", "./public/brand/bidhamr-logo-512.png"],
   },
   images: {
     remotePatterns: supabaseBilleder,

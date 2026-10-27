@@ -118,18 +118,21 @@ export async function auktionMetadata(id: string): Promise<Metadata> {
     alternates: { canonical },
     // Arkiverede auktioner skal ikke i søgeresultaterne.
     ...(a.arkiveret ? { robots: { index: false, follow: true } } : {}),
+    // Billedet er src/app/(app)/auktion/[id]/opengraph-image.tsx (varebillede,
+    // titel, bud og logo) - Next sætter og:image selv. X/Twitter bruger
+    // og:image, når twitter:image mangler.
     openGraph: {
       type: "website",
       url: canonical,
+      siteName: "BidHamr",
+      locale: "da_DK",
       title: `${a.titel} · BidHamr`,
       description,
-      ...(a.billeder[0] ? { images: [{ url: a.billeder[0], alt: a.titel }] } : {}),
     },
     twitter: {
-      card: a.billeder[0] ? "summary_large_image" : "summary",
+      card: "summary_large_image",
       title: `${a.titel} · BidHamr`,
       description,
-      ...(a.billeder[0] ? { images: [a.billeder[0]] } : {}),
     },
   };
 }

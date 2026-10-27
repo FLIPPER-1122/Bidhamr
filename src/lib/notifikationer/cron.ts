@@ -37,6 +37,7 @@ import {
 import { IKKE_KUNST_AFVENTER, manglerKunstSkema } from "@/lib/kunstSkema";
 import { notificerReklamationer } from "@/lib/reklamation/notifikationer";
 import { notificerEkstraFragt } from "@/lib/ekstraFragt/notifikationer";
+import { notificerFoerSlut } from "@/lib/notifikationer/paamindelseFoerSlut";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -459,7 +460,18 @@ async function bedoemmelseSvar(admin: Admin, start: Date): Promise<number> {
   return sendNye(admin, opgaver);
 }
 
+// Påmindelse 1 time før slut til favoritter OG bydere (20261102250000 -
+// src/lib/notifikationer/paamindelseFoerSlut.ts). Er migrationen ikke kørt
+// endnu, bruges den gamle favorit-påmindelse herunder. Den nye springer
+// brugere over, der har nøglen slutter:<auktion>:<bruger> fra den gamle, så
+// ingen får den to gange i overgangen.
 async function slutterSnart(admin: Admin): Promise<number> {
+  const ny = await notificerFoerSlut();
+  if (ny) return ny.claimet;
+  return gammelFavoritSlutterSnart(admin);
+}
+
+async function gammelFavoritSlutterSnart(admin: Admin): Promise<number> {
   const nu = Date.now();
   // Ikke auktioner, der afventer kunst-kontrol (20261023010000_kunst_forbudt.sql).
   // Er migrationen ikke kørt endnu, hentes de uden filteret.

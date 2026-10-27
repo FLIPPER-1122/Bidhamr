@@ -150,8 +150,12 @@ const AABNE_SIDER_EFTER_LANCERING = [
 ];
 // /auktion/<id> (men ikke /auktion/<id>/rediger), /profil/<uuid> (men ikke
 // /profil/mig) og /erhvervssaelger/<id>.
+// /auktion/<id>/opengraph-image er auktionens delebillede
+// (src/app/(app)/auktion/[id]/opengraph-image.tsx) - Facebook, Messenger og
+// SMS henter det uden login. Før lancering gælder listen ikke (coming soon).
 const AABNE_MOENSTRE_EFTER_LANCERING = [
   /^\/auktion\/[^/]+\/?$/,
+  /^\/auktion\/[^/]+\/opengraph-image(?:-[A-Za-z0-9]+)?(?:\/[^/]+)?\/?$/,
   new RegExp(`^/profil/[0-9a-fA-F-]{36}/?$`),
   /^\/erhvervssaelger\/[^/]+\/?$/,
 ];
