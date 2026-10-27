@@ -53,7 +53,8 @@ import { toTrinMaksTimer } from "@/lib/staffToTrinRegler";
 // (ingen cookies); login tjekkes i ruten.
 // /api/handel/app (handelstrin), /api/bud/app (bud), /api/auktion/app
 // (billedoprydning), /api/konto/adgangskode, /api/konto/email (skift af
-// e-mail) og /api/konto/data (dine data) er appens endpoints: kun Bearer-token (ingen cookies); login tjekkes i
+// e-mail), /api/konto/data (dine data) og /api/konto/henvisning (Henvis en
+// ven) er appens endpoints: kun Bearer-token (ingen cookies); login tjekkes i
 // ruterne, som selv afviser med JSON (401 ikke_logget_ind) - ikke med
 // proxyens tekst "Log ind først". /api/konto/glemt er "Glemt adgangskode":
 // ingen login (som /glemt-adgangskode), grænser i ruten og samme svar,
@@ -114,11 +115,16 @@ const OFFENTLIGE_RUTER = [
   "/api/konto/email",
   "/api/konto/glemt",
   "/api/konto/data",
+  "/api/konto/henvisning",
   "/robots.txt",
   "/sitemap.xml",
   "/dsa",
   "/api/dsa",
   "/api/offentlig",
+  // BidHamr-bot (også uden login efter lancering). Route handlerne tjekker
+  // selv lanceringen og adgangen (src/lib/bot/synlig.ts) og loftet.
+  "/api/bot",
+  "/api/app/bot",
 ];
 
 // Rene læsesider, der skal kunne læses af alle uden login, også før lancering
@@ -151,8 +157,12 @@ const AABNE_SIDER_EFTER_LANCERING = [
 ];
 // /auktion/<id> (men ikke /auktion/<id>/rediger), /profil/<uuid> (men ikke
 // /profil/mig) og /erhvervssaelger/<id>.
+// /auktion/<id>/opengraph-image er auktionens delebillede
+// (src/app/(app)/auktion/[id]/opengraph-image.tsx) - Facebook, Messenger og
+// SMS henter det uden login. Før lancering gælder listen ikke (coming soon).
 const AABNE_MOENSTRE_EFTER_LANCERING = [
   /^\/auktion\/[^/]+\/?$/,
+  /^\/auktion\/[^/]+\/opengraph-image(?:-[A-Za-z0-9]+)?(?:\/[^/]+)?\/?$/,
   new RegExp(`^/profil/[0-9a-fA-F-]{36}/?$`),
   /^\/erhvervssaelger\/[^/]+\/?$/,
 ];

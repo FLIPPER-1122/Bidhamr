@@ -441,6 +441,9 @@ export function erKontaktEmne(v: unknown): v is KontaktEmne {
 }
 
 export function kontaktEmneNavn(v: string): string {
+  // 'bot' = "Kontakt en rigtig medarbejder" i BidHamr-bot (20261102240000) -
+  // kan ikke vælges i kontaktformularen.
+  if (v === "bot") return "Fra BidHamr-bot";
   return KONTAKT_EMNER.find((k) => k.vaerdi === v)?.label ?? v;
 }
 

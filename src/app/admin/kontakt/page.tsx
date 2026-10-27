@@ -29,6 +29,7 @@ type Henvendelse = {
   besked: string;
   handels_ref: string | null;
   trade_id: string | null;
+  bot_samtale_id: string | null;
   status: "ny" | "besvaret";
   besvaret_af: string | null;
   besvaret_kl: string | null;
@@ -59,7 +60,7 @@ export default async function AdminKontaktSide({
   // Nye: ældste først (dem, der har ventet længst). Besvarede: nyeste først.
   const { data, error, count } = await admin
     .from("kontakt_henvendelser")
-    .select("id, bruger_id, email, emne, besked, handels_ref, trade_id, status, besvaret_af, besvaret_kl, oprettet_kl", {
+    .select("id, bruger_id, email, emne, besked, handels_ref, trade_id, bot_samtale_id, status, besvaret_af, besvaret_kl, oprettet_kl", {
       count: "exact",
     })
     .eq("status", visBesvarede ? "besvaret" : "ny")
@@ -149,6 +150,13 @@ export default async function AdminKontaktSide({
                 </div>
 
                 <p className="mt-3 whitespace-pre-wrap break-words text-sm text-tekst">{h.besked}</p>
+                {h.bot_samtale_id && (
+                  <p className="mt-2 text-xs">
+                    <Link href={`/admin/bot/${h.bot_samtale_id}`} className="font-medium text-groen hover:underline">
+                      Se hele samtalen med BidHamr-bot
+                    </Link>
+                  </p>
+                )}
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   {h.status === "ny" ? (

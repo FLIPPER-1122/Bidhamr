@@ -133,7 +133,7 @@ const GRUPPER: MenuGruppe[] = [
     titel: "Brugere og sikkerhed",
     punkter: [
       { href: "/admin/brugere", label: "Brugere", minRolle: "medarbejder", ogsaa: ["/admin/kontolukninger"], tal: "brugere", tone: "graa" },
-      { href: "/admin/kontakt", label: "Henvendelser", minRolle: "medarbejder", ogsaa: ["/admin/chats"], tal: "henvendelser", tone: "graa" },
+      { href: "/admin/kontakt", label: "Henvendelser", minRolle: "medarbejder", ogsaa: ["/admin/chats", "/admin/bot"], tal: "henvendelser", tone: "graa" },
     ],
   },
   {

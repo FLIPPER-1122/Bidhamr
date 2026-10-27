@@ -162,6 +162,26 @@ Bearer, ingen krop. `200 application/pdf` (uden `format`: `application/json`) me
 Gem med `expo-file-system` og del/vis. `429 vent` = allerede hentet inden for den sidste time (grænsen deles med
 hjemmesiden og `rpc("mine_data")`).
 
+## POST /api/konto/henvisning (Henvis en ven)
+
+Migration `20261102230000_henvis_en_ven.sql`. Samme kald som hjemmesidens `/konto/henvis` (`min_henvisning()`,
+`auth.uid()`). Ingen krop. Grænse: `henvisning_app_ip` (300/time). Første kald laver brugerens kode.
+
+- Firmakonto: `200 { ok: true, kan_henvise: false, grund: "erhverv" }` - vis "Henvis en ven er kun for private".
+- Privat: `200 { ok: true, kan_henvise: true, kode, sti: "/?ven=KODE", url: "https://bidhamr.dk/?ven=KODE",
+  kan_faa_point, grund: null | "spaerret", optjening_aaben (false = før lancering: ingen point endnu), point_pr_ven (10),
+  maks_pr_maaned (10), maaned ("ÅÅÅÅ-MM"), belonnet_denne_maaned, tilbage_denne_maaned, antal_venner, antal_afventer,
+  antal_belonnet, point_i_alt, venner: [{ navn, status, point, oprettet_kl, vurderet_kl }] }`.
+- `navn` er vennens korte visningsnavn ("Kasper K."). `status`: `afventer` (venter på MitID), `belonnet`, `loft`,
+  `firma`, `spaerret`, `foer_lancering`, `samme_person`, `tidligere_konto` (teksterne står i
+  `src/lib/tekster/henvisning.ts`).
+- Del-knappen: systemets delingsmenu (`Share.share`) med `url`. Kopiér: udklipsholderen.
+- **Oprettelse:** åbner appen et link `https://bidhamr.dk/?ven=KODE` (Universal Link / App Link), gemmer appen
+  koden og sender den som `henvisningskode` til `POST /api/konto/bekraeft` (docs/APP-SIGNUP.md). Kun en NY konto
+  knyttes; svaret er det samme, uanset om koden blev brugt.
+- Pointene gives af databasen, når vennen bliver MitID-verificeret (også via appens `/api/mitid/app/afslut`), og
+  står i `mine_point().historik` med `type: "henvisning"` ("Henvist en ven").
+
 ## POST /api/auktion/app/fjern-billeder
 
 `{ auktion_id, stier: string[] }` (højst 20; storage-stier `<bruger-id>/<fil>.jpg` eller de offentlige URL'er) →
@@ -196,6 +216,33 @@ Det viste beløb er det trukne (måned 1-reglen, rettelser 4, 27. okt. 2026):
 3. Afvist før noget er trukket (`409`): `pris_aendret` (hent GET igen og vis den nye pris), `rabat_venter`
    (introrabatten er sat op eller sættes op - hent GET igen), `ret_rabat` (BidHamr skal rette rabatten - vis
    `fejl`), `visning_mangler`. En sendt, men ugyldig `visning`: `400 ugyldig_visning`.
+
+## BidHamr-bot: GET/POST /api/app/bot og POST /api/app/bot/medarbejder
+
+Migration `20261102240000_bidhamr_bot.sql`. Samme kerne som hjemmesidens chatboble (`src/lib/bot/motor.ts`).
+`Authorization: Bearer <token>` er **valgfri**: uden header er brugeren "ikke logget ind" (botten svarer på regler,
+men slår ingen egne data op). Sendes en header, skal tokenet være gyldigt, ellers `401 ikke_logget_ind`.
+
+- `GET /api/app/bot` → `200 { ok, tilgaengelig, maksTegn: 1000, loftPrDoegn: 30 }`. Vis kun botten, når
+  `tilgaengelig` er `true` (falsk uden `ANTHROPIC_API_KEY`, og før lancering for alle uden adgang til den lukkede app).
+- `POST /api/app/bot` `{ samtaleId?: uuid, besked: string }` (højst 1.000 tegn). Første besked uden `samtaleId`;
+  gem det `samtaleId`, svaret giver, og send det med de næste gange. Svaret er en stream (`application/x-ndjson`), én
+  JSON pr. linje:
+  - `{ "type": "samtale", "samtaleId" }` altid først
+  - `{ "type": "tekst", "tekst" }` tekststykker - sæt dem sammen i rækkefølge (ren tekst, ingen markdown/HTML)
+  - `{ "type": "medarbejder" }` botten foreslår en medarbejder: fremhæv knappen
+  - `{ "type": "fejl", "fejl" }` svaret blev afbrudt (vis teksten)
+  - `{ "type": "slut" }` altid sidst
+  Fejl før streamen: `{ fejl, kode }` - `400 tom|for_lang|ugyldig`, `404 ikke_tilgaengelig`, `409 ukendt_samtale|samtale_fuld`
+  (start en ny samtale uden `samtaleId`), `429 loft_bruger|loft_ip|loft_alle|for_mange`, `500 fejl`.
+  Historikken hentes fra serveren - appen sender kun den nye besked.
+- `POST /api/app/bot/medarbejder` `{ samtaleId, email? }` (`email` kræves uden login) → `200 { ok, allerede }`.
+  Vis knappen **"Kontakt en rigtig medarbejder"** efter brugerens første besked. Samtalen bliver en henvendelse i
+  admin; medarbejderen svarer i Beskeder under "Fra BidHamr" (uden login: på mail). Dobbelttryk giver `allerede: true`.
+  Fejl: `400 mangler_email|ugyldig_email|tom_samtale`, `404 ukendt_samtale|ikke_tilgaengelig`, `429 for_mange`.
+
+UI-krav (som hjemmesiden): øverst "Du skriver med en AI – ikke et menneske." Under chatten: "Svarene er vejledende.
+Det er BidHamrs regler og handelsbetingelser, der gælder."
 
 ## Ændret i eksisterende endpoints
 

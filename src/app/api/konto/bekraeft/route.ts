@@ -18,7 +18,11 @@ import { UGYLDIG, fremmedOrigin, jsonKrop, svar } from "@/lib/mitid/appAuth";
 // POST /api/konto/bekraeft
 //   Content-Type: application/json
 //   { "email": "...", "kode": "123456", "password": "...",
-//     "fornavn": "...", "efternavn": "...", "vilkaar_version": "<VILKAAR_VERSION>" }
+//     "fornavn": "...", "efternavn": "...", "vilkaar_version": "<VILKAAR_VERSION>",
+//     "henvisningskode": "ABCDEFGHJK" }
+//   henvisningskode (valgfri): koden fra et henvisningslink
+//   (bidhamr.dk/?ven=KODE - Henvis en ven). Knyttes kun til en NY konto;
+//   en ugyldig eller ukendt kode ignoreres stille (svaret er det samme).
 //
 // Svar (JSON):
 //   200 { ok: true, adgangskode_sat: boolean, navn_sat: boolean, vilkaar_sat: boolean,
@@ -93,6 +97,7 @@ export async function POST(req: NextRequest) {
     ip,
     adgangskode: password,
     profil: { fornavn, efternavn, vilkaarVersion },
+    henvisningskode: typeof krop.henvisningskode === "string" ? krop.henvisningskode : null,
   });
   if ("fejl" in res) {
     // Suspenderede/slettede konti får ingen session (som login på hjemmesiden).
