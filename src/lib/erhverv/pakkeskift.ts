@@ -11,7 +11,7 @@ import {
   type Tilbagerul,
 } from "@/lib/erhverv/betaling";
 import { FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
-import { erVelkomstVisning } from "@/lib/erhverv/abonnementRegler";
+import { tolkVelkomstVisning } from "@/lib/erhverv/abonnementRegler";
 
 // Firmaets pakkeskift - ÉN vej for både hjemmesiden (/api/offentlig
 // firma-skift-pakke -> skiftFirmaPakke) og appen (POST /api/firma/skift-pakke
@@ -51,7 +51,20 @@ type DbSvar = {
   laas?: string;
 };
 
-function stripeFejl(b: Extract<BetalingsStatus, { status: "fejl" }>): SkiftPakkeSvar {
+// Stripe-delen fejlede eller afviste skiftet: den danske tekst og koden.
+// intetTrukket (skift op fra den gratis måned afvist, før noget kunne
+// trækkes): det siges også, når tilbagerulningen fejlede, eller låsen er
+// overtaget - men kun da, for kun da er det sandt. Koden er afvisningens egen
+// (pris_aendret, rabat_venter, ret_rabat, visning_mangler), så appen kan
+// handle på den.
+export function stripeFejl(b: Extract<BetalingsStatus, { status: "fejl" }>): SkiftPakkeSvar {
+  if (b.intetTrukket) {
+    // Et andet pakkeskift er gået i gang imens (det gælder nu).
+    if (b.laasOvertaget) return { fejl: FIRMA_OVERSIGT_EKSTRA.pakkeskiftLaasOvertagetIntetTrukket, kode: "i_gang" };
+    const kode = b.afvistKode ?? "stripe_fejl";
+    if (b.rulletTilbage && b.besked) return { fejl: b.besked, kode };
+    return { fejl: FIRMA_OVERSIGT_EKSTRA.pakkeskiftIkkeRulletIntetTrukket, kode };
+  }
   // Et andet pakkeskift er gået i gang imens: dette skift er ikke rullet
   // tilbage, og det nye gælder. Sig det ærligt i stedet for "ikke ændret".
   if (b.laasOvertaget) return { fejl: FIRMA_OVERSIGT_EKSTRA.pakkeskiftLaasOvertaget, kode: "i_gang" };
@@ -60,12 +73,17 @@ function stripeFejl(b: Extract<BetalingsStatus, { status: "fejl" }>): SkiftPakke
   return { fejl: b.rulletTilbage ? FIRMA_OVERSIGT_EKSTRA.pakkeskiftFejl : FIRMA_OVERSIGT_EKSTRA.opgraderingBetalingFejl, kode: "stripe_fejl" };
 }
 
-// visning: hvad siden viste for et skift op fra Starts gratis måned
-// (velkomstVisning, fx "velkomst:50"). Er rabatten ændret imens, afvises
-// skiftet, før noget trækkes. Mangler den (fx appen), tjekkes det ikke.
+// visning: hvad siden/appen viste for et skift op fra Starts gratis måned
+// (velkomstVisning, fx "velkomst:50"; appen henter den med GET
+// /api/firma/skift-pakke?til=<pakke>). Er rabatten ændret imens, afvises
+// skiftet, før noget trækkes. Mangler den ved et skift op fra den gratis
+// måned, afvises skiftet (visning_mangler). En sendt, men ugyldig værdi
+// afvises med det samme (ugyldig_visning) - den bliver aldrig stille til null.
 export async function skiftPakkeForBruger(brugerId: string, pakkeId: unknown, visning?: unknown): Promise<SkiftPakkeSvar> {
   if (typeof pakkeId !== "string" || !UUID.test(pakkeId)) return { fejl: "Vælg en pakke.", kode: "ugyldig_pakke" };
-  const vist = erVelkomstVisning(visning) ? visning : null;
+  const tolket = tolkVelkomstVisning(visning);
+  if (!tolket.ok) return { fejl: "Ugyldig forespørgsel.", kode: "ugyldig_visning" };
+  const vist = tolket.visning;
 
   const { data, error } = await createAdminClient().rpc("firma_skift_pakke_server", {
     p_bruger: brugerId,
@@ -110,7 +128,13 @@ async function stripeDel(brugerId: string, svar: DbSvar | null, vist: string | n
       return { ok: true, kode: "opgraderet", pakke: svar.pakke, besked: FIRMA_OVERSIGT.abonnement.opgraderetSvar(svar.pakke.navn) };
     }
     if (betaling.status === "fejl") {
-      await logDriftFejl({ kilde: "action", hvor: "skiftPakke/startOpgradering", fejl: betaling.fejl, brugerId });
+      // Et skift op fra den gratis måned, der er afvist før noget blev
+      // trukket (fx prisen er ændret), er ikke en driftfejl - ellers en
+      // alarm pr. klik. ret_rabat har sin egen alarm (én pr. firma og
+      // aftale), og en fejlet tilbagerulning logger rulTilbage selv.
+      if (!betaling.intetTrukket) {
+        await logDriftFejl({ kilde: "action", hvor: "skiftPakke/startOpgradering", fejl: betaling.fejl, brugerId });
+      }
       return stripeFejl(betaling);
     }
     if (betaling.status === "kraever_handling") {

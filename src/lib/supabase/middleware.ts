@@ -29,7 +29,8 @@ import { toTrinMaksTimer } from "@/lib/staffToTrinRegler";
 // /api/konto/opret og /api/konto/bekraeft er appens oprettelse af konti
 // (docs/APP-SIGNUP.md): ingen cookies, ingen login - man har jo ingen konto
 // endnu. Neutrale svar, rate limits og Origin-tjek i ruterne selv.
-// /api/firma/skift-pakke er appens pakkeskift for firmakonti: kun
+// /api/firma/skift-pakke er appens pakkeskift for firmakonti (GET: prisen
+// for et skift, POST: skiftet): kun
 // Bearer-token (ingen cookies); login og firmakonto tjekkes i ruten/databasen.
 // /api/betaling/kort er appens "Fjern kort": kun
 // Bearer-token (ingen cookies); login tjekkes i ruten.
