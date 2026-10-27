@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
-import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
+import { FOR_MANGE_FORSOEG, klientIpNoegle, tjekGraenser } from "@/lib/rateLimit";
 import { APP_UGYLDIG, appSvar, laesJsonKrop } from "@/lib/appApi";
 import { laesBotInput } from "@/lib/bot/konfig";
 import { BOT_IKKE_TILGAENGELIG, startBotSvar } from "@/lib/bot/motor";
@@ -27,7 +27,8 @@ export async function POST(req: NextRequest) {
     return appSvar(BOT_IKKE_TILGAENGELIG.status, { fejl: BOT_IKKE_TILGAENGELIG.fejl, kode: BOT_IKKE_TILGAENGELIG.kode });
   }
 
-  const ip = await klientIp();
+  // IPv6 pr. /64 (src/lib/ipNoegle.ts).
+  const ip = await klientIpNoegle();
   if (!(await tjekGraenser([["bot_ip", ip]]))) return appSvar(429, { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" });
 
   const k = await laesJsonKrop(req, 8192);

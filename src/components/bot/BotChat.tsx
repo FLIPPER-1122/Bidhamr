@@ -2,7 +2,10 @@
 
 // BidHamr-bot: den flydende knap og chatvinduet. Svaret streames fra
 // POST /api/bot (NDJSON, src/lib/bot/motor.ts). Samtalen huskes i
-// sessionStorage, så den overlever et sideskift i samme fane.
+// sessionStorage, så den overlever et sideskift i samme fane - sammen med en
+// hash af bruger-id'et (brugerNoegle, src/lib/bot/brugerNoegle.ts). Logger en
+// anden ind, eller logger brugeren ud, ryddes samtalen, så den næste på
+// samme computer ikke ser den.
 //
 // - Øverst står tydeligt, at man skriver med en AI (AI-forordningen art. 50).
 // - Under chatten: svarene er vejledende - reglerne og handelsbetingelserne gælder.
@@ -15,22 +18,37 @@ import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 type Besked = { rolle: "bruger" | "bot"; tekst: string };
-type Gemt = { samtaleId: string | null; beskeder: Besked[]; overdraget: boolean; loggetInd: boolean };
+// bruger = hash af bruger-id'et (null = ikke logget ind).
+type Gemt = { samtaleId: string | null; beskeder: Besked[]; overdraget: boolean; bruger: string | null };
 
 const NOEGLE = "bidhamr-bot-samtale";
 const VELKOMST =
   "Hej! Jeg er BidHamr-bot. Jeg kan svare på spørgsmål om bud, betaling, gebyrer, fragt og BidHamr Beskyttelse.";
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 
-function laesGemt(loggetInd: boolean): Gemt | null {
+function ryd() {
+  try {
+    window.sessionStorage.removeItem(NOEGLE);
+  } catch {
+    // Intet at rydde.
+  }
+}
+
+// Den gemte samtale, hvis den tilhører samme bruger (eller begge er uden
+// login). Ellers ryddes den: en anden har logget ind, eller brugeren er
+// logget ud.
+function laesGemt(bruger: string | null): Gemt | null {
   try {
     const raa = window.sessionStorage.getItem(NOEGLE);
     if (!raa) return null;
-    const g = JSON.parse(raa) as Gemt;
-    // Logget ind eller ud siden: start forfra (samtalen tilhører den anden).
-    if (g.loggetInd !== loggetInd || !Array.isArray(g.beskeder)) return null;
-    return g;
+    const g = JSON.parse(raa) as Partial<Gemt>;
+    if ((g.bruger ?? null) !== bruger || !Array.isArray(g.beskeder) || !("bruger" in g)) {
+      ryd();
+      return null;
+    }
+    return g as Gemt;
   } catch {
+    ryd();
     return null;
   }
 }
@@ -53,7 +71,8 @@ function BotIkon({ className }: { className: string }) {
   );
 }
 
-export default function BotChat({ loggetInd, maksTegn }: { loggetInd: boolean; maksTegn: number }) {
+export default function BotChat({ brugerNoegle, maksTegn }: { brugerNoegle: string | null; maksTegn: number }) {
+  const loggetInd = brugerNoegle !== null;
   const [aaben, setAaben] = useState(false);
   const [beskeder, setBeskeder] = useState<Besked[]>([]);
   const [samtaleId, setSamtaleId] = useState<string | null>(null);
@@ -68,17 +87,43 @@ export default function BotChat({ loggetInd, maksTegn }: { loggetInd: boolean; m
   const [overdraget, setOverdraget] = useState(false);
   const [overdragFejl, setOverdragFejl] = useState<string | null>(null);
   const indlaest = useRef(false);
+  // Den bruger, samtalen i state tilhører.
+  const ejer = useRef(brugerNoegle);
   const listeRef = useRef<HTMLDivElement>(null);
   const feltRef = useRef<HTMLTextAreaElement>(null);
   const knapRef = useRef<HTMLButtonElement>(null);
   const titelId = useId();
   const feltId = useId();
 
+  // Skiftet bruger eller logget ud (også uden at chatten er åbnet): ryd den
+  // gemte samtale og samtalen på skærmen.
+  useEffect(() => {
+    if (!indlaest.current) {
+      laesGemt(brugerNoegle);
+      ejer.current = brugerNoegle;
+      return;
+    }
+    if (ejer.current === brugerNoegle) return;
+    ejer.current = brugerNoegle;
+    ryd();
+    // Ny bruger: start forfra.
+    setBeskeder([]);
+    setSamtaleId(null);
+    setOverdraget(false);
+    setFremhaev(false);
+    setVisEmail(false);
+    setEmail("");
+    setNySamtale(false);
+    setFejl(null);
+    setOverdragFejl(null);
+  }, [brugerNoegle]);
+
   // Hent samtalen fra sessionStorage første gang, vinduet åbnes.
   useEffect(() => {
     if (!aaben || indlaest.current) return;
     indlaest.current = true;
-    const g = laesGemt(loggetInd);
+    ejer.current = brugerNoegle;
+    const g = laesGemt(brugerNoegle);
     if (g) {
       /* eslint-disable react-hooks/set-state-in-effect -- engangsindlæsning fra sessionStorage */
       setBeskeder(g.beskeder);
@@ -86,12 +131,13 @@ export default function BotChat({ loggetInd, maksTegn }: { loggetInd: boolean; m
       setOverdraget(g.overdraget);
       /* eslint-enable react-hooks/set-state-in-effect */
     }
-  }, [aaben, loggetInd]);
+  }, [aaben, brugerNoegle]);
 
+  // Gemmes altid under den bruger, samtalen tilhører (ejer), ikke den nye.
   useEffect(() => {
     if (!indlaest.current) return;
-    gem({ samtaleId, beskeder, overdraget, loggetInd });
-  }, [samtaleId, beskeder, overdraget, loggetInd]);
+    gem({ samtaleId, beskeder, overdraget, bruger: ejer.current });
+  }, [samtaleId, beskeder, overdraget]);
 
   useEffect(() => {
     listeRef.current?.scrollTo({ top: listeRef.current.scrollHeight });

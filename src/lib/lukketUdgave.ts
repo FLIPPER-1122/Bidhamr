@@ -10,9 +10,14 @@ import "server-only";
 // Adgang til den lukkede app = staff (chef, admin, medarbejder, saelger),
 // firmakonti og beta-testere - de ser siden som i dag.
 //
-// Kun visning, ingen adgangskontrol: gaten og databasen afgør, hvad man må.
-// Identiteten kommer fra sessionens JWT (getClaims, lokalt) og den signerede
-// rolle-cookie. Mangler cookien (gaten slår den ikke op på de offentlige
+// Bruges til visning OG som adgangskontrol for BidHamr-bot: POST /api/bot og
+// /api/bot/medarbejder afviser kaldet, når visLukketUdgave() er true
+// (src/lib/bot/synlig.ts). Ændres reglen her, ændres også, hvem der kan
+// bruge botten (og dermed hvem der kan koste penge hos Anthropic). Ved fejl
+// svares true (den lukkede udgave), så en fejl lukker botten i stedet for at
+// åbne den. Resten af siden: gaten (middleware) og databasen afgør, hvad man
+// må. Identiteten kommer fra sessionens JWT (getClaims, lokalt) og den
+// signerede rolle-cookie. Mangler cookien (gaten slår den ikke op på de offentlige
 // sider), spørges databasen - kun for indloggede før lancering.
 import { cache } from "react";
 import { cookies } from "next/headers";

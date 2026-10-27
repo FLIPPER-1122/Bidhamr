@@ -201,7 +201,7 @@ Svaret er da en tom sletning (intet slettet) - prøv ikke igen.
 
 ## BidHamr-bot: GET/POST /api/app/bot og POST /api/app/bot/medarbejder
 
-Migration `20261102240000_bidhamr_bot.sql`. Samme kerne som hjemmesidens chatboble (`src/lib/bot/motor.ts`).
+Migrationer `20261102240000_bidhamr_bot.sql` og `20261102290000_bot_rettelser.sql`. Samme kerne som hjemmesidens chatboble (`src/lib/bot/motor.ts`).
 `Authorization: Bearer <token>` er **valgfri**: uden header er brugeren "ikke logget ind" (botten svarer på regler,
 men slår ingen egne data op). Sendes en header, skal tokenet være gyldigt, ellers `401 ikke_logget_ind`.
 
@@ -225,6 +225,18 @@ men slår ingen egne data op). Sendes en header, skal tokenet være gyldigt, ell
 
 UI-krav (som hjemmesiden): øverst "Du skriver med en AI – ikke et menneske." Under chatten: "Svarene er vejledende.
 Det er BidHamrs regler og handelsbetingelser, der gælder."
+
+Ændret i `20261102290000_bot_rettelser.sql` (27. okt. 2026):
+- **Uden login følger samtalen IP-adressen** (IPv6 pr. /64). Skifter telefonen net (wifi/mobil), svarer
+  `POST /api/app/bot` `409 ukendt_samtale` og `/medarbejder` `404 ukendt_samtale`: start en ny samtale uden
+  `samtaleId`. Indloggede er ikke ramt.
+- **`429 loft_alle`** kommer nu også, når botten har nået døgnloftet i pris eller for besøgende uden login. Vis
+  `fejl`-teksten (den henviser til /kontakt) og knappen til kontaktformularen.
+- **`429 for_mange` på `/medarbejder`** kan nu også skyldes kontaktformularens lofter (pr. e-mail, pr. bruger og
+  globalt) - samme tekst.
+- **Samtalen skal ryddes, når en anden logger ind, eller brugeren logger ud** (gem ikke `samtaleId` og beskederne
+  på tværs af brugere). Samtaler, der er ældre end 90 dage, kan ikke fortsættes (`409 ukendt_samtale`).
+- Bottens tekst filtreres for ordet "forsikring" (bliver til "BidHamr Beskyttelse") - intet at gøre i appen.
 
 ## Ændret i eksisterende endpoints
 
