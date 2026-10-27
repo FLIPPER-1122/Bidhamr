@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getResend } from "@/lib/resend";
 import { velkomstMail } from "@/lib/mails/venteliste";
-import { FOR_MANGE_FORSOEG, indenForGraense, klientIp } from "@/lib/rateLimit";
+import { indenForGraense, klientIp } from "@/lib/rateLimit";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -14,10 +14,14 @@ const AFSENDER = "BidHamr <noreply@bidhamr.dk>";
 // Fast besked til klienten - den rigtige fejl logges kun på serveren.
 const SERVERFEJL = "Vi kunne ikke skrive dig op lige nu. Prøv igen om lidt.";
 
+// Ved 429 (loft pr. IP eller pr. e-mail). Vises direkte i formularen.
+const MANGE_TILMELDINGER = "Mange tilmelder sig lige nu – prøv igen om et øjeblik.";
+
 export async function POST(req: NextRequest) {
-  // Hoejst et par tilmeldinger pr. IP i timen, saa listen og Resend ikke kan spammes.
+  // Loft pr. IP (rummeligt pga. CGNAT) og pr. e-mail herunder, saa listen og
+  // Resend ikke kan spammes.
   if (!(await indenForGraense("venteliste_ip", await klientIp()))) {
-    return NextResponse.json({ error: FOR_MANGE_FORSOEG }, { status: 429 });
+    return NextResponse.json({ error: MANGE_TILMELDINGER }, { status: 429 });
   }
 
   let email: unknown;
@@ -27,14 +31,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Ugyldig forespørgsel." }, { status: 400 });
   }
 
-  if (typeof email !== "string" || email.length > 254 || !EMAIL_REGEX.test(email)) {
+  // Trimmes før valideringen (mellemrum fra kopiering er ikke en fejl).
+  const renEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+  if (!renEmail || renEmail.length > 254 || !EMAIL_REGEX.test(renEmail)) {
     return NextResponse.json(
       { error: "Indtast en gyldig e-mailadresse." },
       { status: 400 },
     );
   }
 
-  const renEmail = email.trim().toLowerCase();
+  if (!(await indenForGraense("venteliste_email", renEmail))) {
+    return NextResponse.json({ error: MANGE_TILMELDINGER }, { status: 429 });
+  }
+
   let error: { code?: string; message?: string } | null;
   try {
     // Service role: browseren har ingen insert-ret på venteliste (migration

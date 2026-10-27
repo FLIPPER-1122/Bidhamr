@@ -54,6 +54,15 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // Den gamle fejltekst (fx "mindst 10 tegn") forsvinder, så snart et felt
+  // rettes - ellers står den, selvom feltet nu er i orden.
+  function medNulstilFejl(saet: (v: string) => void) {
+    return (v: string) => {
+      saet(v);
+      setError(null);
+    };
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -152,7 +161,7 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
                     required
                     maxLength={100}
                     value={fornavn}
-                    onChange={(e) => setFornavn(e.target.value)}
+                    onChange={(e) => medNulstilFejl(setFornavn)(e.target.value)}
                     className={`mt-1.5 ${FELT}`}
                   />
                 </div>
@@ -167,7 +176,7 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
                     required
                     maxLength={100}
                     value={efternavn}
-                    onChange={(e) => setEfternavn(e.target.value)}
+                    onChange={(e) => medNulstilFejl(setEfternavn)(e.target.value)}
                     className={`mt-1.5 ${FELT}`}
                   />
                 </div>
@@ -177,7 +186,7 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
               id="password"
               label={velkommen ? V.felt : "Ny adgangskode"}
               vaerdi={password}
-              onChange={setPassword}
+              onChange={medNulstilFejl(setPassword)}
               ny
               person={{ email }}
             />
@@ -187,7 +196,7 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
                 id="password-gentag"
                 label={velkommen ? V.feltGentag : "Gentag ny adgangskode"}
                 vaerdi={passwordGentag}
-                onChange={setPasswordGentag}
+                onChange={medNulstilFejl(setPasswordGentag)}
                 autoComplete="new-password"
               />
               {passwordGentag && password !== passwordGentag && (
