@@ -4,7 +4,9 @@
 // Nøglen hedder ANTHROPIC_API_KEY. Mangler den, er botten skjult overalt
 // (chatboblen vises ikke, og endpoints svarer "ikke tilgængelig") - den
 // fejler aldrig. Modellen kommer fra BIDHAMR_BOT_MODEL med standard
-// claude-haiku-5-5 (Filip, 27. okt. 2026). Effort er 'low'.
+// claude-haiku-5-5 (Filip, 27. okt. 2026) og skal være en af de tilladte
+// modeller med kendte priser (BOT_MODELLER) - ellers er botten skjult, så en
+// tastefejl aldrig kører en ukendt (måske dyr) model. Effort er 'low'.
 
 export const BOT_STANDARD_MODEL = "claude-haiku-5-5";
 export const BOT_EFFORT = "low" as const;
@@ -17,6 +19,9 @@ export const BOT_MAKS_HISTORIK = 20;
 export const BOT_MAKS_RUNDER = 4;
 // max_tokens pr. runde (thinking + svar).
 export const BOT_MAKS_TOKENS = 4000;
+// Samlet deadline for ét svar (alle runder). Under routens maxDuration (60
+// s), så svaret og forbruget altid når at blive gemt (bot_gem_svar).
+export const BOT_DEADLINE_MS = 50_000;
 // Loftet pr. døgn står i databasen (bot_ny_besked) - her kun til tekster.
 export const BOT_LOFT_PR_DOEGN = 30;
 
@@ -25,13 +30,30 @@ export function botNoegle(env: NodeJS.ProcessEnv = process.env): string | null {
   return v ? v : null;
 }
 
-export function botAktiv(env: NodeJS.ProcessEnv = process.env): boolean {
-  return botNoegle(env) !== null;
+// Tilladte modeller og deres priser i USD pr. million tokens (input,
+// output, cache-læsning, cache-skrivning med 5 minutters TTL).
+type Priser = { input: number; output: number; cacheRead: number; cacheWrite: number };
+export const BOT_MODELLER = {
+  "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+  "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
+} as const satisfies Record<string, Priser>;
+export type BotModelNavn = keyof typeof BOT_MODELLER;
+
+export function erTilladtModel(v: string): v is BotModelNavn {
+  return Object.prototype.hasOwnProperty.call(BOT_MODELLER, v);
 }
 
-export function botModel(env: NodeJS.ProcessEnv = process.env): string {
-  const v = env.BIDHAMR_BOT_MODEL?.trim();
-  return v && /^[a-z0-9.-]{3,80}$/i.test(v) ? v : BOT_STANDARD_MODEL;
+// Modellen fra BIDHAMR_BOT_MODEL (tom = standard). null = ukendt model -
+// botten kører så ikke (botAktiv er false).
+export function botModel(env: NodeJS.ProcessEnv = process.env): BotModelNavn | null {
+  const v = env.BIDHAMR_BOT_MODEL?.trim().toLowerCase();
+  if (!v) return BOT_STANDARD_MODEL;
+  return erTilladtModel(v) ? v : null;
+}
+
+export function botAktiv(env: NodeJS.ProcessEnv = process.env): boolean {
+  return botNoegle(env) !== null && botModel(env) !== null;
 }
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -73,7 +95,11 @@ export function loftFejl(kode: string): { status: number; fejl: string; kode: st
         fejl: `Du har skrevet ${BOT_LOFT_PR_DOEGN} beskeder til BidHamr-bot det seneste døgn. Prøv igen senere, eller kontakt en rigtig medarbejder.`,
       };
     case "loft_alle":
-      return { status: 429, kode, fejl: "BidHamr-bot har travlt lige nu. Prøv igen senere, eller kontakt en rigtig medarbejder." };
+      return {
+        status: 429,
+        kode,
+        fejl: "BidHamr-bot holder en kort pause lige nu. Prøv igen senere, eller skriv til os via kontaktformularen på /kontakt.",
+      };
     case "samtale_fuld":
       return { status: 409, kode, fejl: "Samtalen er blevet lang. Start en ny samtale, eller kontakt en rigtig medarbejder." };
     case "ukendt_samtale":
@@ -85,20 +111,14 @@ export function loftFejl(kode: string): { status: number; fejl: string; kode: st
   }
 }
 
-// Priser i USD pr. million tokens (input, output, cache-læsning,
-// cache-skrivning med 5 minutters TTL). Ukendt model: Opus-priser, så
-// omkostningen hellere overvurderes end undervurderes.
-type Priser = { input: number; output: number; cacheRead: number; cacheWrite: number };
-const PRISER: Record<string, Priser> = {
-  "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
-  "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
-};
-const UKENDT: Priser = PRISER["claude-opus-5-5"];
+// Ukendt model (kører ikke - se botModel): Opus-priser, så omkostningen
+// hellere overvurderes end undervurderes.
+const UKENDT: Priser = BOT_MODELLER["claude-opus-5-5"];
 
 export type BotForbrug = { input: number; output: number; cacheRead: number; cacheWrite: number };
 
 export function botPrisUsd(model: string, f: BotForbrug): number {
-  const p = PRISER[model] ?? UKENDT;
+  const p: Priser = erTilladtModel(model) ? BOT_MODELLER[model] : UKENDT;
   const usd = (f.input * p.input + f.output * p.output + f.cacheRead * p.cacheRead + f.cacheWrite * p.cacheWrite) / 1_000_000;
   return Math.round(usd * 1_000_000) / 1_000_000;
 }

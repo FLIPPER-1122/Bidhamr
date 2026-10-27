@@ -60,6 +60,7 @@ export const DINE_DATA_AFSNIT: ReadonlyArray<readonly [string, string]> = [
   ["handler", "Handler"],
   ["beskeder_i_handler", "Beskeder"],
   ["samtaler_med_bidhamr", "Samtaler med BidHamr"],
+  ["bidhamr_bot", "Samtaler med BidHamr-bot"],
   ["bedoemmelser_givet", "Bedømmelser du har givet"],
   ["bedoemmelser_modtaget", "Bedømmelser du har fået"],
   ["dine_svar_paa_bedoemmelser", "Dine svar på bedømmelser"],
@@ -95,6 +96,7 @@ export const DINE_DATA_UNDERAFSNIT: Record<string, string> = {
   "mine_maksimumbud.maksimum": "Dine maksimumbud",
   "mine_maksimumbud.aendringer": "Ændringer af maksimumbud",
   "samtaler_med_bidhamr.beskeder": "Beskeder",
+  "bidhamr_bot.beskeder": "Beskeder",
 };
 
 // Feltnavne. Ukendte felter får et navn lavet ud fra nøglen.
@@ -173,6 +175,10 @@ export const DINE_DATA_FELTER: Record<string, string> = {
   lukket_kl: "Lukket",
   beskeder: "Beskeder",
   besked: "Besked",
+  // BidHamr-bot (rolle: bruger = dig, bot = BidHamr-bot)
+  kilde: "Hjemmesiden eller appen",
+  rolle: "Fra",
+  overdraget_kl: "Sendt til en medarbejder",
   // Bedømmelser og spørgsmål
   til_fornavn: "Til",
   fra_fornavn: "Fra",

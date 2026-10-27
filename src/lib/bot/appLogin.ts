@@ -9,15 +9,15 @@ import { appBruger, bearerToken } from "@/lib/appApi";
 // være et gyldigt token - ellers "ikke logget ind" (401), så appen ikke
 // tavst falder tilbage til en anonym samtale.
 export type AppBotLogin =
-  | { ok: true; supabase: SupabaseClient | null; brugerId: string | null }
+  | { ok: true; supabase: SupabaseClient | null; brugerId: string | null; email: string | null }
   | { ok: false };
 
 export async function appBotLogin(req: NextRequest): Promise<AppBotLogin> {
   const harHeader = (req.headers.get("authorization") ?? "").trim() !== "";
-  if (!harHeader) return { ok: true, supabase: null, brugerId: null };
+  if (!harHeader) return { ok: true, supabase: null, brugerId: null, email: null };
   const token = bearerToken(req);
   if (!token) return { ok: false };
   const login = await appBruger(token);
   if (!login) return { ok: false };
-  return { ok: true, supabase: login.supabase, brugerId: login.bruger.id };
+  return { ok: true, supabase: login.supabase, brugerId: login.bruger.id, email: login.bruger.email ?? null };
 }
