@@ -1,7 +1,7 @@
 // Eksempler til kontaktoplysninger i auktioner (auktionKontaktGrund i
 // src/lib/auktionKontaktinfo.ts og public.auktion_kontaktinfo_grund i
 // databasen). PRÆCIS samme liste står i testblokken sidst i
-// supabase/migrations/20261102220000_kontaktinfo_rettelser3.sql - ændres en
+// supabase/migrations/20261102280000_kontaktinfo_rettelser4.sql - ændres en
 // regel, SKAL begge steder rettes.
 //
 // [tekst, svar for en privat sælger, svar for et firma]
@@ -210,4 +210,44 @@ export const AUKTION_KONTAKT_EKSEMPLER: AuktionKontaktEksempel[] = [
   ["hans @ gmail . com", "email", "email"],
   ["hans på gmail", "email", "email"],
   ["Skriv på mail", "email", "email"],
+  // 20261102280000: mail-ord, der ikke er kontaktinfo.
+  ["iPhone 12, ikke iCloud-låst", null, null],
+  ["iCloud låst op", null, null],
+  ["iPhone12 iCloud-låst", null, null],
+  ["Gmail-konto medfølger ikke", null, null],
+  ["Perfekt til live musik", null, null],
+  ["Forstærker til live brug", null, null],
+  ["Kan sendes til Live-koncert", null, null],
+  ["Kvittering kan sendes på mail", null, null],
+  ["Faktura sendes via mail", null, null],
+  ["Billeder sendes på mail", null, null],
+  ["Sendes over mail eller hentes", null, null],
+  // Mail med kontaktverbum, brugernavn eller @ - stadig stoppet.
+  ["Kontakt mig på mail", "email", "email"],
+  ["Skriv til mig via e-mail", "email", "email"],
+  ["Send mig på mail", "email", "email"],
+  ["hans.hansen icloud", "email", "email"],
+  ["iCloud: hans_12", "email", "email"],
+  ["hans @icloud", "email", "email"],
+  ["hans123 på outlook", "email", "email"],
+  // Megapixel og æske er ikke MobilePay.
+  ["Kamera 24 MP, original boks medfølger", null, null],
+  ["Spejlrefleks 18 MP, æske og box", null, null],
+  ["12 MP kamera, kan sendes i box", null, null],
+  ["Leveres i original box, 12 MP", null, null],
+  ["MP-box ikke inkluderet", null, null],
+  ["Mp box 12345", "mobilepay", "mobilepay"],
+  // Powerbank, reg. højde, EAN og datoer er ikke bankoplysninger.
+  ["Powerbank, varenr 1234 567890", null, null],
+  ["Powerbank 20000 mAh, EAN 5701234567890", null, null],
+  ["Kontorstol med reg. højde 45-90 cm, model 1234 567890", null, null],
+  ["Købt i banken 15.03.2024 - 12.04.2024", null, null],
+  ["Konto: 12.05.2023 - 11.05.2024", null, null],
+  ["Købt 15.03.2024 12.04.2024, betalt med bankoverførsel", null, null],
+  ["Netbank 1234 567890", "bank", "bank"],
+  ["Reg. 5678, 1234 567890", "bank", "bank"],
+  ["Betal til banken 15.03.2024 1234 567890", "bank", "bank"],
+  // Kombinationstegn fjernes.
+  ["2\u03012\u03013\u03013\u03014\u03014\u03015\u03015\u0301", "telefon", "telefon"],
+  ["Ring 2\u03302\u0330 33 44 55", "telefon", "telefon"],
 ];

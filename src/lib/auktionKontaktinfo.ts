@@ -29,12 +29,17 @@
 //         højst 40 tegn før kæden + nummeret, hvert vindue én gang; over 50
 //         forskellige mulige telefonnumre stoppes). 0/00/45/0045 + 8 cifre
 //         stoppes altid.
-//   - Bankoplysninger skrevet som varenummer: står der konto, reg eller bank
-//     i teksten, stoppes 4 cifre efterfulgt af 6-10 cifre og en blok på
-//     10-14 cifre (ikke med en enhed som km/kr bagefter).
-//   - MobilePay (også "mobile pay", "mp box", "på mp") stoppes altid.
-//   - E-mail skrevet med mellemrum ("hans @ gmail . com") eller som
-//     "hans på gmail" stoppes.
+//   - Bankoplysninger skrevet som varenummer: står der et bankord (bank,
+//     netbank, konto, kontonr, bankoverførsel, reg.nr, reg + 4 cifre ... -
+//     ikke "powerbank" eller "reg. højde") i teksten, stoppes 4 cifre
+//     efterfulgt af 6-10 cifre (efter et vareord som EAN/SKU/varenr: 8-10) og
+//     en blok på 10-14 cifre (ikke med en enhed som km/kr bagefter, og ikke
+//     når de 4 cifre er årstallet i en dato som 15.03.2024).
+//   - MobilePay (også "mobile pay", "mp box 1234", "på mp") stoppes altid.
+//   - E-mail skrevet med mellemrum ("hans @ gmail . com"), som "hans på
+//     gmail", "hans.hansen icloud" eller "skriv/kontakt mig på mail" stoppes.
+//     "iCloud-låst", "Gmail-konto" og "kvittering sendes på mail" må gerne stå.
+//   - Kombinationstegn (Unicode M) fjernes efter normaliseringen.
 //   - Står der intet kontaktord, neutraliseres - EFTER 8-cifre-tjekket -
 //     varenumre med andre længder (fx 6, 7, 9 eller flere cifre) efter et
 //     vareord og signalværdier ("Signal: analog", "Signal: 20 dB" - højst 4
@@ -46,7 +51,7 @@
 //     120/500 tegn).
 //
 // SPEJL af public.auktion_kontaktinfo_grund i
-// supabase/migrations/20261102220000_kontaktinfo_rettelser3.sql. Databasen
+// supabase/migrations/20261102280000_kontaktinfo_rettelser4.sql. Databasen
 // afgør altid (triggeren auctions_zzz_kontaktinfo, fejlkode BHA08); denne
 // kopi viser fejlen ved feltet, mens brugeren skriver. Ændres en regel, SKAL
 // begge steder rettes (eksemplerne står begge steder:
@@ -105,23 +110,35 @@ const BLOK_KORT = new RegExp(
   "u",
 );
 
+// Et brugernavn: bogstaver med . eller _ ("hans.hansen", "hans_12") eller
+// bogstaver efterfulgt af cifre ("hans123").
+const BRUGER = "(?<![a-z0-9._%+@-])([a-z][a-z0-9]*([._][a-z0-9]+)+|[a-z]+[0-9][a-z0-9]*)";
+// Et kontaktverbum foran "på mail": skriv (til mig), send mig, kontakt (mig).
+const KONTAKTVERBUM = "(skriv(e|er)?(\\s+(til\\s+)?mig)?|send(e|er)?\\s+mig|kontakt(e|er)?(\\s+mig)?)";
+
 // E-mail, som chatfilteret ikke kender: mellemrum om punktummet ("hans @
-// gmail . com") og en mailudbyder som ord ("hans på gmail").
+// gmail . com"), en mailudbyder som ord ("hans på gmail" - men ikke
+// "gmail-konto"), iCloud/Outlook med et brugernavn eller @ ved siden af
+// ("hans.hansen icloud" - men ikke "iCloud-låst") og "skriv/send mig/kontakt
+// (mig) på mail" (men ikke "kvittering sendes på mail").
 const EMAIL_EKSTRA = new RegExp(
   `[a-z0-9._%+-]+\\s*(@|\\(at\\)|\\[at\\]|${B}snabel-?a${E})\\s*[a-z0-9-]*[a-z][a-z0-9-]*\\s*(\\.|${B}(punktum|dot)${E})\\s*[a-z]{2,}` +
-    `|${B}(g-?mail|hotmail|icloud|protonmail|yahoo|gmx)${E}` +
-    `|${B}(på|via|over|til)\\s+(e-?mail|mail|outlook|live)${E}`,
+    `|${B}(g-?mail|hotmail|protonmail|yahoo|gmx)${E}(?!-[a-zæøå])` +
+    `|${BRUGER}\\s+(på\\s+)?(icloud|outlook)${E}(?!-[a-zæøå])` +
+    `|${B}icloud(\\s*[:=]\\s*|\\s+)${BRUGER}${E}` +
+    `|@\\s*icloud${E}|${B}icloud\\s*@` +
+    `|${B}${KONTAKTVERBUM}\\s+(på|via|over|til|pr\\.?|per)\\s+(e-?mail|mail)${E}`,
   "u",
 );
 
 // MobilePay som ord - al betaling går via BidHamr. "mp" alene er også
-// megapixel ("12 mp"), så det kræver box/boks eller et ord som "på mp".
+// megapixel ("12 mp"), så det kræver "mp box"/"mp-boks" lige efter hinanden
+// med cifre bagefter, eller et ord som "på mp".
 const MOBILEPAY_ORD = new RegExp(
-  `${B}(m[o0]bil[e3]?\\s*-?\\s*pay|m-?pay|mp\\s*-?\\s*(box|boks))${E}` +
+  `${B}(m[o0]bil[e3]?\\s*-?\\s*pay|m-?pay)${E}` +
+    `|${B}mp\\s*-?\\s*(box|boks)[\\s:#.-]*[0-9]` +
     `|${B}(på|via|med|over|eller|og|til)\\s+mp${E}` +
-    `|${B}mp\\s+(ok|modtages|tages|velkommen|accepteres)${E}` +
-    `|${B}mp${E}[^]{0,30}${B}(box|boks)${E}` +
-    `|${B}(box|boks)${E}[^]{0,30}${B}mp${E}`,
+    `|${B}mp\\s+(ok|modtages|tages|velkommen|accepteres)${E}`,
   "u",
 );
 
@@ -135,10 +152,13 @@ const KONTAKTORD = new RegExp(
     `|iban|overf(ø|o)r[a-zæøå]*|reg|regnr)${E}`,
   "u",
 );
-// Bankord til "4 cifre + 6-10 cifre": konto, reg eller bank (også "netbank").
+// Bankord til "4 cifre + 6-10 cifre": fast liste med ordstart ("powerbank"
+// tæller ikke). "reg" kun som reg.nr/regnr/reg nr eller reg + 4 cifre
+// ("reg. højde" tæller ikke).
 const BANKORD = new RegExp(
-  `${B}(konto|kontoen|kontonr|kontonummer|kontonummeret|bankkonto|bankkontoen|bankoverførsel|bankoverførslen` +
-    `|reg|regnr|registreringsnummer|registreringsnr|iban)${E}|bank(en)?${E}`,
+  `${B}(bank|banken|netbank|netbanken|bankkonto|bankkontoen|bankoverførsel|bankoverførslen` +
+    `|konto|kontoen|kontonr|kontonummer|kontonummeret|regnr|registreringsnummer|registreringsnr|iban)${E}` +
+    `|${B}reg\\.?\\s*nr${E}|${B}reg[.:]?\\s*[0-9]{4}(?![0-9])`,
   "u",
 );
 // En enhed lige efter et nummer: så er det ikke et kontonummer ("145000 km").
@@ -150,6 +170,9 @@ const VAREORD_ORD = new RegExp(VAREORD_ORD_S, "gu");
 // Vareord + mindst 6 cifre/skilletegn uden mellemrum. Neutraliseres kun uden
 // kontaktord og efter 8-cifre-tjekket.
 const VAREORD = new RegExp(`${VAREORD_ORD_S}\\.?[\\s:#]*[0-9][0-9./-]{4,}[0-9](?![0-9])`, "gu");
+// Et vareord lige før et nummer (EAN, SKU, varenr ...): så kræver
+// kontoreglen 4 cifre + mindst 8 cifre ("Varenr 1234 567890" er et varenummer).
+const VARE_FOER = new RegExp(`${VAREORD_ORD_S}\\.?[\\s.:#]*$`, "u");
 // Skilletegn mellem cifre i et nummer (gerne flere i træk).
 const SKILLE = String.raw`[\s.,;:_*|+()\[\]{}<>/\\~='"&!?^–—-]`;
 // Et vareord eller en anden mærkat + nummeret efter den.
@@ -193,6 +216,61 @@ for (const nul of CIFFER_NUL) {
   for (let d = 0; d < 10; d++) CIFFER.set(String.fromCodePoint(nul + d), String(d));
 }
 
+// Kombinationstegn (Unicode M: Mn, Mc, Me, Unicode 16) som par [fra, til].
+// De fjernes efter normaliseringen ("2" + U+0301 + "2" + U+0301 ... læses som
+// "22...").
+// NFKC har allerede samlet æ/ø/å og é. Samme liste i databasen.
+const MAERKE_PAR = [
+  768, 879, 1155, 1161, 1425, 1469, 1471, 1471, 1473, 1474, 1476, 1477, 1479, 1479, 1552, 1562, 1611, 1631, 1648,
+  1648, 1750, 1756, 1759, 1764, 1767, 1768, 1770, 1773, 1809, 1809, 1840, 1866, 1958, 1968, 2027, 2035, 2045, 2045,
+  2070, 2073, 2075, 2083, 2085, 2087, 2089, 2093, 2137, 2139, 2199, 2207, 2250, 2273, 2275, 2307, 2362, 2364, 2366,
+  2383, 2385, 2391, 2402, 2403, 2433, 2435, 2492, 2492, 2494, 2500, 2503, 2504, 2507, 2509, 2519, 2519, 2530, 2531,
+  2558, 2558, 2561, 2563, 2620, 2620, 2622, 2626, 2631, 2632, 2635, 2637, 2641, 2641, 2672, 2673, 2677, 2677, 2689,
+  2691, 2748, 2748, 2750, 2757, 2759, 2761, 2763, 2765, 2786, 2787, 2810, 2815, 2817, 2819, 2876, 2876, 2878, 2884,
+  2887, 2888, 2891, 2893, 2901, 2903, 2914, 2915, 2946, 2946, 3006, 3010, 3014, 3016, 3018, 3021, 3031, 3031, 3072,
+  3076, 3132, 3132, 3134, 3140, 3142, 3144, 3146, 3149, 3157, 3158, 3170, 3171, 3201, 3203, 3260, 3260, 3262, 3268,
+  3270, 3272, 3274, 3277, 3285, 3286, 3298, 3299, 3315, 3315, 3328, 3331, 3387, 3388, 3390, 3396, 3398, 3400, 3402,
+  3405, 3415, 3415, 3426, 3427, 3457, 3459, 3530, 3530, 3535, 3540, 3542, 3542, 3544, 3551, 3570, 3571, 3633, 3633,
+  3636, 3642, 3655, 3662, 3761, 3761, 3764, 3772, 3784, 3790, 3864, 3865, 3893, 3893, 3895, 3895, 3897, 3897, 3902,
+  3903, 3953, 3972, 3974, 3975, 3981, 3991, 3993, 4028, 4038, 4038, 4139, 4158, 4182, 4185, 4190, 4192, 4194, 4196,
+  4199, 4205, 4209, 4212, 4226, 4237, 4239, 4239, 4250, 4253, 4957, 4959, 5906, 5909, 5938, 5940, 5970, 5971, 6002,
+  6003, 6068, 6099, 6109, 6109, 6155, 6157, 6159, 6159, 6277, 6278, 6313, 6313, 6432, 6443, 6448, 6459, 6679, 6683,
+  6741, 6750, 6752, 6780, 6783, 6783, 6832, 6862, 6912, 6916, 6964, 6980, 7019, 7027, 7040, 7042, 7073, 7085, 7142,
+  7155, 7204, 7223, 7376, 7378, 7380, 7400, 7405, 7405, 7412, 7412, 7415, 7417, 7616, 7679, 8400, 8432, 11503, 11505,
+  11647, 11647, 11744, 11775, 12330, 12335, 12441, 12442, 42607, 42610, 42612, 42621, 42654, 42655, 42736, 42737,
+  43010, 43010, 43014, 43014, 43019, 43019, 43043, 43047, 43052, 43052, 43136, 43137, 43188, 43205, 43232, 43249,
+  43263, 43263, 43302, 43309, 43335, 43347, 43392, 43395, 43443, 43456, 43493, 43493, 43561, 43574, 43587, 43587,
+  43596, 43597, 43643, 43645, 43696, 43696, 43698, 43700, 43703, 43704, 43710, 43711, 43713, 43713, 43755, 43759,
+  43765, 43766, 44003, 44010, 44012, 44013, 64286, 64286, 65024, 65039, 65056, 65071, 66045, 66045, 66272, 66272,
+  66422, 66426, 68097, 68099, 68101, 68102, 68108, 68111, 68152, 68154, 68159, 68159, 68325, 68326, 68900, 68903,
+  68969, 68973, 69291, 69292, 69372, 69375, 69446, 69456, 69506, 69509, 69632, 69634, 69688, 69702, 69744, 69744,
+  69747, 69748, 69759, 69762, 69808, 69818, 69826, 69826, 69888, 69890, 69927, 69940, 69957, 69958, 70003, 70003,
+  70016, 70018, 70067, 70080, 70089, 70092, 70094, 70095, 70188, 70199, 70206, 70206, 70209, 70209, 70367, 70378,
+  70400, 70403, 70459, 70460, 70462, 70468, 70471, 70472, 70475, 70477, 70487, 70487, 70498, 70499, 70502, 70508,
+  70512, 70516, 70584, 70592, 70594, 70594, 70597, 70597, 70599, 70602, 70604, 70608, 70610, 70610, 70625, 70626,
+  70709, 70726, 70750, 70750, 70832, 70851, 71087, 71093, 71096, 71104, 71132, 71133, 71216, 71232, 71339, 71351,
+  71453, 71467, 71724, 71738, 71984, 71989, 71991, 71992, 71995, 71998, 72000, 72000, 72002, 72003, 72145, 72151,
+  72154, 72160, 72164, 72164, 72193, 72202, 72243, 72249, 72251, 72254, 72263, 72263, 72273, 72283, 72330, 72345,
+  72751, 72758, 72760, 72767, 72850, 72871, 72873, 72886, 73009, 73014, 73018, 73018, 73020, 73021, 73023, 73029,
+  73031, 73031, 73098, 73102, 73104, 73105, 73107, 73111, 73459, 73462, 73472, 73473, 73475, 73475, 73524, 73530,
+  73534, 73538, 73562, 73562, 78912, 78912, 78919, 78933, 90398, 90415, 92912, 92916, 92976, 92982, 94031, 94031,
+  94033, 94087, 94095, 94098, 94180, 94180, 94192, 94193, 113821, 113822, 118528, 118573, 118576, 118598, 119141,
+  119145, 119149, 119154, 119163, 119170, 119173, 119179, 119210, 119213, 119362, 119364, 121344, 121398, 121403,
+  121452, 121461, 121461, 121476, 121476, 121499, 121503, 121505, 121519, 122880, 122886, 122888, 122904, 122907,
+  122913, 122915, 122916, 122918, 122922, 123023, 123023, 123184, 123190, 123566, 123566, 123628, 123631, 124140,
+  124143, 124398, 124399, 125136, 125142, 125252, 125258, 917760, 917999,
+];
+const MAERKE = new RegExp(
+  "[" +
+    Array.from({ length: MAERKE_PAR.length / 2 }, (_, i) => {
+      const [fra, til] = [MAERKE_PAR[2 * i], MAERKE_PAR[2 * i + 1]];
+      const u = (k: number) => `\\u{${k.toString(16)}}`;
+      return fra === til ? u(fra) : `${u(fra)}-${u(til)}`;
+    }).join("") +
+    "]",
+  "gu",
+);
+
 function asciiCifre(v: string): string {
   if (!/[^\u0000-ɏ]/u.test(v)) return v;
   return Array.from(v, (tegn) => CIFFER.get(tegn) ?? tegn).join("");
@@ -235,7 +313,7 @@ function afkod(v: string): string {
     const foer = v;
     v = erstatAlle(v, ENTITET, afkodEntitet);
     v = erstatAlle(v, /%[0-9a-f]{2}/gu, afkodProcent);
-    v = normaliserBesked(v);
+    v = normaliserBesked(v).replace(MAERKE, "");
     if (v === foer) break;
   }
   return v;
@@ -272,15 +350,30 @@ function lignerTelefon(nummer: string): boolean {
   return kandidater(blokke).some(([fra, til]) => !(til === fra + 1 && AAR.test(blokke[fra]) && AAR.test(blokke[til])));
 }
 
-// Bankoplysninger: 4 cifre + 6-10 cifre eller en blok på 10-14 cifre.
-function lignerKonto(blokke: string[]): boolean {
+// Skilletegn i en dato (15.03.2024, 15/03/2024, 15-03-2024).
+const DATO_SKILLE = /^[./-]$/u;
+
+// Bankoplysninger: 4 cifre + 6-10 cifre (efter et vareord: 8-10 cifre) eller
+// en blok på 10-14 cifre. Er de 4 cifre et årstal i en dato ("15.03.2024 -
+// 12.04.2024"), er det ikke et registreringsnummer.
+function lignerKonto(blokke: string[], skille: string[], vare: boolean): boolean {
+  const mindst = vare ? 8 : 6;
   for (let i = 0; i < blokke.length; i++) {
     if (blokke[i].length >= 10 && blokke[i].length <= 14) return true;
     if (blokke[i].length !== 4) continue;
+    if (
+      AAR.test(blokke[i]) &&
+      i >= 2 &&
+      blokke[i - 1].length <= 2 &&
+      blokke[i - 2].length <= 2 &&
+      DATO_SKILLE.test(skille[i - 2]) &&
+      DATO_SKILLE.test(skille[i - 1])
+    )
+      continue;
     let sum = 0;
     for (let j = i + 1; j < blokke.length && sum < 10; j++) {
       sum += blokke[j].length;
-      if (sum >= 6 && sum <= 10) return true;
+      if (sum >= mindst && sum <= 10) return true;
     }
   }
   return false;
@@ -347,10 +440,11 @@ export function auktionKontaktGrund(tekst: string | null | undefined, erhverv: b
   for (const m of v.matchAll(KAEDE)) {
     const { blokke, skille } = del(m[0]);
     const slut = (m.index ?? 0) + m[0].length;
-    if (bank && lignerKonto(blokke) && !ENHED_EFTER.test(v.slice(slut))) return "bank";
-    if (TLF_FORAN.test(blokke.join("")) || blokke.some((b) => TLF_FORAN.test(b))) return "telefon";
     const foer = Array.from(v.slice(0, m.index ?? 0));
     const kontekst = foer.slice(Math.max(0, foer.length - 40)).join("");
+    if (bank && !ENHED_EFTER.test(v.slice(slut)) && lignerKonto(blokke, skille, VARE_FOER.test(kontekst)))
+      return "bank";
+    if (TLF_FORAN.test(blokke.join("")) || blokke.some((b) => TLF_FORAN.test(b))) return "telefon";
     for (const [fra, til] of kandidater(blokke)) {
       let nr = blokke[fra];
       for (let k = fra; k < til; k++) nr += chatSkille(skille[k]) + blokke[k + 1];
