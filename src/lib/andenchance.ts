@@ -21,7 +21,13 @@ import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
 import { udbetalingskontoFejltekst } from "@/lib/betaling/frossetServer";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendSaelgerSvarMail, sendTilbudMail } from "@/lib/betaling/ubetalt";
-import { erGyldigVarighed, slutterKlFraVarighed, valideStartpris, STARTPRIS_FOR_LAV } from "@/lib/auktionRegler";
+import {
+  auktionLoftTekst,
+  erGyldigVarighed,
+  slutterKlFraVarighed,
+  valideStartpris,
+  STARTPRIS_FOR_LAV,
+} from "@/lib/auktionRegler";
 
 export type AndenchanceFejl = { fejl: string; kode: string; mitid?: true };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
@@ -332,6 +338,9 @@ export async function genopsaetAuktionFor(
       const krav = kravFejl(error.code, error.message, true);
       if (krav) return krav;
       if (error.code === "23505") return { fejl: GENOPSAET_FEJL.allerede_genopsat, kode: "allerede_genopsat" };
+      // 200 aktive auktioner for private (auctions_oprettelse_loft, BHA07).
+      const loft = auktionLoftTekst(error.code, false);
+      if (loft) return { fejl: loft, kode: "auktion_loft" };
       console.error("genopsaet_auktion fejlede:", error);
       return { fejl: GENERISK, kode: "fejl" };
     }

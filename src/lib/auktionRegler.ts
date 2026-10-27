@@ -132,12 +132,15 @@ export const MAKS_NYE_AUKTIONER_PR_TIME = 30;
 export const MAKS_AKTIVE_AUKTIONER = 200;
 
 // Dansk tekst til loft-fejlene (BHA06/BHA07). null = ikke en loft-fejl.
-export function auktionLoftTekst(kode: string | null | undefined): string | null {
+// medKladde: false ved "Sæt op igen" (genopsaet_auktion/saet_annulleret_op_igen
+// - der er ingen kladde, og kun 200-loftet gælder dér).
+export function auktionLoftTekst(kode: string | null | undefined, medKladde = true): string | null {
+  const kladde = medKladde ? " – din kladde er gemt." : ".";
   if (kode === "BHA06") {
-    return `Du har oprettet mange auktioner på kort tid (højst ${MAKS_NYE_AUKTIONER_PR_TIME} i timen). Vent lidt, og prøv igen – din kladde er gemt.`;
+    return `Du har oprettet mange auktioner på kort tid (højst ${MAKS_NYE_AUKTIONER_PR_TIME} i timen). Vent lidt, og prøv igen${kladde}`;
   }
   if (kode === "BHA07") {
-    return `Du har ${MAKS_AKTIVE_AUKTIONER} aktive auktioner, som er det højeste antal. Vent, til nogle af dem er slut, og prøv igen – din kladde er gemt.`;
+    return `Du har ${MAKS_AKTIVE_AUKTIONER} aktive auktioner, som er det højeste antal. Vent, til nogle af dem er slut, og prøv igen${kladde}`;
   }
   return null;
 }

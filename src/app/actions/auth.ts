@@ -208,7 +208,7 @@ export async function opretKonto(input: {
   const ip = await klientIp();
   const graense = graenseFejl(await tjekGraenserLukket([["opret_ip", ip], ["gensend_email", email]]));
   if (graense) return { fejl: graense };
-  if (!(await tjekTurnstile(input?.captchaToken, ip))) return { fejl: CAPTCHA_FEJL };
+  if (!(await tjekTurnstile(input?.captchaToken, ip, "opret"))) return { fejl: CAPTCHA_FEJL };
 
   // Navn, vilkår og adgangskode venter krypteret i browseren og sættes først,
   // når koden er indtastet (verificerSignupKode) - af den, der har koden.

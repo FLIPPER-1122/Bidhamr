@@ -31,6 +31,7 @@ import {
   AUKTION_LAAST,
   erAuktionLaastFejl,
   beloebForHoejtTekst,
+  auktionLoftTekst,
 } from "@/lib/auktionRegler";
 import { erStand } from "@/lib/stand";
 import { forbudtBesked } from "@/lib/forbudteVarer";
@@ -294,6 +295,9 @@ export async function saetVarenOpIgen(auktionId: string): Promise<{ ok: true; au
       // Ubetalt ekstra fragt efter fristen (BHX01, auctions_a1_ekstra_fragt).
       if (erEkstraFragtFejl(error.code, error.message)) return { fejl: EKSTRA_FRAGT_SPAERRET_TEKST };
       if (error.code === "23505") return { fejl: SAET_OP_IGEN_FEJL.allerede_genopsat };
+      // 200 aktive auktioner for private (auctions_oprettelse_loft, BHA07).
+      const aktiveLoft = auktionLoftTekst(error.code, false);
+      if (aktiveLoft) return { fejl: aktiveLoft };
       const loftTekst = beloebForHoejtTekst(error);
       if (loftTekst) return { fejl: loftTekst };
       console.error("saet_annulleret_op_igen fejlede:", error.code, error.message);

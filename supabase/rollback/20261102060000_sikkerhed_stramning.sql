@@ -92,7 +92,13 @@ begin
 end;
 $do$;
 
--- M2: loft-triggeren væk.
+-- A-3 (tilføjet 27. okt. 2026): migrationens slut-tjek ændrer intet på en
+-- database som test (ingen tabel-select på users/auctions). Har den lavet en
+-- tabel-select om til kolonne-grants (NOTICE "lavet om til kolonne-grants"),
+-- gendannes den IKKE her - det var et hul, ikke en tilstand at vende tilbage
+-- til.
+
+-- M2: loft-triggeren væk (også service role-delen fra 27. okt. 2026).
 drop trigger if exists auctions_a0_loft on public.auctions;
 drop function if exists public.auctions_oprettelse_loft();
 
