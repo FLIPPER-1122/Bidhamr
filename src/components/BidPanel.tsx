@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import HenvisningLink from "@/components/henvisning/HenvisningLink";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
@@ -969,12 +970,12 @@ export default function BidPanel({
         </form>
       ) : (
         <div ref={handlingRef} className="mt-4">
-          <Link
+          <HenvisningLink
             href={`/login?redirect=${encodeURIComponent(`/auktion/${auktionId}`)}`}
             className="btn btn-primaer btn-stor w-full"
           >
             Log ind for at byde
-          </Link>
+          </HenvisningLink>
         </div>
       )}
 
@@ -1162,13 +1163,13 @@ export default function BidPanel({
                   {jegFoerer ? (maksAktivt ? AUTOBUD.knapRetMaks : AUTOBUD.knapNy) : "Afgiv bud"}
                 </button>
               ) : (
-                <Link
+                <HenvisningLink
                   href={`/login?redirect=${encodeURIComponent(`/auktion/${auktionId}`)}`}
                   tabIndex={panelSynligt ? -1 : undefined}
                   className="btn btn-primaer shrink-0"
                 >
                   Log ind for at byde
-                </Link>
+                </HenvisningLink>
               )}
             </div>
           </div>,

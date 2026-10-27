@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { tilmeldingAaben } from "@/lib/tilmelding";
 import { betaAaben } from "@/lib/beta";
+import { renHenvisningskode } from "@/lib/henvisning/kode";
 import SignupForm from "./SignupForm";
 
 // Oprettelse af konti er lukket indtil launch (src/lib/tilmelding.ts). På
@@ -17,7 +18,15 @@ import SignupForm from "./SignupForm";
 // virker.
 export const metadata: Metadata = { title: "Opret konto", robots: { index: false, follow: false } };
 
-export default async function SignupSide() {
+// ?ven=KODE (Henvis en ven): feltet "Henvisningskode" udfyldes på forhånd.
+// Kun en gyldig kode - ellers er feltet tomt. Intet gemmes i browseren.
+export default async function SignupSide({
+  searchParams,
+}: {
+  searchParams: Promise<{ ven?: string | string[] }>;
+}) {
+  const { ven } = await searchParams;
+  const henvisningskode = renHenvisningskode(Array.isArray(ven) ? ven[0] : ven) ?? "";
   const kunBeta = !tilmeldingAaben();
   if (kunBeta && !(await betaAaben())) redirect("/coming-soon");
 
@@ -25,5 +34,5 @@ export default async function SignupSide() {
   const { data } = await supabase.auth.getUser();
   if (data.user) redirect("/konto");
 
-  return <SignupForm kunInviterede={kunBeta} />;
+  return <SignupForm kunInviterede={kunBeta} henvisningskode={henvisningskode} />;
 }

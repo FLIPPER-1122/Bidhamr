@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import HenvisningLink from "@/components/henvisning/HenvisningLink";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import {
@@ -207,9 +207,9 @@ export default function SpoergSaelger({
         </p>
       ) : !auktionKoerer ? null : !loggetInd ? (
         <p className="mt-2 text-sm text-tekst-daempet">
-          <Link href={`/login?redirect=/auktion/${auktionId}%23spoergsmaal`} className="font-medium text-groen hover:underline">
+          <HenvisningLink href={`/login?redirect=/auktion/${auktionId}%23spoergsmaal`} className="font-medium text-groen hover:underline">
             Log ind
-          </Link>{" "}
+          </HenvisningLink>{" "}
           for at stille sælgeren et spørgsmål.
         </p>
       ) : kanIkkeSpoerge ? (

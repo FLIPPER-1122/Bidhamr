@@ -17,13 +17,14 @@ import { adgangskodeAendretMail } from "@/lib/mails/konto";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import { registrerLogin } from "@/lib/enheder";
 import { TJEK_EMAIL_COOKIE, tilmeldingAaben } from "@/lib/tilmelding";
-import { HENVISNING_COOKIE } from "@/lib/henvisning/kode";
+import { renHenvisningskode } from "@/lib/henvisning/kode";
 import { logDriftFejl } from "@/lib/drift";
 import { saetAdgangskodeEfterMaillink, sendNulstillingsmail } from "@/lib/adgangskodeSkift";
 import { CAPTCHA_FEJL, erCaptchaFejl, renCaptchaToken } from "@/lib/turnstile";
 import { tjekTurnstile } from "@/lib/turnstileServer";
 import { hentKontoStatus } from "@/lib/kontoStatus";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
+import { HENVISNING_TEKST } from "@/lib/tekster/henvisning";
 import {
   bekraeftKode,
   opretKontoPaaServeren,
@@ -186,9 +187,13 @@ export async function opretKonto(input: {
   // Turnstile-token (docs/SIKKERHED-AUTH.md). Tjekkes af serveren selv, når
   // TURNSTILE_SECRET_KEY er sat - generateLink har ingen CAPTCHA.
   captchaToken?: string;
+  // Henvis en ven: feltet "Henvisningskode" (valgfrit, udfyldt fra ?ven=).
+  // Tjekkes kun for formen her - koden gemmes ikke, men sendes med igen fra
+  // "Indtast koden" (verificerSignupKode) og knyttes først efter verifyOtp.
+  henvisningskode?: string;
 }): Promise<
   | { ok: true; bekraeftMail: boolean; beta?: true }
-  | { fejl: string; felt?: "email" | "password" | "fornavn" | "efternavn" | "vilkaar" }
+  | { fejl: string; felt?: "email" | "password" | "fornavn" | "efternavn" | "vilkaar" | "henvisningskode" }
 > {
   const email = renEmail(input?.email);
   const fornavn = renNavn(input?.fornavn);
@@ -204,6 +209,10 @@ export async function opretKonto(input: {
   if (!v.ok) return { fejl: v.fejl ?? GENERISK, felt: "password" };
   if (input?.vilkaarVersion !== VILKAAR_VERSION) {
     return { fejl: "Du skal acceptere brugerbetingelserne for at oprette en konto.", felt: "vilkaar" };
+  }
+  const henvKode = typeof input?.henvisningskode === "string" ? input.henvisningskode.trim() : "";
+  if (henvKode && !renHenvisningskode(henvKode)) {
+    return { fejl: HENVISNING_TEKST.signupKodeUgyldig, felt: "henvisningskode" };
   }
 
   const ip = await klientIp();
@@ -250,9 +259,15 @@ export async function gensendBekraeftelse(emailInput?: string): Promise<Resultat
 // login efter oprettelse giver ingen "Nyt login"-mail. Grænserne står i
 // bekraeftKode (src/lib/kontoOprettelse.ts). Appen bruger POST
 // /api/konto/bekraeft (docs/APP-SIGNUP.md).
+//
+// henvisningskode: Henvis en ven - koden fra adressen på "Indtast koden"
+// (?ven=KODE, sat af opret konto ud fra feltet "Henvisningskode"). Intet
+// gemmes i browseren (Filip, 27. okt. 2026). Den knyttes kun af den, der har
+// koden fra mailen (efter verifyOtp i bekraeftKode), og kun til en NY konto.
 export async function verificerSignupKode(
   kodeInput: string,
   emailInput?: string,
+  henvisningskode?: string | null,
 ): Promise<Resultat | { fejl: string; kode: "kode_forkert" | "mangler_email" }> {
   const kode = renKode(kodeInput);
   if (!kode) return { fejl: "Skriv hele koden fra mailen.", kode: "kode_forkert" };
@@ -273,8 +288,8 @@ export async function verificerSignupKode(
     ip,
     adgangskode: ventende?.adgangskode ?? null,
     profil: ventende?.profil ?? null,
-    // Henvis en ven: koden fra linket (cookien sættes af proxyen, ?ven=KODE).
-    henvisningskode: (await cookies()).get(HENVISNING_COOKIE)?.value ?? null,
+    // Henvis en ven: koden fra formularen (ingen cookie). Ugyldig = ingen.
+    henvisningskode: renHenvisningskode(henvisningskode),
   });
   if ("fejl" in svar) {
     if (svar.fejl === "konto") {
@@ -292,7 +307,6 @@ export async function verificerSignupKode(
   }
 
   (await cookies()).delete(TJEK_EMAIL_COOKIE);
-  (await cookies()).delete(HENVISNING_COOKIE);
   await sletVentendeAdgangskode();
 
   // Kontoen har kun en tilfældig adgangskode, hvis cookien manglede (anden

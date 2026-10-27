@@ -44,7 +44,9 @@ Navnene renses som på hjemmesiden: trim, ét mellemrum og højst 100 tegn. Adga
 
 Valgfrit felt `henvisningskode` (Henvis en ven, `20261102230000_henvis_en_ven.sql`): koden fra et link
 `bidhamr.dk/?ven=KODE`. Knyttes kun til en ny konto; en ugyldig eller ukendt kode ignoreres (samme svar). Se
-docs/APP-ENDPOINTS.md.
+docs/APP-ENDPOINTS.md. Uændret for appen. Hjemmesiden bruger ikke længere en cookie (Filip, 27. okt. 2026): koden
+står i et synligt, valgfrit felt "Henvisningskode" på opret konto (udfyldt fra `?ven=`, kan rettes) og sendes med
+igen fra "Indtast koden". Appen bør vise samme felt, så brugeren kan se og rette koden.
 
 
 ```json

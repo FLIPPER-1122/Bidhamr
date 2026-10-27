@@ -6,6 +6,7 @@
 // Lukket er skuffen display:none og dermed helt ude af tab-rækkefølgen.
 import Image from "next/image";
 import Link from "next/link";
+import HenvisningLink from "@/components/henvisning/HenvisningLink";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Ikon, { KATEGORI_IKON } from "@/components/Ikon";
@@ -285,8 +286,8 @@ export default function MobilMenu({
               </>
             ) : (
               <div className="flex gap-2">
-                <Link href="/login" className="btn btn-sekundaer flex-1">Log ind</Link>
-                <Link href="/signup" className="btn btn-sekundaer flex-1">Opret konto</Link>
+                <HenvisningLink href="/login" className="btn btn-sekundaer flex-1">Log ind</HenvisningLink>
+                <HenvisningLink href="/signup" className="btn btn-sekundaer flex-1">Opret konto</HenvisningLink>
               </div>
             )}
           </div>

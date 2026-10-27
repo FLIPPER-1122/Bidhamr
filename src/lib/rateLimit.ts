@@ -139,6 +139,10 @@ export const GRAENSER = {
   // Appens pakkeskift (POST /api/firma/skift-pakke) pr. IP; pr. bruger
   // begrænser databasen selv (firma_skift_pakke_server).
   firma_skift_pakke_ip: { maks: 30, vindueSek: 60 * 60 },
+  // Appens pris for et pakkeskift (GET /api/firma/skift-pakke?til=) - kalder
+  // Stripe. Pr. IP før tokenet er tjekket (rummelig: CGNAT) og pr. bruger.
+  firma_skift_pakke_vis_ip: { maks: 150, vindueSek: 60 * 60 },
+  firma_skift_pakke_vis_bruger: { maks: 60, vindueSek: 60 * 60 },
   // POST /api/betaling/kort (appens "Fjern kort") pr. IP,
   // før tokenet er valideret. Rummelig, fordi mange mobilbrugere deler IP
   // (CGNAT); den egentlige grænse er pr. bruger nedenfor.

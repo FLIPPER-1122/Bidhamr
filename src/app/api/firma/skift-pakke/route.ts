@@ -4,31 +4,59 @@ import { offentligNoegle } from "@/lib/supabase/noegler";
 import { klientIp, tjekGraenser, FOR_MANGE_FORSOEG } from "@/lib/rateLimit";
 import { logDriftFejl } from "@/lib/drift";
 import { skiftPakkeForBruger } from "@/lib/erhverv/pakkeskift";
+import { velkomstSkiftForPakke } from "@/lib/erhverv/betaling";
 
 // Pakkeskift for en firmakonto direkte fra appen. Samme regler og samme kode
 // som Firma oversigt på hjemmesiden (src/lib/erhverv/pakkeskift.ts): databasen
 // OG abonnementet i Stripe ændres, og fejler Stripe, rulles skiftet tilbage.
 // (firma_skift_pakke kan ikke længere kaldes direkte med supabase.rpc.)
 //
+// GET /api/firma/skift-pakke?til=<pakke-uuid>
+//   Authorization: Bearer <Supabase access token>
+//   Hvad et skift til pakken koster NU - samme regel og samme tal, som
+//   serveren bruger, når der trykkes (velkomstSkiftUdfald). Kald det, før
+//   bekræftelsen vises, og send "visning" med i POST'en.
+//   200 { ok: true, pakke: { id, navn }, velkomstSkift: false }
+//         Ikke et skift op fra Starts gratis måned: de almindelige regler
+//         gælder, og POST'en kræver ingen visning.
+//   200 { ok: true, pakke: { id, navn }, velkomstSkift: true,
+//         udfald: "skift" | "venter" | "ret_rabat",
+//         visning: "velkomst:50" | "intro:30" | "saerpris:0" | "venter" | "ret_rabat",
+//         rabat: { slags: "velkomst", procent }
+//              | { slags: "intro", procent, til: "31. marts 2027" | null, maaneder }
+//              | { slags: "saerpris", procent: 0 } | null,
+//         beloeb: { eksklOere, inklOere } | null   (det, der trækkes i dag; kun ved "skift"),
+//         kanSkifte: boolean                      (false ved ret_rabat - vis ingen knap),
+//         tekst: "<bekræftelsen på dansk>", knap: "<knaptekst>" | "" }
+//   400 { fejl, kode: "ugyldig_pakke" }  401 ikke_logget_ind  403 ikke_tilladt (ikke firmakonto)
+//   429 { fejl, kode: "for_mange" }      500 { fejl, kode: "fejl" } (fx Stripe nede - vis ikke et beløb)
+//
 // POST /api/firma/skift-pakke
 //   Authorization: Bearer <Supabase access token>
 //   Content-Type: application/json
 //   { "pakkeId": "<uuid>", "visning"?: "velkomst:50" | "intro:30" | "saerpris:0" | "venter" | "ret_rabat" }
-//   visning (valgfri): hvad appen viste ved et skift op fra Starts gratis
-//   måned - er rabatten ændret imens, afvises skiftet (409 stripe_fejl), før
-//   noget trækkes. Uden den tjekkes det ikke.
+//   visning: feltet "visning" fra GET'en. KRÆVET ved et skift op fra Starts
+//   gratis måned (velkomstSkift: true) - mangler den, afvises skiftet (409
+//   visning_mangler), før noget ændres. Er rabatten ændret siden GET'en,
+//   afvises skiftet (409 pris_aendret), før noget trækkes. Er den sendt, men
+//   ugyldig: 400 ugyldig_visning. Ved andre skift ignoreres den.
 //
 // Svar (JSON) - samme felter som hjemmesiden:
 //   200 { ok: true, kode: "opgraderet" | "opgradering_afventer_betaling" |
 //         "betal_forskellen" (url = Stripes fakturaside, åbn i browser) |
-//         "nedgradering_planlagt" (gaelderFra) | "uaendret", besked, pakke? }
-//   400 { fejl, kode: "ugyldig" | "ugyldig_pakke" }
+//         "nedgradering_planlagt" (gaelderFra) | "skiftet" | "uaendret", besked, pakke? }
+//   400 { fejl, kode: "ugyldig" | "ugyldig_pakke" | "ugyldig_visning" }
 //   413 { fejl, kode: "ugyldig" }            (kroppen er over 1 KB)
 //   401 { fejl, kode: "ikke_logget_ind" }
 //   403 { fejl, kode: "ikke_tilladt" }       (ikke firmakonto / ikke aktiv /
 //                                             spærret konto / opsagt)
 //   409 { fejl, kode: "i_gang" }             (et andet pakkeskift er i gang)
 //   409 { fejl, kode: "betal_foerst" | "stripe_fejl" }  (pakken er uændret)
+//   409 Skift op fra den gratis måned afvist - der er IKKE trukket noget:
+//       { fejl, kode: "pris_aendret" }      prisen er ændret: hent GET igen, vis den nye pris
+//       { fejl, kode: "rabat_venter" }      introrabatten er sat op (eller sættes op): hent GET igen
+//       { fejl, kode: "ret_rabat" }         rabatten skal rettes af BidHamr (vis fejl, ingen knap)
+//       { fejl, kode: "visning_mangler" }   visning blev ikke sendt: hent GET, og send den med
 //   429 { fejl, kode: "for_mange" }
 //   500 { fejl, kode: "fejl" }
 //
@@ -125,15 +153,58 @@ export async function POST(req: NextRequest) {
   try {
     const res = await skiftPakkeForBruger(bruger.id, krop.pakkeId, krop.visning);
     if ("ok" in res) return svar(200, res);
-    const status =
-      res.kode === "ugyldig_pakke" ? 400
-      : res.kode === "ikke_tilladt" ? 403
-      : res.kode === "betal_foerst" || res.kode === "stripe_fejl" || res.kode === "i_gang" ? 409
-      : res.kode === "for_mange" ? 429
-      : 500;
-    return svar(status, { fejl: res.fejl, kode: res.kode ?? "fejl" });
+    return svar(statusForKode(res.kode), { fejl: res.fejl, kode: res.kode ?? "fejl" });
   } catch (err) {
     await logDriftFejl({ kilde: "server", sti: "/api/firma/skift-pakke", fejl: err, brugerId: bruger.id });
     return svar(500, { fejl: "Noget gik galt. Prøv igen om lidt.", kode: "fejl" });
+  }
+}
+
+// HTTP-status for skiftPakkeForBruger's fejlkoder.
+const KONFLIKT = new Set(["betal_foerst", "stripe_fejl", "i_gang", "pris_aendret", "rabat_venter", "ret_rabat", "visning_mangler"]);
+function statusForKode(kode: string | undefined): number {
+  if (kode === "ugyldig_pakke" || kode === "ugyldig_visning") return 400;
+  if (kode === "ikke_tilladt") return 403;
+  if (kode && KONFLIKT.has(kode)) return 409;
+  if (kode === "for_mange") return 429;
+  return 500;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function GET(req: NextRequest) {
+  if (fremmedOrigin(req)) return svar(403, { fejl: "Ugyldig forespørgsel.", kode: "ikke_tilladt" });
+
+  const ip = await klientIp();
+  if (!(await tjekGraenser([["firma_skift_pakke_vis_ip", ip]]))) {
+    return svar(429, { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" });
+  }
+
+  const auth = req.headers.get("authorization") ?? "";
+  const m = /^Bearer\s+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(auth.trim());
+  if (!m) return svar(401, IKKE_LOGGET_IND);
+
+  const til = req.nextUrl.searchParams.get("til") ?? "";
+  if (!UUID.test(til)) return svar(400, { fejl: "Vælg en pakke.", kode: "ugyldig_pakke" });
+
+  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, offentligNoegle(), {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  const { data: brugerData, error: brugerFejl } = await supabase.auth.getUser(m[1]);
+  const bruger = brugerData?.user;
+  if (brugerFejl || !bruger) return svar(401, IKKE_LOGGET_IND);
+  if (!(await tjekGraenser([["firma_skift_pakke_vis_bruger", bruger.id]]))) {
+    return svar(429, { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" });
+  }
+
+  try {
+    const res = await velkomstSkiftForPakke(bruger.id, til);
+    if (res.status === "ikke_firma") return svar(403, { fejl: "Kun firmakonti kan skifte pakke.", kode: "ikke_tilladt" });
+    if (res.status === "ugyldig_pakke") return svar(400, { fejl: "Pakken findes ikke længere. Vælg en anden.", kode: "ugyldig_pakke" });
+    if (!res.tilbud) return svar(200, { ok: true, pakke: res.pakke, velkomstSkift: false });
+    return svar(200, { ok: true, pakke: res.pakke, velkomstSkift: true, ...res.tilbud });
+  } catch (err) {
+    await logDriftFejl({ kilde: "server", sti: "/api/firma/skift-pakke", hvor: "GET", fejl: err, brugerId: bruger.id });
+    return svar(500, { fejl: "Vi kunne ikke hente prisen lige nu. Prøv igen om lidt.", kode: "fejl" });
   }
 }

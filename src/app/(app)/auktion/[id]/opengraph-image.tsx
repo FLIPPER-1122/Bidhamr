@@ -4,20 +4,25 @@
 // selv (filkonventionen går forud for billederne i generateMetadata).
 //
 // Hvad billedet må vise:
-// - Auktionen hentes med den besøgendes egen klient (RLS) - en delingstjeneste
-//   (Facebook, Messenger, SMS) er uden login og ser kun aktive, ikke-skjulte
-//   auktioner. Kan auktionen ikke ses, vises kun BidHamr-logoet.
+// - Auktionen hentes med en anonym klient UDEN cookies (RLS som for en
+//   besøgende uden login: kun aktive, ikke-skjulte auktioner), så billedet er
+//   det samme for alle - også når sælgeren selv eller en byder deler, og i
+//   en delt cache. Kan auktionen ikke ses anonymt, vises kun BidHamr-logoet.
+// - Cache-Control: public, s-maxage=300 (5 minutter i CDN'en), så prisen
+//   aldrig er ret gammel, og alle får det samme billede.
 // - Før lancering viser billedet aldrig auktionsdata, kun logoet - som
 //   coming soon (proxyen sender i forvejen besøgende uden login til
 //   /coming-soon, så delingstjenester ser coming soon-sidens delebillede).
 // - Ingen sælgeroplysninger eller bud-historik - kun titel og pris.
 // - Varebilledet hentes kun fra vores egen Supabase-lagring (kanOptimeres),
 //   som JPEG/PNG, højst 5 MB, med timeout - aldrig fra en vilkårlig adresse.
+//   Stier med ".." eller "%2e" (også "%2E", "%252e") afvises, så en
+//   adresse ikke kan pege ud af den offentlige lagring.
 import { ImageResponse } from "next/og";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { hentAuktionRaekke } from "@/lib/auktionSeo";
-import { kanOptimeres } from "@/lib/billedUrl";
+import { createAnonClient } from "@/lib/supabase/anon";
+import { farligBilledSti, kanOptimeres } from "@/lib/billedUrl";
 import { foerLancering } from "@/lib/lancering";
 
 export const alt = "Auktion på BidHamr";
@@ -29,6 +34,22 @@ const GROEN_MORK = "#154537";
 const TEKST = "#1A1A1A";
 const DAEMPET = "#555555";
 const MAKS_BYTES = 5 * 1024 * 1024;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Samme billede for alle (anonym hentning), 5 minutter i CDN'en.
+const CACHE = { "Cache-Control": "public, max-age=0, s-maxage=300, must-revalidate" };
+// Kun de kolonner, billedet viser. Typet som string, fordi supabase-js ikke
+// kan parse "nuværende_bud" i en select-streng (src/lib/auktionKolonner.ts).
+const KOLONNER: string = "id, titel, status, slutter_kl, skjult, startpris, nuværende_bud, antal_bud, billeder";
+type Raekke = {
+  titel: string | null;
+  status: string | null;
+  slutter_kl: string;
+  skjult: boolean | null;
+  startpris: number | null;
+  nuværende_bud: number | null;
+  antal_bud: number | null;
+  billeder: unknown;
+};
 
 const SKRIFTER = path.join(process.cwd(), "src", "lib", "pdf", "skrifter");
 const LOGO = path.join(process.cwd(), "public", "brand", "bidhamr-logo-512.png");
@@ -45,7 +66,7 @@ async function hentFiler() {
 // Varebilledet som data-URL, eller null (fremmed adresse, forkert type, for
 // stort, timeout). Kaster aldrig.
 async function varebillede(url: string | undefined): Promise<string | null> {
-  if (!url || !kanOptimeres(url)) return null;
+  if (!url || farligBilledSti(url) || !kanOptimeres(url)) return null;
   try {
     const svar = await fetch(url, { signal: AbortSignal.timeout(5000), redirect: "error" });
     if (!svar.ok) return null;
@@ -73,7 +94,12 @@ type Visning = { titel: string; prisLabel: string; pris: string; billede: string
 async function hentVisning(id: string): Promise<Visning | null> {
   if (foerLancering()) return null;
   try {
-    const { data: a } = await hentAuktionRaekke(id);
+    if (!UUID.test(id)) return null;
+    const { data: a } = await createAnonClient()
+      .from("auctions")
+      .select(KOLONNER)
+      .eq("id", id)
+      .maybeSingle<Raekke>();
     if (!a || a.skjult) return null;
     const aktiv = a.status === "aktiv" && new Date(a.slutter_kl) > new Date();
     if (a.status === "annulleret") return null;
@@ -128,7 +154,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
           <Logo src={filer.logo} stor />
         </div>
       ),
-      { ...size, fonts },
+      { ...size, fonts, headers: CACHE },
     );
   }
 
@@ -166,6 +192,6 @@ export default async function Image({ params }: { params: Promise<{ id: string }
         </div>
       </div>
     ),
-    { ...size, fonts },
+    { ...size, fonts, headers: CACHE },
   );
 }

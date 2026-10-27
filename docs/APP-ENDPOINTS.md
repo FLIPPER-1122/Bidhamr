@@ -169,16 +169,21 @@ Migration `20261102230000_henvis_en_ven.sql`. Samme kald som hjemmesidens `/kont
 
 - Firmakonto: `200 { ok: true, kan_henvise: false, grund: "erhverv" }` - vis "Henvis en ven er kun for private".
 - Privat: `200 { ok: true, kan_henvise: true, kode, sti: "/?ven=KODE", url: "https://bidhamr.dk/?ven=KODE",
-  kan_faa_point, grund: null | "spaerret", optjening_aaben (false = før lancering: ingen point endnu), point_pr_ven (10),
+  kan_faa_point, grund: null | "spaerret", mitid_verificeret (false = brugeren er ikke selv bekræftet med MitID og
+  får ingen point - vis en MitID-knap; feltet kom med `20261102270000_henvis_rettelser.sql`), optjening_aaben (false = før lancering: ingen point endnu), point_pr_ven (10),
   maks_pr_maaned (10), maaned ("ÅÅÅÅ-MM"), belonnet_denne_maaned, tilbage_denne_maaned, antal_venner, antal_afventer,
   antal_belonnet, point_i_alt, venner: [{ navn, status, point, oprettet_kl, vurderet_kl }] }`.
 - `navn` er vennens korte visningsnavn ("Kasper K."). `status`: `afventer` (venter på MitID), `belonnet`, `loft`,
-  `firma`, `spaerret`, `foer_lancering`, `samme_person`, `tidligere_konto` (teksterne står i
+  `firma`, `spaerret`, `foer_lancering`, `samme_person`, `tidligere_konto`, `henviser_uverificeret` (du var ikke
+  selv MitID-verificeret, da vennen blev det - 0 point; ny i `20261102270000_henvis_rettelser.sql`) (teksterne står i
   `src/lib/tekster/henvisning.ts`).
 - Del-knappen: systemets delingsmenu (`Share.share`) med `url`. Kopiér: udklipsholderen.
 - **Oprettelse:** åbner appen et link `https://bidhamr.dk/?ven=KODE` (Universal Link / App Link), gemmer appen
   koden og sender den som `henvisningskode` til `POST /api/konto/bekraeft` (docs/APP-SIGNUP.md). Kun en NY konto
-  knyttes; svaret er det samme, uanset om koden blev brugt.
+  knyttes; svaret er det samme, uanset om koden blev brugt. Hjemmesiden bruger ingen cookie (Filip, 27. okt. 2026):
+  koden står i et synligt felt "Henvisningskode" på opret konto, som brugeren kan rette - appen bør gøre det samme.
+- **Kun henviseren med MitID:** henviseren skal selv have en aktiv MitID-verificering, når vennen bliver
+  verificeret - ellers `henviser_uverificeret` (0 point, endeligt).
 - Pointene gives af databasen, når vennen bliver MitID-verificeret (også via appens `/api/mitid/app/afslut`), og
   står i `mine_point().historik` med `type: "henvisning"` ("Henvist en ven").
 
@@ -198,6 +203,24 @@ Svaret er `ok`, også når intet blev slettet. Samme regel gælder hjemmesidens 
 på samme måde: policyen `auktion_billeder_slet_ikke_laast` (`auktion_billede_laast`) afviser sletning af ethvert
 billede i mappen, så længe ejeren har en åben sag (ud over billeder fra auktioner med bud eller handel, som før).
 Svaret er da en tom sletning (intet slettet) - prøv ikke igen.
+
+## GET og POST /api/firma/skift-pakke (firmaets pakkeskift)
+
+Samme kode som Firma oversigt -> Abonnement (`src/lib/erhverv/pakkeskift.ts`, `velkomstSkiftForPakke` i
+`src/lib/erhverv/betaling.ts`). Fuld kontrakt i toppen af `src/app/api/firma/skift-pakke/route.ts`.
+
+Det viste beløb er det trukne (måned 1-reglen, rettelser 4, 27. okt. 2026):
+
+1. Før bekræftelsen: `GET /api/firma/skift-pakke?til=<pakke-id>` (Bearer). Svaret er `velkomstSkift: false`
+   (almindeligt skift - vis de almindelige tekster) eller `velkomstSkift: true` med `udfald` (`skift` / `venter` /
+   `ret_rabat`), `beloeb` (`eksklOere`/`inklOere` - det, der trækkes i dag), `rabat` (slags, procent og `til` =
+   rabattens slutdato som dansk dato), `visning`, `kanSkifte`, `tekst` (bekræftelsen) og `knap`. Ved
+   `kanSkifte: false` (ret_rabat) vises ingen knap.
+2. Ved tryk: `POST { pakkeId, visning }` med `visning` fra GET'en. Ved et skift op fra Starts gratis måned er
+   `visning` krævet: uden den `409 visning_mangler`, før noget ændres.
+3. Afvist før noget er trukket (`409`): `pris_aendret` (hent GET igen og vis den nye pris), `rabat_venter`
+   (introrabatten er sat op eller sættes op - hent GET igen), `ret_rabat` (BidHamr skal rette rabatten - vis
+   `fejl`), `visning_mangler`. En sendt, men ugyldig `visning`: `400 ugyldig_visning`.
 
 ## BidHamr-bot: GET/POST /api/app/bot og POST /api/app/bot/medarbejder
 
