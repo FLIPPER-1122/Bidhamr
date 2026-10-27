@@ -643,3 +643,15 @@ Tips til gode billeder er fravalgt (Filip, 27. okt. 2026).
 - Apple og Google er sælger over for køberen ved køb i appen. De opkræver moms og udsteder kvitteringen, og BidHamr får beløbet efter gebyr: 15 % med Apples Small Business Program og 15 % hos Google. Bogføres som omsætning via Apple og Google (spørg revisoren).
 - **Firmaabonnement og Ugens butik kan ikke købes i appen.** Appen viser kun firmaets pakke, kvote og status. Teksterne "Se pakkerne", "Skift pakke på bidhamr.dk" og "Book en uge på bidhamr.dk" fjernes fra appen (Filip, 27. okt. 2026).
 - Stripe bruges fortsat i appen til fysiske handler: varen, købergebyr, BidHamr Beskyttelse og fragt.
+
+## Faktura fra firma til køber – klar til afsendelse (Filip, 27. okt. 2026, efter møde med en butiksejer)
+Erstatter "Firmaet sender selv fakturaen på varen fra sit eget regnskabsprogram" (9. okt.). Det er stadig firmaet, der udsteder og sender fakturaen; BidHamr er kun værktøjet.
+- Når køberen har betalt, laver BidHamr en **fakturakladde** i firmaets navn: firmanavn, CVR, adresse, evt. logo, køber, vare, pris og dato.
+- I Firma oversigt står to knapper ved salget: **"Se din faktura"** (forhåndsvisning/PDF) og **"Send"**.
+- **Intet sendes automatisk. Firmaet skal altid selv trykke "Send"** (Filip: BidHamr må ikke sende fakturaer for andre firmaer). Der findes ingen automatisk afsendelse.
+- **Nummerering:** hvert firma har sin egen fortløbende nummerserie hos BidHamr med eget præfiks og startnummer (fx "BH-0001"). Nummeret tildeles først, når firmaet trykker "Send", så der ikke opstår huller.
+- **Moms:** firmaet vælger en standard i indstillingerne, enten **almindelig moms** (25 % vises) eller **brugtmoms** (ingen moms vises, med teksten "Brugtmoms – særordning for brugte varer"). Firmaet kan vælge en anden pr. auktion.
+- **Afsendelse:** mailen sendes som "Firmanavn via BidHamr" med firmaets e-mail som svaradresse, og fakturaen vedhæftes som PDF. Firmaet får en kopi og kan downloade alle sendte fakturaer til sit eget regnskab.
+- **Rettelser:** en sendt faktura kan ikke ændres. Kun en kreditnota fra firmaet kan rette den (samme knapper: se + send).
+- Fakturaer opbevares i 5 år (bogføringsloven) og slettes aldrig.
+- Skal bekræftes af advokat og revisor (jura/noter-til-advokat.md).
