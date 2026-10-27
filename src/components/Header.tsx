@@ -1,4 +1,5 @@
 import Link from "next/link";
+import HenvisningLink from "@/components/henvisning/HenvisningLink";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { bekraeftetBruger, hentBruger, hentKontoFelter, hentMinRolle, sessionBrugerId } from "@/lib/supabase/bruger";
@@ -161,12 +162,12 @@ export default async function Header() {
             {loggetInd && !erFirma && !saelgerFoerLancering && <Klokke startAntal={ulaeste} />}
 
             {!loggetInd && (
-              <Link
+              <HenvisningLink
                 href="/login"
                 className="hidden h-11 items-center px-2 text-sm font-medium text-[#333] hover:text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen lg:flex"
               >
                 Log ind
-              </Link>
+              </HenvisningLink>
             )}
 
             {/* .btn sætter display: wrapperen styrer, hvornår knappen vises. */}

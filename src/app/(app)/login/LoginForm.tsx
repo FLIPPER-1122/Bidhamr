@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import HenvisningLink from "@/components/henvisning/HenvisningLink";
+import { HENVISNING_PARAM, medHenvisning } from "@/lib/henvisning/kode";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { LOGIN_EMAIL_NOEGLE } from "@/lib/loginEmail";
@@ -94,7 +96,7 @@ export default function LoginForm({
       // og koden fra mailen indtastes på /tjek-indbakke (hvor man også kan
       // få en ny kode).
       if (svar.kode === "email_ikke_bekraeftet") {
-        router.push("/tjek-indbakke?fra=login");
+        router.push(medHenvisning("/tjek-indbakke?fra=login", searchParams.get(HENVISNING_PARAM)));
         return;
       }
       setLoading(false);
@@ -187,9 +189,9 @@ export default function LoginForm({
                   <>
                     {" "}
                     Har du lige oprettet dig?{" "}
-                    <Link href="/tjek-indbakke" className="font-semibold underline">
+                    <HenvisningLink href="/tjek-indbakke" className="font-semibold underline">
                       Indtast koden fra mailen.
-                    </Link>
+                    </HenvisningLink>
                   </>
                 )}
               </p>
@@ -210,16 +212,16 @@ export default function LoginForm({
         {adgangskodeGemt ? null : tilmeldingAaben ? (
           <p className="mt-6 text-center text-sm text-tekst-svag">
             Har du ikke en konto?{" "}
-            <Link href="/signup" className={LINK}>
+            <HenvisningLink href="/signup" className={LINK}>
               Opret konto
-            </Link>
+            </HenvisningLink>
           </p>
         ) : betaAaben ? (
           <p className="mt-6 text-center text-sm text-tekst-svag">
             Inviteret til beta-testen?{" "}
-            <Link href="/signup" className={LINK}>
+            <HenvisningLink href="/signup" className={LINK}>
               Opret konto
-            </Link>
+            </HenvisningLink>
           </p>
         ) : (
           <p className="mt-6 text-center text-sm text-tekst-svag">
