@@ -35,7 +35,7 @@ export default function OpretFirmakonto({
   const [v, setV] = useState<FirmaVaerdier>(start);
   const [loginEmail, setLoginEmail] = useState(startLogin);
   const [pakkeId, setPakkeId] = useState(pakker.length === 1 ? pakker[0].id : "");
-  // Introrabat efter den gratis måned: kun til firmaer, Filip selv har rakt
+  // Introrabat i måned 1-N (i stedet for velkomstrabatten): kun til firmaer, Filip selv har rakt
   // ud til (ROADMAP-BESLUTNINGER) - derfor slået FRA som standard. Slås den
   // til, er 50 % i 6 måneder udfyldt.
   const [medIntro, setMedIntro] = useState(false);
@@ -48,14 +48,14 @@ export default function OpretFirmakonto({
     firmaId: string;
     besked: string;
     mailSendt: boolean;
-    // "Ingen gratis måned" / "1 gratis måned (særaftale)" - kun for et CVR,
+    // "Ingen velkomstrabat" / "Velkomstrabat (særaftale)" - kun for et CVR,
     // der har haft abonnement før.
     gratisTekst: string | null;
   } | null>(null);
   // CVR'et har haft et abonnement før: advarslen vises i dialogen, og næste
   // tryk ("Opret alligevel") sender bekræftelsen med.
   const [tidligere, setTidligere] = useState<CvrTidligereFirma[] | null>(null);
-  // Et tidligere CVR får ingen gratis måned - kun som særaftale med en
+  // Et tidligere CVR får ingen velkomstrabat i måned 1 - kun som særaftale med en
   // begrundelse (Filip, 27. okt. 2026). Kun synligt, når advarslen vises.
   const [saeraftale, setSaeraftale] = useState(false);
   const [saeraftaleGrund, setSaeraftaleGrund] = useState("");
@@ -153,8 +153,8 @@ export default function OpretFirmakonto({
   const saeraftaleGyldig = !tidligere || !saeraftale || !!gyldigSaeraftaleBegrundelse(saeraftaleGrund);
   const klar = !!pakkeId && EMAIL.test(loginEmail.trim()) && introGyldig && saeraftaleGyldig;
   const valgtPakke = pakker.find((p) => p.id === pakkeId) ?? null;
-  // Gratis måned: nyt CVR = 1; et CVR, der har haft abonnement før = ingen,
-  // medmindre særaftalen er sat.
+  // Velkomstrabat i måned 1: nyt CVR = ja (Start gratis, Butik/Pro halv pris);
+  // et CVR, der har haft abonnement før = ingen, medmindre særaftalen er sat.
   const gratis: "ny" | "ingen" | "saeraftale" = !tidligere ? "ny" : saeraftale ? "saeraftale" : "ingen";
   const opsummering = valgtPakke
     ? A.opret.pakkeOpsummering(
@@ -168,6 +168,8 @@ export default function OpretFirmakonto({
             }
           : null,
         gratis,
+        valgtPakke.maaned1 ?? "halv",
+        valgtPakke.maanedspris != null ? krTekst(valgtPakke.maanedspris / 2) : null,
       )
     : medIntro
       ? A.opret.introOpsummering(ip, im)
@@ -332,7 +334,9 @@ export default function OpretFirmakonto({
             besked: svar.besked,
             mailSendt: svar.mailSendt,
             gratisTekst:
-              svar.gratisMaaneder === 0
+              // maaned1 'ingen' uden introrabat = tidligere CVR uden særaftale
+              // (gratisMaaneder er også 0 for Butik/Pro, der får halv pris).
+              tidligere !== null && !saeraftale && (svar.maaned1 ? svar.maaned1 === "ingen" : svar.gratisMaaneder === 0)
                 ? X.cvrTidligere.resultatIngen
                 : tidligere !== null && saeraftale
                   ? X.cvrTidligere.resultatSaeraftale

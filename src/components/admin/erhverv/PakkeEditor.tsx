@@ -195,6 +195,8 @@ export default function PakkeEditor({ pakker, erChef }: { pakker: ErhvervPakkeAd
               FIRMA_PAKKER.fremhaevningerPrMaaned(p.fremhaevninger_pr_maaned ?? 0),
               P.statistikValg[p.statistik ?? "ingen"],
               p.fast_kontaktperson ? FIRMA_PAKKER.fastKontaktperson : null,
+              // Velkomstrabat for nye firmaer (Filip, 27. okt. 2026).
+              !p.arkiveret && p.maaned1 ? FIRMA_PAKKER.maaned1[p.maaned1] : null,
               p.ugens_butik_rabat_procent > 0 && p.ugens_butik_rabat_antal > 0
                 ? P.linjeUgens(p.ugens_butik_rabat_procent, p.ugens_butik_rabat_antal)
                 : null,

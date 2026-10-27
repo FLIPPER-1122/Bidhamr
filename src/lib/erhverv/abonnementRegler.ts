@@ -3,8 +3,9 @@
 // testes i tests/enhed/abonnementRegler.test.ts.
 //
 // Regler: ROADMAP-BESLUTNINGER.md, "Erhvervskonti" -> "NYE pakker og priser
-// (Filip, 26. okt. 2026)": 1 måned gratis for alle nye firmaer; introrabat
-// (standard 50 % i 6 måneder efter den gratis måned) sættes manuelt.
+// (Filip, 26.-27. okt. 2026)": Start har første måned gratis, Butik og Pro
+// første måned til halv pris; introrabat (standard 50 % i måned 1-6, ingen
+// gratis måned oveni) sættes manuelt.
 
 export const INTRO_STANDARD = { procent: 50, maaneder: 6 } as const;
 export const INTRO_GRAENSER = { procentMin: 1, procentMaks: 100, maanederMin: 1, maanederMaks: 24 } as const;
@@ -209,8 +210,55 @@ export function gyldigSaeraftaleBegrundelse(v: unknown): string | null {
   return s.length >= SAERAFTALE_BEGRUNDELSE.min && s.length <= SAERAFTALE_BEGRUNDELSE.maks ? s : null;
 }
 
-// Gratis måneder ved oprettelse: 1 for et nyt CVR; 0 for et CVR, der har haft
-// abonnement før, medmindre staff giver 1 som særaftale.
+// Ret til velkomstfordelen ved oprettelse: 1 for et nyt CVR; 0 for et CVR, der
+// har haft abonnement før, medmindre staff giver den som særaftale.
 export function velkomstMaanederVedOprettelse(input: { cvrTidligere: boolean; saeraftale: boolean }): 0 | 1 {
   return !input.cvrTidligere || input.saeraftale ? 1 : 0;
+}
+
+// --- Regel for måned 1 (Filip, 27. okt. 2026) ------------------------------------
+// Start: første måned gratis. Butik og Pro: første måned til halv pris (50 %),
+// derefter fuld pris - aldrig gratis. Introrabat (50 % i måned 1-6) erstatter
+// velkomstfordelen. Databasen: erhverv_pakker.maaned1 og erhverv_maaned1
+// (20261102070000).
+export type Maaned1 = "gratis" | "halv" | "ingen";
+export type PakkeMaaned1 = "gratis" | "halv";
+export const VELKOMST_RABAT_PROCENT = 50;
+// Start-pakken (samme id i test og produktion, 20261102010000) - kun brugt,
+// hvis migrationen 20261102070000 ikke er kørt endnu.
+export const START_PAKKE_ID = "7e57a000-0000-4000-8000-000000000001";
+
+export function maaned1Regel(input: { pakke: PakkeMaaned1; velkomst: boolean; introGaelder: boolean }): Maaned1 {
+  if (!input.velkomst || input.introGaelder) return "ingen";
+  return input.pakke;
+}
+
+// Hvad Checkout skal gøre: gratis måneder (trial) og om engangskuponen på 50 %
+// skal på. Staff-givne måneder (ekstra) er en særaftale: Start får dem oven i
+// velkomstmåneden; for Butik/Pro erstatter de 50 %-måneden (ingen dobbelt
+// rabat - en 'once'-kupon ville ellers blive brugt på 0-kr.-fakturaen).
+export function checkoutPlan(input: { maaned1: Maaned1; velkomstMaaneder: number; ekstra: number }): {
+  velkomstGratis: number;
+  ekstra: number;
+  halvPris: boolean;
+} {
+  const ekstra = Math.max(0, Math.min(Math.trunc(input.ekstra), 24));
+  if (input.maaned1 === "gratis") {
+    const velkomstGratis = Math.max(0, Math.min(Math.trunc(input.velkomstMaaneder), 1, 24 - ekstra));
+    return { velkomstGratis, ekstra, halvPris: false };
+  }
+  if (input.maaned1 === "halv") return { velkomstGratis: 0, ekstra, halvPris: ekstra === 0 };
+  return { velkomstGratis: 0, ekstra, halvPris: false };
+}
+
+// Er abonnementets gratis periode KUN Starts velkomstmåned (ingen særaftale)?
+// Så må et skift op til Butik/Pro ikke være gratis: den gratis periode slutter,
+// og firmaet betaler 50 % af den nye pakke for sin første måned med den.
+// Metadata sættes af startBetaling (maaned1, gratis_ekstra) og af staff-
+// handlingerne (gratis_saeraftale = 'ja').
+export function erKunVelkomstGratis(metadata: Record<string, string> | null | undefined): boolean {
+  if (!metadata || metadata.maaned1 !== "gratis") return false;
+  if (metadata.gratis_saeraftale === "ja") return false;
+  const ekstra = Number(metadata.gratis_ekstra ?? 0);
+  return !(Number.isFinite(ekstra) && ekstra > 0);
 }
