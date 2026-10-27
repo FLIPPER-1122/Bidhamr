@@ -27,7 +27,14 @@
 --       references, trigger og maintain fra anon/authenticated på ALLE tabeller
 --       i public.
 --   M2. Loft på nye auktioner for private: højst 30 pr. time (BHA06) og højst
---       200 aktive ad gangen (BHA07). Firmaer (kvote) og service role er undtaget.
+--       200 aktive ad gangen (BHA07). Firmaer (kvote) er undtaget. Service role
+--       (genopsaet_auktion og saet_annulleret_op_igen fra serveren) tæller
+--       200-loftet på auktionens bruger_id; timeloftet gælder kun brugerens
+--       egne oprettelser. SQL uden JWT (migrationer, seed) er undtaget.
+--   A-3. Til sidst: tabel-select på users/auctions for anon/authenticated
+--       laves om til de kendte kolonne-grants (hvis den findes), og
+--       migrationen stopper, hvis navn, idempotens_noegle eller
+--       forbudt_bekraeftet stadig kan læses.
 --   L1. Skemaet net (pg_net) lukkes for anon/authenticated.
 --   L2. firma_velkomst_billetter.brugt_kl: sættes, når knappen på /bekraeft er
 --       trykket, og login er lykkedes (src/app/auth/callback/route.ts).
@@ -319,12 +326,20 @@ set search_path = public
 as $fn$
 declare
   v_bruger uuid := auth.uid();
+  v_server boolean := coalesce(auth.role(), '') = 'service_role';
   v_type   text;
   v_antal  integer;
 begin
-  -- Service role (cron, genopsaet_auktion på serveren) og SQL uden bruger
-  -- (migrationer, seed) er undtaget. anon kan ikke indsætte i auctions.
-  if coalesce(auth.role(), '') = 'service_role' or v_bruger is null then
+  -- Service role: genopsaet_auktion og saet_annulleret_op_igen kaldes fra
+  -- serveren (createAdminClient) på sælgerens vegne og indsætter med
+  -- sælgeren som bruger_id. Loftet på 200 aktive gælder også her (ellers
+  -- kunne det omgås ved at sætte ubetalte/annullerede varer op igen) - men
+  -- ikke timeloftet (hver gammel auktion kan kun sættes op én gang).
+  -- SQL uden JWT (migrationer, seed) er undtaget. anon kan ikke indsætte.
+  if v_server then
+    v_bruger := new.bruger_id;
+  end if;
+  if v_bruger is null then
     return new;
   end if;
 
@@ -337,14 +352,16 @@ begin
   -- Én oprettelse ad gangen pr. bruger, så samtidige kald ikke snyder loftet.
   perform pg_advisory_xact_lock(hashtextextended('auktion_opret:' || v_bruger::text, 0));
 
-  select count(*) into v_antal
-    from public.auctions a
-   where a.bruger_id = v_bruger
-     and a.oprettet > now() - interval '1 hour';
-  if v_antal >= 30 then
-    raise exception 'auktion_loft_time: Du har oprettet mange auktioner på kort tid. Vent lidt, og prøv igen.'
-      using errcode = 'BHA06',
-            hint = 'Højst 30 nye auktioner i timen.';
+  if not v_server then
+    select count(*) into v_antal
+      from public.auctions a
+     where a.bruger_id = v_bruger
+       and a.oprettet > now() - interval '1 hour';
+    if v_antal >= 30 then
+      raise exception 'auktion_loft_time: Du har oprettet mange auktioner på kort tid. Vent lidt, og prøv igen.'
+        using errcode = 'BHA06',
+              hint = 'Højst 30 nye auktioner i timen.';
+    end if;
   end if;
 
   select count(*) into v_antal
@@ -455,6 +472,98 @@ begin
     create trigger forsendelse_haendelser_dublet
       before insert on public.forsendelse_haendelser
       for each row execute function public.forsendelse_haendelser_dublet();
+  end if;
+end;
+$do$;
+
+-- ===========================================================================
+-- A-3. Kolonne-revokes skal virke - ellers stopper migrationen
+-- ===========================================================================
+-- En kolonne-revoke gør intet, hvis rollen har select på hele tabellen. Det
+-- har anon/authenticated ikke haft siden 20260930100000 (users) og
+-- 20261010061000 (auctions), men findes en tabel-select alligevel (drift),
+-- laves den om til de kolonne-grants, som policies og kode bygger på:
+--   users:    kun den kendte offentlige liste (aldrig "alt undtagen" - users
+--             har e-mail, telefon, adresse m.m.). Samme liste, som test har
+--             efter denne migration (27. okt. 2026).
+--   auctions: alle kolonner undtagen de lukkede (samme regel som
+--             20261010061000 + L6 ovenfor).
+-- Kommer adgangen fra PUBLIC (eller en anden rolle, anon/authenticated
+-- arver fra), gør revoken her intet, og tjekket nedenfor stopper migrationen,
+-- så det kan undersøges.
+
+do $do$
+declare
+  v_rolle text;
+  v_kolonner text;
+  v_users_offentlige text[] := array['id', 'avatar_url', 'rating', 'oprettet', 'konto_type',
+                                     'mitid_verificeret_kl', 'visningsnavn'];
+  v_auctions_lukkede text[] := array['vinder_id', 'kunst_bekraeftet', 'kunst_markeret_kl', 'kunst_kontrol',
+                                     'kunst_tekst_md5', 'kunst_tjekket_kl', 'idempotens_noegle',
+                                     'forbudt_bekraeftet'];
+begin
+  foreach v_rolle in array array['anon', 'authenticated'] loop
+    -- relacl direkte (information_schema viser kun grants, som den kørende
+    -- rolle selv er part i).
+    if exists (select 1 from pg_class c, aclexplode(c.relacl) x
+                where c.oid = 'public.users'::regclass
+                  and x.grantee = v_rolle::regrole and x.privilege_type = 'SELECT') then
+      select string_agg(quote_ident(c.column_name), ', ' order by c.ordinal_position) into v_kolonner
+        from information_schema.columns c
+       where c.table_schema = 'public' and c.table_name = 'users'
+         and c.column_name = any (v_users_offentlige);
+      execute format('revoke select on public.users from %I', v_rolle);
+      execute format('grant select (%s) on public.users to %I', v_kolonner, v_rolle);
+      raise notice 'users: tabel-select for % lavet om til kolonne-grants (%).', v_rolle, v_kolonner;
+    end if;
+
+    if exists (select 1 from pg_class c, aclexplode(c.relacl) x
+                where c.oid = 'public.auctions'::regclass
+                  and x.grantee = v_rolle::regrole and x.privilege_type = 'SELECT') then
+      select string_agg(quote_ident(attname), ', ' order by attnum) into v_kolonner
+        from pg_attribute
+       where attrelid = 'public.auctions'::regclass and attnum > 0 and not attisdropped
+         and attname <> all (v_auctions_lukkede);
+      execute format('revoke select on public.auctions from %I', v_rolle);
+      execute format('grant select (%s) on public.auctions to %I', v_kolonner, v_rolle);
+      raise notice 'auctions: tabel-select for % lavet om til kolonne-grants.', v_rolle;
+    end if;
+  end loop;
+end;
+$do$;
+
+do $do$
+declare
+  v_rolle text;
+  v_kolonne text;
+  v_fejl text[] := '{}';
+begin
+  foreach v_rolle in array array['anon', 'authenticated'] loop
+    -- Fulde navne må ikke kunne læses.
+    foreach v_kolonne in array array['navn', 'fornavn', 'efternavn'] loop
+      if exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'users' and column_name = v_kolonne)
+         and has_column_privilege(v_rolle, 'public.users', v_kolonne, 'select') then
+        v_fejl := v_fejl || format('%s kan læse users.%s', v_rolle, v_kolonne);
+      end if;
+    end loop;
+    -- Interne auktionskolonner (L6).
+    foreach v_kolonne in array array['idempotens_noegle', 'forbudt_bekraeftet'] loop
+      if exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'auctions' and column_name = v_kolonne)
+         and has_column_privilege(v_rolle, 'public.auctions', v_kolonne, 'select') then
+        v_fejl := v_fejl || format('%s kan læse auctions.%s', v_rolle, v_kolonne);
+      end if;
+    end loop;
+    -- Det offentlige navn skal kunne læses (ellers viser siderne intet navn).
+    if not has_column_privilege(v_rolle, 'public.users', 'visningsnavn', 'select') then
+      v_fejl := v_fejl || format('%s kan IKKE læse users.visningsnavn', v_rolle);
+    end if;
+  end loop;
+
+  if cardinality(v_fejl) > 0 then
+    raise exception 'Sikkerhedsstramningen virkede ikke: %. Tjek grants (også til PUBLIC) - migrationen rulles tilbage.',
+      array_to_string(v_fejl, '; ');
   end if;
 end;
 $do$;

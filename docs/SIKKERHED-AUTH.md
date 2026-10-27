@@ -17,10 +17,11 @@ slår det til.
 | Appen: `POST /api/konto/glemt` | `captchaToken` i kroppen sendes videre til Supabase. |
 | Appen: `POST /api/konto/bekraeft` | Ingen ændring: den kalder kun `verifyOtp`, som Supabase ikke beskytter med CAPTCHA. |
 | Bekræft adgangskode før skift af adgangskode / sletning af konto (`src/lib/bekraeftAdgangskode.ts`) | Tjekket sker med den hemmelige nøgle (service role), som Supabase undtager fra CAPTCHA. Brugeren er allerede logget ind, og kalderne har egne lofter. |
-| Staff-login og gendannelse på admin-hosten (`src/lib/adgang.ts`) | Login sker med den hemmelige nøgle (`src/lib/supabase/adgangskodeLogin.ts`) og lægges i cookies med `setSession`. Admin-hosten har egne lofter og kræver to-trins-login. Loftet for e-mail+IP nulstilles først, når kontoen er staff. |
+| Staff-login og gendannelse på admin-hosten (`src/lib/adgang.ts`) | Login sker med den hemmelige nøgle (`src/lib/supabase/adgangskodeLogin.ts`) og lægges i cookies med `setSession`. Før login slås e-mailen op med service role: kun aktive staff-konti (medarbejder, admin, chef, saelger - ikke lukket, slettet eller suspenderet) logges ind; alle andre får "Forkert e-mail eller adgangskode" uden login. Alle svar tager mindst 2 sek., så svartiden ikke afslører, om e-mailen findes. Lofter: admin_login_ip, admin_login_email_ip og admin_login_email (10 pr. 15 min. pr. e-mail). Kræver to-trins-login bagefter. |
 
 - Uden `NEXT_PUBLIC_TURNSTILE_SITE_KEY` vises intet felt og sendes intet token.
-- Uden `TURNSTILE_SECRET_KEY` springer serveren sit eget tjek over (opret konto).
+- Uden begge nøgler springer serveren sit eget tjek over (opret konto). Er kun den ene sat, afvises oprettelse af konto, og der logges en drift-advarsel (/admin/drift).
+- Serveren godtager kun tokens fra vores værter (`hostname`: bidhamr.dk, www.bidhamr.dk, test.bidhamr.dk, værten i NEXT_PUBLIC_SITE_URL, ekstra i `TURNSTILE_VAERTER`, kommasepareret; localhost i udvikling) og fra formularen "opret" (`action`) på hjemmesiden. Med Cloudflares testnøgler tjekkes vært og action ikke.
 - CSP (`src/lib/csp.ts`) tillader `https://challenges.cloudflare.com` (script,
   iframe, kald) på hjemmesiden, når site-nøglen er sat. Admin-hosten bruger
   ikke Turnstile.

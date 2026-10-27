@@ -240,3 +240,9 @@ BidHamr forbyder kunst (malerier, tegninger, skulpturer, grafiske tryk/litografi
 135. **Designerkeramik og -glas** (fx Royal Copenhagen, Kähler, Holmegaard): skal det behandles som kunst og forbydes, eller er det almindeligt brugt design? Hvor går grænsen juridisk og i forhold til hvidvaskloven?
 136. **Antikviteter generelt** (gamle møbler, ure, sølvtøj): bør de også forbydes eller begrænses (fx beløbsgrænse), og har BidHamr særlige pligter efter hvidvaskloven ved handel med kunst og antikviteter over en vis værdi?
 137. Kan BidHamr håndhæve forbuddet ved at fjerne opslag og annullere handler uden varsel, og hvad skal der stå i brugerbetingelserne for at det holder?
+
+## CAPTCHA via Cloudflare Turnstile (sikkerhedsgennemgangen 27. okt. 2026)
+BidHamr vil bruge Cloudflare Turnstile som CAPTCHA på login, glemt adgangskode og opret konto. Turnstile kører i brugerens browser og sender tekniske oplysninger (bl.a. IP-adresse og browserdata) til Cloudflare, Inc. (USA). **Cloudflare skal med i privatlivspolitikken, før CAPTCHA slås til.**
+
+138. **Privatlivspolitikken.** Hvordan skal Cloudflare beskrives (databehandler eller selvstændig dataansvarlig for Turnstile), hvilket retsgrundlag (legitim interesse i at forhindre misbrug og gætteri af adgangskoder, art. 6, stk. 1, litra f), og hvordan dækkes overførslen til USA (EU-U.S. Data Privacy Framework / standardkontraktbestemmelser)? Skal der indgås en databehandleraftale med Cloudflare?
+139. **Cookies/ePrivacy.** Er Turnstile "strengt nødvendig" (sikkerhed), så det ikke kræver samtykke i cookie-banneret, og skal det nævnes på /cookies?

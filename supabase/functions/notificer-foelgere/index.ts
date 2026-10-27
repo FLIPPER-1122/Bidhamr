@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
 
     const { data: saelger } = await supabase
       .from("users")
-      .select("navn")
+      .select("visningsnavn")
       .eq("id", auktion.bruger_id)
       .maybeSingle();
 
@@ -251,7 +251,10 @@ Deno.serve(async (req) => {
     if (afsendelser.length === 0) return OK();
 
     const titel = "Ny auktion fra en sælger, du følger";
-    const navn = (saelger?.navn as string | null)?.trim();
+    // Kun det offentlige navn ("Kasper K.", firmaer det fulde firmanavn) -
+    // aldrig users.navn (20261102060000). Findes kolonnen ikke endnu (gammel
+    // database), sendes beskeden uden navn.
+    const navn = (saelger?.visningsnavn as string | null | undefined)?.trim();
     const tekst = `${navn ? `${navn}: ` : ""}"${auktion.titel}" er lige sat på auktion.`.slice(0, 500);
     const link = `/auktion/${auktion.id}`;
 

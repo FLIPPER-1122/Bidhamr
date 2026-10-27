@@ -30,6 +30,7 @@ describe("Turnstile", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("renCaptchaToken: kun ikke-tomme strenge op til 2048 tegn", () => {
@@ -46,22 +47,54 @@ describe("Turnstile", () => {
     expect(erCaptchaFejl(null)).toBe(false);
   });
 
-  it("uden TURNSTILE_SECRET_KEY springes tjekket over", async () => {
+  it("uden nøgler springes tjekket over", async () => {
     vi.stubEnv("TURNSTILE_SECRET_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "");
     const f = vi.fn();
     vi.stubGlobal("fetch", f);
     expect(await tjekTurnstile(undefined, "1.2.3.4")).toBe(true);
     expect(f).not.toHaveBeenCalled();
   });
 
-  it("med TURNSTILE_SECRET_KEY: manglende token afvises, gyldigt godkendes, fejl afvises", async () => {
-    vi.stubEnv("TURNSTILE_SECRET_KEY", "hemmelig");
-    const f = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200 }));
+  it("kun site-nøglen sat: afvises (fail closed) uden kald til Cloudflare", async () => {
+    vi.stubEnv("TURNSTILE_SECRET_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "site");
+    const f = vi.fn();
     vi.stubGlobal("fetch", f);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await tjekTurnstile("tok", "1.2.3.4")).toBe(false);
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it("vært og action skal passe (rigtige nøgler)", async () => {
+    vi.stubEnv("TURNSTILE_SECRET_KEY", "0x4AAAAAAArigtig");
+    vi.stubEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "site");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const svar = (d: object) => new Response(JSON.stringify({ success: true, ...d }), { status: 200 });
+    const f = vi.fn();
+    vi.stubGlobal("fetch", f);
+    f.mockResolvedValueOnce(svar({ hostname: "bidhamr.dk", action: "opret" }));
+    expect(await tjekTurnstile("tok", null, "opret")).toBe(true);
+    f.mockResolvedValueOnce(svar({ hostname: "ond.example", action: "opret" }));
+    expect(await tjekTurnstile("tok", null, "opret")).toBe(false);
+    f.mockResolvedValueOnce(svar({ hostname: "test.bidhamr.dk", action: "login" }));
+    expect(await tjekTurnstile("tok", null, "opret")).toBe(false);
+    f.mockResolvedValueOnce(svar({ hostname: "www.bidhamr.dk", action: "hvadsomhelst" }));
+    expect(await tjekTurnstile("tok", null)).toBe(true);
+    f.mockResolvedValueOnce(svar({ action: "opret" }));
+    expect(await tjekTurnstile("tok", null, "opret")).toBe(false);
+  });
+
+  it("med begge nøgler (testnøgle): manglende token afvises, gyldigt godkendes, fejl afvises", async () => {
+    vi.stubEnv("TURNSTILE_SECRET_KEY", "1x0000000000000000000000000000000AA");
+    vi.stubEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "1x00000000000000000000AA");
+    const f = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, hostname: "example.com" }), { status: 200 }));
+    vi.stubGlobal("fetch", f);
+    vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await tjekTurnstile(undefined, "1.2.3.4")).toBe(false);
     expect(await tjekTurnstile("tok", "1.2.3.4")).toBe(true);
     const krop = f.mock.calls[0][1].body as URLSearchParams;
-    expect(krop.get("secret")).toBe("hemmelig");
+    expect(krop.get("secret")).toBe("1x0000000000000000000000000000000AA");
     expect(krop.get("response")).toBe("tok");
     expect(krop.get("remoteip")).toBe("1.2.3.4");
     f.mockResolvedValueOnce(new Response(JSON.stringify({ success: false }), { status: 200 }));
