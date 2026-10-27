@@ -107,9 +107,9 @@ Princippet:
 ---
 
 ## 5. Åbne beslutninger (Filip)
-- [ ] Skal en særpris udelukke velkomstrabatten for måned 1? I dag kan et firma få begge.
-- [ ] En introrabat, staff sætter efter, at Starts gratis måned er i gang, gælder i måned 2-7. Er det i orden?
-- [ ] Chefens pakkeskift i admin i en gratis periode er gratis for firmaet. Skal det blive ved med det?
+- [x] En særpris udelukker velkomstrabatten for måned 1 (Filip, 27. okt.) – bygges.
+- [x] En introrabat sat efter, at Starts gratis måned er i gang, gælder i måned 2-7 (Filip, 27. okt.).
+- [x] Chefens pakkeskift i admin i en gratis periode er fortsat gratis for firmaet (Filip, 27. okt.).
 - [ ] Udskyde statistik i appen og appens nye design til efter lanceringen?
 - [ ] Shipmondo i stedet for DAO direkte?
 
