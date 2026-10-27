@@ -4,14 +4,15 @@
 //
 // Linket indeholder KUN auktionens id - aldrig brugerens id, e-mail, navn
 // eller sporingsparametre. Den eneste undtagelse er henvisningskoden fra
-// "Henvis en ven" (?ref=<kode>), og kun når en indlogget PRIVAT bruger deler
+// "Henvis en ven" (?ven=<kode>), og kun når en indlogget PRIVAT bruger deler
 // (se src/lib/del/henvisning.ts). Koden er brugerens egen offentlige
 // invitationskode, ikke et bruger-id.
 
-// Navnet på parameteren med henvisningskoden. "Henvis en ven" (migration
-// 20261102230000) skal læse den samme parameter, når en ny bruger lander på
-// en auktion via et delt link.
-export const HENVISNING_PARAM = "ref";
+// Navnet på parameteren med henvisningskoden - den samme, som proxyen gemmer
+// i cookien (src/lib/henvisning/kode.ts), så et delt auktionslink også tæller
+// som en henvisning.
+import { HENVISNING_PARAM } from "@/lib/henvisning/kode";
+export { HENVISNING_PARAM };
 
 // Kun bogstaver, tal, bindestreg og understreg - alt andet droppes, så der
 // aldrig kan sniges noget andet ind i linket.
