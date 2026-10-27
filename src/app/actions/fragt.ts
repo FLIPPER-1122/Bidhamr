@@ -180,6 +180,9 @@ export async function startReturfragtAction(tradeId: string) {
   if (!(await tjekGraenser([["fragt_handling_bruger", u.id]]))) return { fejl: FOR_MANGE_FORSOEG };
   const r = await startReturfragt(tradeId, u.id, null);
   if ("fejl" in r) return r;
+  // Dækket returfragt (sælgeren/BidHamr betaler): ingen betaling - brug
+  // lavDaekketReturlabelAction med adressen.
+  if (r.daekket) return { fejl: "Du betaler ikke returfragten. Skriv din adresse, så laver vi returkoden.", daekket: true as const };
   // Payment Element bruger ikke Stripe-kunden (kun appens PaymentSheet).
   return {
     ok: true as const,
@@ -187,6 +190,21 @@ export async function startReturfragtAction(tradeId: string) {
     beloebOere: r.beloebOere,
     customerSessionClientSecret: r.customerSessionClientSecret,
   };
+}
+
+// Transportskade med medhold (20261102210000): sælgeren eller BidHamr betaler
+// returfragten. Køberen giver kun adresse og mobil, og returkoden laves med
+// det samme (ingen betaling). Bag FRAGT_RETURLABEL_AKTIV.
+export async function lavDaekketReturlabelAction(tradeId: string, afsender: AdresseInput) {
+  const u = await bruger();
+  if (!u) return { fejl: "Du skal være logget ind." };
+  if (!(await tjekGraenser([["fragt_handling_bruger", u.id]]))) return { fejl: FOR_MANGE_FORSOEG };
+  const r = await startReturfragt(tradeId, u.id, afsender ?? null);
+  genindlaes(tradeId);
+  if ("fejl" in r) return { fejl: r.fejl };
+  if (!r.daekket) return { fejl: "Returfragten skal betales. Opdatér siden." };
+  if (r.label && "fejl" in r.label) return { fejl: r.label.fejl };
+  return { ok: true as const };
 }
 
 // Køberens adresse og mobil til returkoden - gemmes lige før betalingen.

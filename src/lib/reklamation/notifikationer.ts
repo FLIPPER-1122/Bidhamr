@@ -78,13 +78,16 @@ export type ReklamationBeskedRaekke = {
   sag_aendret_kvitteret_kl: string | null;
   // Hvem der kvitterede (systemet eller staff) - styrer teksten.
   sag_aendret_kvitteret_af?: string | null;
+  // Sagens type (20261102210000: også 'bortkommet' - ellers 'skadet').
+  sag_type?: string | null;
+  sag_id?: string;
 };
 
 // kraever: sendes kun, hvis beskeden med den nøgle allerede ER sendt.
 type Opgave = { brugerId: string; input: NotifikationInput & { noegle: string }; kraever?: string };
 
 const FELTER =
-  "id, trade_id, saelger_id, transportoer, status, kravbeloeb_oere, godkendt_beloeb_oere, afvisningsgrund, annulleret_grund, annulleret_auto, annulleret_kl, aktiv_fra_kl, anmeldt_kl, afgjort_kl, udbetalt_kl, bank_status, bank_payout_id, bank_fejlet_kl, transfer_tilbagefoert_kl, sag_aendret_kl, sag_aendret_kvitteret_kl, sag_aendret_kvitteret_af";
+  "id, sag_id, trade_id, saelger_id, transportoer, status, kravbeloeb_oere, godkendt_beloeb_oere, afvisningsgrund, annulleret_grund, annulleret_auto, annulleret_kl, aktiv_fra_kl, anmeldt_kl, afgjort_kl, udbetalt_kl, bank_status, bank_payout_id, bank_fejlet_kl, transfer_tilbagefoert_kl, sag_aendret_kl, sag_aendret_kvitteret_kl, sag_aendret_kvitteret_af";
 
 const SPOERGSMAAL = "Har du spørgsmål, så skriv til support@bidhamr.dk.";
 
@@ -114,18 +117,23 @@ export function reklamationBeskeder(r: ReklamationBeskedRaekke, nu: number = Dat
 
   // Kun mens den venter på BidHamr. Ny nøgle pr. aktivering, så en
   // genopstået reklamation giver en ny besked.
+  const bortkommet = r.sag_type === "bortkommet";
   if (r.status === "afventer_bidhamr") {
     op(
       oprettetNoegle,
       `Vi reklamerer hos ${navn} for dig`,
-      `Varen blev skadet under fragten, og køberen har fået pengene tilbage. Dine pakkebilleder viser, at du pakkede varen ordentligt, så BidHamr reklamerer hos ${navn} for dig – du skal ikke selv gøre noget. Vi kræver op til ${kroner(r.kravbeloeb_oere)} i erstatning. Det er ${navn}, der afgør, om du får erstatning. Du hører fra os, når der er nyt.`,
+      bortkommet
+        ? `Pakken er ikke kommet frem til køberen, og køberen har fået pengene tilbage. BidHamr reklamerer hos ${navn} for dig – du skal ikke selv gøre noget. Vi kræver op til ${kroner(r.kravbeloeb_oere)} i erstatning. Det er ${navn}, der afgør, om du får erstatning. Du hører fra os, når der er nyt.`
+        : `Varen blev skadet under fragten, og køberen har fået pengene tilbage. Dine pakkebilleder viser, at du pakkede varen ordentligt, så BidHamr reklamerer hos ${navn} for dig – du skal ikke selv gøre noget. Vi kræver op til ${kroner(r.kravbeloeb_oere)} i erstatning. Det er ${navn}, der afgør, om du får erstatning. Du hører fra os, når der er nyt.`,
     );
   }
   if (r.status === "anmeldt" && r.anmeldt_kl) {
     op(
       `anmeldt:${ms(r.anmeldt_kl)}`,
-      `Skaden er anmeldt hos ${navn}`,
-      `Vi har anmeldt skaden hos ${navn} og sendt dine og køberens billeder med. Vi giver dig besked, når ${navn} har svaret.`,
+      bortkommet ? `Pakken er efterlyst hos ${navn}` : `Skaden er anmeldt hos ${navn}`,
+      bortkommet
+        ? `Vi har anmeldt den bortkomne pakke hos ${navn}. Vi giver dig besked, når ${navn} har svaret.`
+        : `Vi har anmeldt skaden hos ${navn} og sendt dine og køberens billeder med. Vi giver dig besked, når ${navn} har svaret.`,
     );
   }
   if (r.status === "godkendt" && r.afgjort_kl && beloeb) {
@@ -295,6 +303,13 @@ export async function notificerReklamationer(): Promise<number> {
     }
     const raekker = new Map<string, ReklamationBeskedRaekke>();
     for (const r of [...(nye.data ?? []), ...(spaerrede.data ?? [])] as ReklamationBeskedRaekke[]) raekker.set(r.id, r);
+    // Sagens type (bortkommet/skadet) til teksterne.
+    const sagIder = [...new Set([...raekker.values()].map((r) => r.sag_id).filter((x): x is string => !!x))];
+    if (sagIder.length > 0) {
+      const { data: typer } = await admin.from("sager").select("id, type").in("id", sagIder);
+      const t = new Map(((typer ?? []) as { id: string; type: string }[]).map((x) => [x.id, x.type]));
+      for (const r of raekker.values()) r.sag_type = r.sag_id ? (t.get(r.sag_id) ?? null) : null;
+    }
     const opgaver = [...raekker.values()].flatMap((r) => reklamationBeskeder(r, nu));
     return await sendOpgaver(admin, opgaver);
   } catch (err) {

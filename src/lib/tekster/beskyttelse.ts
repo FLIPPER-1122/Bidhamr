@@ -59,10 +59,10 @@ export const SEKTION_AFHENTNING: Sektion = {
 export const SEKTION_SAG: Sektion = {
   overskrift: "Sådan opretter du en sag",
   punkter: [
-    "Du har 48 timer til at oprette en sag. Fristen starter, når sporingen viser, at du har hentet pakken.",
-    "Tag billeder af pakken, labelen og indholdet, og upload dem, når du opretter sagen. Uden billeder kan vi ikke oprette sagen.",
-    "Når sagen er oprettet, holdes pengene tilbage, og du kan følge sagen på siden Sager.",
-    "Opretter du ingen sag inden for 48 timer, går pengene automatisk til sælgeren.",
+    "Du har 72 timer til at melde et problem. Fristen starter, når pakken er leveret.",
+    "Gem pakken og labelen. Tag et billede af pakken med labelen og et af indholdet, når du melder problemet. Har du smidt pakken ud, kan du forklare hvorfor, og så vurderer BidHamr det.",
+    "Når du har meldt problemet, får sælgeren ikke pengene, mens sagen kører. Sælgeren kan give sin forklaring, og du kan følge sagen på handelssiden.",
+    "Melder du ikke et problem inden for 72 timer, går pengene automatisk til sælgeren.",
   ],
 };
 
@@ -103,7 +103,7 @@ export const FAQ: FaqPunkt[] = [
   },
   {
     spoergsmaal: "Varen er gået i stykker under forsendelsen. Hvad gør jeg?",
-    svar: "Tag billeder af pakken, labelen og skaden, og opret en sag på handelssiden inden for 48 timer. En medarbejder ser på sagen. Får du medhold, får du prisen for varen tilbage (gebyr og fragt refunderes ikke), og varen sendes retur til sælgeren.",
+    svar: "Tag et billede af pakken med labelen og et af skaden, og meld problemet på handelssiden inden for 72 timer, efter pakken er leveret. En medarbejder ser på sagen. Får du medhold, sender du varen retur til sælgeren uden at betale returfragten, og du får hele beløbet tilbage – bud, gebyr og fragt.",
   },
   {
     spoergsmaal: "Kan jeg fortryde mit køb?",
@@ -139,4 +139,4 @@ export const BIDPANEL = {
 // ved medhold får køberen kun buddet tilbage. Vises i "Opret sag" og ved en
 // åben sag - ikke for gamle handler eller erhverv.
 export const SAG_REFUSION_NY =
-  "Får du medhold, får du prisen for varen (dit bud) tilbage. Gebyr og fragt refunderes ikke.";
+  "Får du medhold, får du prisen for varen (dit bud) tilbage. Gebyr og fragt refunderes ikke. Er pakken ikke kommet frem, eller er varen gået i stykker under forsendelsen, får du hele beløbet tilbage – bud, gebyr og fragt.";

@@ -105,6 +105,7 @@ const OFFENTLIGE_RUTER: Record<string, Exclude<Klasse, "login" | "admin-vaert" |
   "/api/mitid/start": "offentlig",
   "/api/dac7/oplysninger": "offentlig",
   "/api/handel/app/[handling]": "offentlig",
+  "/api/sag/app/[handling]": "offentlig",
   "/api/bud/app": "offentlig",
   "/api/auktion/app/[handling]": "offentlig",
   "/api/dsa/anmeld": "offentlig",

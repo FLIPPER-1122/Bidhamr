@@ -51,7 +51,7 @@ import { toTrinMaksTimer } from "@/lib/staffToTrinRegler";
 // in-app browser har ingen session, så gaten må ikke stoppe den.
 // /api/dac7/oplysninger er appens DAC7-skatteoplysninger: kun Bearer-token
 // (ingen cookies); login tjekkes i ruten.
-// /api/handel/app (handelstrin), /api/bud/app (bud), /api/auktion/app
+// /api/handel/app (handelstrin), /api/sag/app (sager), /api/bud/app (bud), /api/auktion/app
 // (billedoprydning), /api/konto/adgangskode, /api/konto/email (skift af
 // e-mail), /api/konto/data (dine data) og /api/konto/henvisning (Henvis en
 // ven) er appens endpoints: kun Bearer-token (ingen cookies); login tjekkes i
@@ -109,6 +109,7 @@ const OFFENTLIGE_RUTER = [
   "/api/mitid",
   "/api/dac7/oplysninger",
   "/api/handel/app",
+  "/api/sag/app",
   "/api/bud/app",
   "/api/auktion/app",
   "/api/konto/adgangskode",
