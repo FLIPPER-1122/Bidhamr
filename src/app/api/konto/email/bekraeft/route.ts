@@ -20,7 +20,7 @@ import { EMAIL_SKIFT_STATUS } from "../status";
 //                              den nye e-mail.
 //   400 { fejl, kode: "ugyldig" | "kode_forkert" | "kode_udloebet" }
 //   401 { fejl, kode: "ikke_logget_ind" }
-//   403 { fejl, kode: "staff" | "suspenderet" | "lukket" | "slettet" | "ikke_tilladt" }
+//   403 { fejl, kode: "staff" | "firma" | "suspenderet" | "lukket" | "slettet" | "ikke_tilladt" }
 //   409 { fejl, kode: "optaget" }  - adressen blev taget, før koden blev brugt
 //   429 { fejl, kode: "for_mange" }   503 { kode: "ikke_tilgaengelig" }   500 { kode: "fejl" }
 

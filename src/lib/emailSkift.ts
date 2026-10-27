@@ -15,15 +15,22 @@ import "server-only";
 //      og Stripe-kunden/Connect-kontoen får den nye adresse.
 //
 // Staff-konti (medarbejder, admin, chef, erhvervssælger) kan IKKE selv skifte
-// e-mail - de kontakter chefen. Suspenderede, lukkede og slettede konti kan
-// heller ikke.
+// e-mail - de kontakter chefen. Firmakonti (konto_type 'erhverv') kontakter
+// BidHamr (firmaoplysninger rettes hos BidHamr). Suspenderede, lukkede og
+// slettede konti kan heller ikke.
+//
+// Ved skiftet dør alle gamle links og koder (nulstilling, bekræftelse,
+// genbekræftelse) til den gamle adresse - trigger på auth.users
+// (20261102160000_skift_email_rettelser.sql).
 //
 // bruger SKAL være verificeret af kalderen (getUser). Fejl RETURNERES som
 // { fejl, kode } - fejl er en dansk tekst, der kan vises direkte.
 
-import { createHash, randomInt } from "node:crypto";
+import { createHmac, randomInt } from "node:crypto";
+import { after } from "next/server";
 import type { User } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hemmeligNoegle } from "@/lib/supabase/noeglerServer";
 import { FOR_MANGE_FORSOEG, graenseFejl, nulstilGraense, tjekGraenserLukket } from "@/lib/rateLimit";
 import { bekraeftAdgangskode } from "@/lib/bekraeftAdgangskode";
 import { renEmail } from "@/lib/kontoOprettelse";
@@ -40,6 +47,8 @@ export const EMAIL_SKIFT = {
   samme: "Det er allerede din e-mail.",
   forkertAdgangskode: "Din nuværende adgangskode er forkert.",
   staff: "Medarbejderkonti kan ikke selv skifte e-mail. Kontakt chefen, så skifter chefen den for dig.",
+  firma: "Kontakt BidHamr for at skifte e-mail på en firmakonto.",
+  igang: "Dit skift af e-mail er ved at blive gennemført. Prøv igen om et par minutter.",
   suspenderet: "Du kan ikke skifte e-mail, mens din konto er suspenderet. Skriv til support@bidhamr.dk.",
   lukket: "Din konto er lukket, så du kan ikke skifte e-mail. Skriv til support@bidhamr.dk.",
   slettet: "Kontoen er slettet.",
@@ -57,6 +66,7 @@ export type EmailSkiftKode =
   | "for_mange"
   | "ikke_tilgaengelig"
   | "staff"
+  | "firma"
   | "suspenderet"
   | "lukket"
   | "slettet"
@@ -73,9 +83,15 @@ export function nyEmailKode(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
-// Koden bindes til brugeren. Kun hashen gemmes (email_skift.kode_hash).
+// Koden bindes til brugeren. Kun hashen gemmes (email_skift.kode_hash) - en
+// HMAC med serverens hemmelige Supabase-nøgle (hemmeligNoegle kaster en
+// tydelig fejl, hvis den mangler), så en lækket tabel ikke kan knækkes ved at
+// prøve alle 1.000.000 koder. Skiftes nøglen, holder koder, der er sendt
+// inden for de sidste 15 minutter, op med at virke (brugeren beder om en ny).
 export function hashEmailKode(brugerId: string, kode: string): string {
-  return createHash("sha256").update(`bidhamr-email-skift-v1|${brugerId.toLowerCase()}|${kode}`).digest("hex");
+  return createHmac("sha256", `bidhamr-email-skift-v2|${hemmeligNoegle()}`)
+    .update(`${brugerId.toLowerCase()}|${kode}`)
+    .digest("hex");
 }
 
 export function renEmailKode(v: unknown): string | null {
@@ -88,6 +104,8 @@ function spaerreFejl(kode: string | null | undefined): EmailSkiftFejl | null {
   switch (kode) {
     case "staff":
       return { fejl: EMAIL_SKIFT.staff, kode: "staff" };
+    case "firma":
+      return { fejl: EMAIL_SKIFT.firma, kode: "firma" };
     case "suspenderet":
       return { fejl: EMAIL_SKIFT.suspenderet, kode: "suspenderet" };
     case "lukket":
@@ -111,10 +129,15 @@ async function kontoSpaerret(brugerId: string): Promise<EmailSkiftFejl | null> {
   return spaerreFejl(typeof data === "string" ? data : null);
 }
 
-// Lille tilfældig pause, når der IKKE sendes en mail (adressen er i brug),
-// så svartiden ikke afslører det.
-function ventLidt(): Promise<void> {
-  return new Promise((r) => setTimeout(r, 250 + randomInt(0, 400)));
+// Svaret "Vi har sendt en kode ..." gives tidligst EMAIL_SKIFT_SVARTID.minMs
+// efter anmodningen - uanset om adressen er ledig (mailen sendes i
+// baggrunden med after()), i brug (ingen mail) eller Resend fejler (logges).
+// Så afslører svartiden ikke, om adressen findes. Sættes ned i testene.
+export const EMAIL_SKIFT_SVARTID = { minMs: 1500 };
+
+function ventTil(start: number): Promise<void> {
+  const rest = start + EMAIL_SKIFT_SVARTID.minMs - Date.now();
+  return rest > 0 ? new Promise((r) => setTimeout(r, rest)) : Promise.resolve();
 }
 
 // ------------------------------------------------------------ 1. Anmodning
@@ -124,18 +147,20 @@ export async function anmodEmailSkiftFor(args: {
   nyEmail: unknown;
   adgangskode: unknown;
 }): Promise<{ ok: true; besked: string } | EmailSkiftFejl> {
+  const start = Date.now();
   const { bruger } = args;
   const nyEmail = renEmail(args.nyEmail);
   if (!nyEmail || nyEmail.endsWith(".invalid")) return { fejl: EMAIL_SKIFT.ugyldigEmail, kode: "email" };
   if (nyEmail === (bruger.email ?? "").toLowerCase()) return { fejl: EMAIL_SKIFT.samme, kode: "samme_email" };
 
   // Grænser (fail closed): adgangskode_bruger deles med skift af
-  // adgangskode og sletning (gæt på adgangskoden), email_skift_bruger og
-  // email_skift_ny_email mod mailbomber til fremmede adresser.
+  // adgangskode og sletning (gæt på adgangskoden), email_skift_bruger mod
+  // mailbomber fra én konto. email_skift_ny_email (mod mailbomber til én
+  // fremmed adresse) tælles først efter en godkendt adgangskode, så en, der
+  // gætter adgangskoder, ikke kan spærre adressen for andre.
   const graense = await tjekGraenserLukket([
     ["adgangskode_bruger", bruger.id],
     ["email_skift_bruger", bruger.id],
-    ["email_skift_ny_email", nyEmail],
   ]);
   const graenseTekst = graenseFejl(graense);
   if (graenseTekst) return { fejl: graenseTekst, kode: graense === "for_mange" ? "for_mange" : "ikke_tilgaengelig" };
@@ -148,6 +173,10 @@ export async function anmodEmailSkiftFor(args: {
   if (tjek === "forkert") return { fejl: EMAIL_SKIFT.forkertAdgangskode, kode: "forkert_adgangskode" };
   if (tjek === "for_mange") return { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" };
   if (tjek !== "ok") return { fejl: EMAIL_SKIFT.generisk, kode: "fejl" };
+
+  const graenseNy = await tjekGraenserLukket([["email_skift_ny_email", nyEmail]]);
+  const graenseNyTekst = graenseFejl(graenseNy);
+  if (graenseNyTekst) return { fejl: graenseNyTekst, kode: graenseNy === "for_mange" ? "for_mange" : "ikke_tilgaengelig" };
 
   const kode = nyEmailKode();
   const { data, error } = await createAdminClient().rpc("email_skift_anmod", {
@@ -162,21 +191,27 @@ export async function anmodEmailSkiftFor(args: {
   }
   if (svar.kode === "ugyldig") return { fejl: EMAIL_SKIFT.ugyldigEmail, kode: "email" };
   if (svar.kode === "samme") return { fejl: EMAIL_SKIFT.samme, kode: "samme_email" };
+  // En tidligere kode er netop godkendt, og Supabase Auth opdateres nu.
+  if (svar.kode === "igang") return { fejl: EMAIL_SKIFT.igang, kode: "ikke_tilgaengelig" };
   const sp = spaerreFejl(svar.kode);
   if (sp) return sp;
   if (svar.kode !== "ok") return { fejl: EMAIL_SKIFT.generisk, kode: "fejl" };
 
-  if (svar.optaget) {
-    // Adressen er i brug: ingen mail, samme svar.
-    await ventLidt();
-    return { ok: true, besked: EMAIL_SKIFT.kodeSendt };
+  // Adressen er ledig: mailen sendes i baggrunden. I brug: ingen mail.
+  // Svaret er det samme og kommer tidligst efter EMAIL_SKIFT_SVARTID.
+  if (!svar.optaget) {
+    after(async () => {
+      try {
+        const sendt = await sendHandelMailDetaljer(nyEmail, emailSkiftKodeMail({ kode, nyEmail }));
+        if (!sendt.ok) {
+          await logDriftFejl({ kilde: "action", hvor: "emailSkift/kodemail", fejl: sendt.fejl, brugerId: bruger.id });
+        }
+      } catch (err) {
+        await logDriftFejl({ kilde: "action", hvor: "emailSkift/kodemail", fejl: err, brugerId: bruger.id });
+      }
+    });
   }
-
-  const sendt = await sendHandelMailDetaljer(nyEmail, emailSkiftKodeMail({ kode, nyEmail }));
-  if (!sendt.ok) {
-    await logDriftFejl({ kilde: "action", hvor: "emailSkift/kodemail", fejl: sendt.fejl, brugerId: bruger.id });
-    return { fejl: "Mailen kunne ikke sendes. Prøv igen om lidt.", kode: "fejl" };
-  }
+  await ventTil(start);
   return { ok: true, besked: EMAIL_SKIFT.kodeSendt };
 }
 
@@ -219,8 +254,23 @@ export async function bekraeftEmailSkiftFor(args: {
   const nyEmail = svar.ny_email;
   const gammelEmail = bruger.email ?? svar.gammel_email ?? null;
 
-  // Login-adressen skiftes nu. Databasen spejler i samme transaktion.
-  const { error: authFejl } = await admin.auth.admin.updateUserById(bruger.id, { email: nyEmail, email_confirm: true });
+  // Login-adressen skiftes nu. Databasen spejler i samme transaktion og
+  // rydder gamle links/koder. Kaster kaldet (netværk, timeout), afsluttes
+  // anmodningen som 'fejl', så den ikke sidder fast i 'bekraeftet'
+  // (email_skift_anmod rydder også selv op efter 5 minutter).
+  let authFejl: Awaited<ReturnType<typeof admin.auth.admin.updateUserById>>["error"];
+  try {
+    ({ error: authFejl } = await admin.auth.admin.updateUserById(bruger.id, { email: nyEmail, email_confirm: true }));
+  } catch (err) {
+    const { error: afslutFejl } = await admin.rpc("email_skift_afslut", { p_id: svar.id, p_status: "fejl" });
+    await logDriftFejl({
+      kilde: "action",
+      hvor: "emailSkift/updateUserById",
+      fejl: afslutFejl ? `${String(err)} (og email_skift_afslut: ${afslutFejl.message})` : err,
+      brugerId: bruger.id,
+    });
+    return { fejl: EMAIL_SKIFT.generisk, kode: "fejl" };
+  }
   if (authFejl) {
     // email_exists (422). Et kapløb lige her kan også give en 500 (unik
     // e-mail i databasen) - den logges som fejl, og intet er ændret.
@@ -258,9 +308,11 @@ export async function bekraeftEmailSkiftFor(args: {
   return { ok: true, email: nyEmail };
 }
 
-// Den private Stripe-kunde (kvitteringer, gemt kort) og Connect-kontoen
-// (udbetalinger) får den nye adresse. Fejl stopper ikke skiftet - de logges
-// i /admin/drift. Firmaets Stripe-kunde (firmaer.stripe_customer_id) følger
+// Den private Stripe-kunde (kvitteringer, gemt kort) får den nye adresse.
+// Connect-kontoen opdateres kun, hvis BidHamr styrer den (ikke Express): på
+// en Express-konto er e-mailen sælgerens eget login til Stripe, som sælgeren
+// selv retter i Stripe - det springes over og logges som info. Andre fejl
+// stopper ikke skiftet - de logges i /admin/drift. Firmaets Stripe-kunde (firmaer.stripe_customer_id) følger
 // med via kontakt_email og cron'en (firmaer_stripe_kunde_aendret).
 // Alle kald går gennem getStripe() og dens tilstandsvagt (src/lib/stripe.ts),
 // så nøgle og database altid er i samme Stripe-tilstand (testmiljøet indtil
@@ -286,6 +338,11 @@ export async function synkEmailTilStripe(brugerId: string, email: string): Promi
   }
   if (profil.stripe_account_id && !profil.connect_frakoblet_kl) {
     try {
+      const konto = await getStripe().accounts.retrieve(profil.stripe_account_id);
+      if (konto.type === "express" || konto.controller?.requirement_collection === "stripe") {
+        console.info("emailSkift: Connect-kontoen er en Express-konto - e-mailen rettes af sælgeren i Stripe.");
+        return;
+      }
       await getStripe().accounts.update(profil.stripe_account_id, { email });
     } catch (err) {
       await logDriftFejl({ kilde: "server", hvor: "emailSkift/stripe-connect", fejl: err, brugerId });

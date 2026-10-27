@@ -29,6 +29,7 @@ export default function SettingsForm({
   telefon: initialTelefon,
   adresse: initialAdresse,
   email,
+  erFirma = false,
   avatarUrl,
 }: {
   brugerId: string;
@@ -36,6 +37,7 @@ export default function SettingsForm({
   telefon: string | null;
   adresse: string | null;
   email: string;
+  erFirma?: boolean;
   avatarUrl: string | null;
 }) {
   const router = useRouter();
@@ -124,7 +126,7 @@ export default function SettingsForm({
       </div>
 
       {/* Egen formular (kode til den nye adresse) - ikke en del af "Gem ændringer". */}
-      <SkiftEmail email={email} />
+      <SkiftEmail email={email} erFirma={erFirma} />
 
       <form onSubmit={handleSubmit} method="post" className="space-y-4" noValidate>
 

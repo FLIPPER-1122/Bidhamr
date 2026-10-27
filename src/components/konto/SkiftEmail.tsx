@@ -12,11 +12,15 @@ import { FELT, FELT_FEJL, FORMULAR_FEJL, LABEL, SUCCES_BOKS } from "./felter";
 //   2. Koden fra mailen til den nye adresse -> "Bekræft"
 //   3. Kvitteringen "Din e-mail er ændret".
 // Svaret i trin 1 er det samme, uanset om adressen er i brug.
+// Firmakonti skifter ikke selv e-mail - de ser kun teksten om at kontakte
+// BidHamr (serveren afviser det også, kode "firma").
 type Trin = "lukket" | "formular" | "kode";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export default function SkiftEmail({ email }: { email: string }) {
+export const FIRMA_EMAIL_TEKST = "Kontakt BidHamr for at skifte e-mail på en firmakonto.";
+
+export default function SkiftEmail({ email, erFirma = false }: { email: string; erFirma?: boolean }) {
   const router = useRouter();
   const hydreret = useHydreret();
   const [trin, setTrin] = useState<Trin>("lukket");
@@ -68,6 +72,18 @@ export default function SkiftEmail({ email }: { email: string }) {
     setTrin("lukket");
     setAendret(svar.email);
     router.refresh();
+  }
+
+  if (erFirma) {
+    return (
+      <div>
+        <p className={LABEL}>E-mail</p>
+        <p className="mt-1.5 break-all text-[15px] text-tekst" data-testid="nuvaerende-email">
+          {email}
+        </p>
+        <p className="mt-1.5 text-[13px] text-tekst-daempet">{FIRMA_EMAIL_TEKST}</p>
+      </div>
+    );
   }
 
   if (trin === "lukket") {

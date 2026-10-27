@@ -1,5 +1,9 @@
-// Migrationen 20261102120000_skift_email.sql i PGlite (Postgres i processen -
-// ingen database, intet netværk). Køres TO gange (idempotent + md5-drifttjek).
+// Migrationerne 20261102120000_skift_email.sql og
+// 20261102160000_skift_email_rettelser.sql i PGlite (Postgres i processen -
+// ingen database, intet netværk). Hver køres TO gange (idempotent +
+// md5-drifttjek). Rettelserne: anmodninger, der sidder fast i 'bekraeftet',
+// firmakonti, gamle links/koder ryddes ved skiftet, og Supabase' gamle
+// e-mail-skift ryddes på eksisterende brugere.
 // Testes: anmodning (spærrede konti, staff, samme/optaget adresse),
 // kodetjek (forsøg, udløb, engangsbrug, optaget ved koden), spejlingen fra
 // auth.users (public.users, firmaets kontakt-e-mail, loggen), værnet mod
@@ -15,6 +19,10 @@ const MIGRATION = readFileSync(
   path.resolve(import.meta.dirname, "../../supabase/migrations/20261102120000_skift_email.sql"),
   "utf8",
 );
+const RETTELSER = readFileSync(
+  path.resolve(import.meta.dirname, "../../supabase/migrations/20261102160000_skift_email_rettelser.sql"),
+  "utf8",
+);
 
 const IDA = "00000000-0000-4000-8000-0000000000a1";
 const BO = "00000000-0000-4000-8000-0000000000a2";
@@ -23,14 +31,25 @@ const STAFF = "00000000-0000-4000-8000-0000000000a4";
 const SUSP = "00000000-0000-4000-8000-0000000000a5";
 const LUKKET = "00000000-0000-4000-8000-0000000000a6";
 const SLETTET = "00000000-0000-4000-8000-0000000000a7";
+const ERHVERV = "00000000-0000-4000-8000-0000000000a8";
+const TOKENS = "00000000-0000-4000-8000-0000000000a9";
 
 // staff_to_trin_er_staff_rolle præcis som i 20261027010000 (md5-tjekket).
 const STUB = `
 create role anon; create role authenticated; create role service_role;
 create schema auth;
 grant usage on schema public to anon, authenticated, service_role;
-create table auth.users (id uuid primary key, email text, email_change text default '');
+create type auth.one_time_token_type as enum ('confirmation_token', 'reauthentication_token', 'recovery_token',
+  'email_change_token_new', 'email_change_token_current', 'phone_change_token');
+create table auth.users (id uuid primary key, email text, email_change text default '',
+  email_change_token_new text default '', email_change_token_current text default '',
+  email_change_confirm_status smallint default 0, email_change_sent_at timestamptz,
+  recovery_token text default '', confirmation_token text default '', reauthentication_token text default '');
+create table auth.one_time_tokens (id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade, token_type auth.one_time_token_type not null,
+  token_hash text not null, relates_to text not null);
 create table public.users (id uuid primary key, email text unique, rolle text not null default 'bruger',
+  konto_type text not null default 'privat',
   suspenderet boolean default false, suspenderet_til timestamptz, konto_lukket_kl timestamptz, konto_slettet_kl timestamptz);
 create table public.firmaer (id uuid primary key default gen_random_uuid(), bruger_id uuid unique, kontakt_email text);
 create or replace function public.staff_to_trin_er_staff_rolle(p_rolle text)
@@ -67,14 +86,25 @@ beforeAll(async () => {
     [SUSP, "susp@test.dk", "suspenderet = true"],
     [LUKKET, "lukket@test.dk", "konto_lukket_kl = now()"],
     [SLETTET, "slettet@test.dk", "konto_slettet_kl = now()"],
+    [ERHVERV, "erhverv@test.dk", "konto_type = 'erhverv'"],
+    [TOKENS, "tokens@test.dk", ""],
   ] as const) {
     await db.query(`insert into auth.users (id, email) values ($1, $2)`, [id, email]);
     await db.query(`insert into public.users (id, email) values ($1, $2)`, [id, email]);
     if (ekstra) await db.query(`update public.users set ${ekstra} where id = $1`, [id]);
   }
   await db.query(`insert into public.firmaer (bruger_id, kontakt_email) values ($1, 'firma@test.dk'), ($2, 'kontakt@andet.dk')`, [FIRMA, BO]);
+  // Et åbent e-mail-skift fra Supabase' eget flow (før værnet fandtes).
+  await db.query(
+    `update auth.users set email_change = 'angriber@test.dk', email_change_token_new = 'tok-ny', email_change_token_current = 'tok-nu',
+       email_change_confirm_status = 1 where id = $1`, [LUKKET]);
+  await db.query(
+    `insert into auth.one_time_tokens (user_id, token_type, token_hash, relates_to) values ($1, 'email_change_token_new', 'h1', 'angriber@test.dk'),
+       ($1, 'recovery_token', 'h2', 'lukket@test.dk')`, [LUKKET]);
   await db.exec(MIGRATION);
   await db.exec(MIGRATION); // idempotent
+  await db.exec(RETTELSER);
+  await db.exec(RETTELSER); // idempotent
 });
 
 afterAll(async () => {
@@ -188,6 +218,82 @@ describe("spejling fra auth.users", () => {
   it("slettede konti og pladsholdere springes over", async () => {
     await db.query(`update auth.users set email = 'slettet+x@slettet.invalid' where id = $1`, [SLETTET]);
     expect((await en<{ email: string }>(`select email from public.users where id = $1`, [SLETTET])).email).toBe("slettet@test.dk");
+  });
+});
+
+describe("rettelser (20261102160000)", () => {
+  it("engangsoprydning: Supabase' gamle e-mail-skift er ryddet, andre tokens bevaret", async () => {
+    const r = await en<Record<string, unknown>>(
+      `select email_change, email_change_token_new, email_change_token_current, email_change_confirm_status from auth.users where id = $1`, [LUKKET]);
+    expect(r).toEqual({ email_change: "", email_change_token_new: "", email_change_token_current: "", email_change_confirm_status: 0 });
+    const t = await db.query<{ token_type: string }>(`select token_type::text from auth.one_time_tokens where user_id = $1`, [LUKKET]);
+    expect(t.rows.map((x) => x.token_type)).toEqual(["recovery_token"]);
+  });
+
+  it("firmakonti kan ikke selv skifte e-mail", async () => {
+    expect(await en<{ v: string }>(`select public.email_skift_konto_spaerret($1) v`, [ERHVERV])).toEqual({ v: "firma" });
+    expect((await anmod(ERHVERV, "erhverv-ny@test.dk")).kode).toBe("firma");
+    expect(Number((await en<{ n: number }>(`select count(*)::int n from public.email_skift where bruger_id = $1`, [ERHVERV])).n)).toBe(0);
+  });
+
+  it("'bekraeftet' sætter bekraeftet_kl; nyere end 5 min. giver 'igang', ældre bliver 'fejl'", async () => {
+    await anmod(TOKENS, "tokens-ny@test.dk", "121212");
+    const ok = await tjek(TOKENS, "121212");
+    expect(ok.kode).toBe("ok");
+    const b = await en<{ status: string; bekraeftet_kl: string | null }>(`select status, bekraeftet_kl from public.email_skift where id = $1`, [ok.id]);
+    expect(b.status).toBe("bekraeftet");
+    expect(b.bekraeftet_kl).not.toBeNull();
+    // Netop bekræftet: auth opdateres nu - ingen ny anmodning.
+    expect((await anmod(TOKENS, "tokens-ny@test.dk", "131313")).kode).toBe("igang");
+    // Serveren døde: efter 5 minutter kan brugeren bede om en ny kode.
+    await db.query(`update public.email_skift set bekraeftet_kl = now() - interval '6 minutes' where id = $1`, [ok.id]);
+    expect((await anmod(TOKENS, "tokens-ny@test.dk", "141414")).kode).toBe("ok");
+    expect((await en<{ status: string }>(`select status from public.email_skift where id = $1`, [ok.id])).status).toBe("fejl");
+    // Rækker uden bekraeftet_kl (fra før rettelsen) bruger oprettet_kl.
+    const ny = await tjek(TOKENS, "141414");
+    await db.query(`update public.email_skift set bekraeftet_kl = null, oprettet_kl = now() - interval '10 minutes' where id = $1`, [ny.id]);
+    expect((await anmod(TOKENS, "tokens-ny@test.dk", "151515")).kode).toBe("ok");
+    expect((await en<{ status: string }>(`select status from public.email_skift where id = $1`, [ny.id])).status).toBe("fejl");
+  });
+
+  it("ved skiftet ryddes gamle links/koder og engangskoder - ellers røres de ikke", async () => {
+    await db.query(
+      `update auth.users set recovery_token = 'r', confirmation_token = 'c', reauthentication_token = 'ra',
+         email_change_token_current = 'ec' where id = $1`, [TOKENS]);
+    await db.query(
+      `insert into auth.one_time_tokens (user_id, token_type, token_hash, relates_to) values
+         ($1, 'recovery_token', 'r', 'tokens@test.dk'), ($1, 'reauthentication_token', 'ra', 'tokens@test.dk')`, [TOKENS]);
+    // En opdatering uden ny e-mail (fx GoTrue, der gemmer en ny recovery_token) rører intet.
+    await db.query(`update auth.users set email = email, recovery_token = 'r2' where id = $1`, [TOKENS]);
+    expect((await en<{ recovery_token: string }>(`select recovery_token from auth.users where id = $1`, [TOKENS])).recovery_token).toBe("r2");
+    expect(Number((await en<{ n: number }>(`select count(*)::int n from auth.one_time_tokens where user_id = $1`, [TOKENS])).n)).toBe(2);
+
+    const ok = await tjek(TOKENS, "151515");
+    expect(ok.kode).toBe("ok");
+    await db.query(`update auth.users set email = 'tokens-ny@test.dk' where id = $1`, [TOKENS]);
+    const r = await en<Record<string, unknown>>(
+      `select recovery_token, confirmation_token, reauthentication_token, email_change_token_new, email_change_token_current,
+              email_change, email_change_confirm_status from auth.users where id = $1`, [TOKENS]);
+    expect(r).toEqual({
+      recovery_token: "", confirmation_token: "", reauthentication_token: "", email_change_token_new: "",
+      email_change_token_current: "", email_change: "", email_change_confirm_status: 0,
+    });
+    expect(Number((await en<{ n: number }>(`select count(*)::int n from auth.one_time_tokens where user_id = $1`, [TOKENS])).n)).toBe(0);
+    // Spejlingen kører stadig.
+    expect((await en<{ email: string }>(`select email from public.users where id = $1`, [TOKENS])).email).toBe("tokens-ny@test.dk");
+    expect((await en<{ status: string }>(`select status from public.email_skift where id = $1`, [ok.id])).status).toBe("gennemfoert");
+    // Andre brugeres tokens røres ikke.
+    expect(Number((await en<{ n: number }>(`select count(*)::int n from auth.one_time_tokens where user_id = $1`, [LUKKET])).n)).toBe(1);
+  });
+
+  it("drifttjek: en ændret funktion stopper migrationen", async () => {
+    await db.exec(`create or replace function public.email_skift_afslut(p_id uuid, p_status text) returns boolean
+      language plpgsql security definer set search_path = public as $fn$ begin return true; end $fn$;`);
+    await expect(db.exec(RETTELSER)).rejects.toThrow(/email_skift_afslut.*md5/);
+    // Tilbage til 120000's udgave (funktionen præcis som i migrationen).
+    const afslut = /create or replace function public\.email_skift_afslut[\s\S]*?\n\$fn\$;/.exec(MIGRATION)![0];
+    await db.exec(afslut);
+    await db.exec(RETTELSER);
   });
 });
 

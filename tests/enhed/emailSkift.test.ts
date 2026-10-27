@@ -3,6 +3,7 @@
 // Auth, Resend og Stripe er mocket - her testes rækkefølgen af tjek, at
 // svaret ikke afslører, om adressen findes, og at intet ændres før koden.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash, createHmac } from "node:crypto";
 import { NextRequest } from "next/server";
 
 const BRUGER = "33333333-3333-4333-8333-333333333333";
@@ -19,7 +20,18 @@ const m = vi.hoisted(() => ({
   profil: { stripe_customer_id: "cus_1", stripe_account_id: "acct_1", connect_frakoblet_kl: null } as Record<string, unknown> | null,
   kundeUpdate: vi.fn(async () => ({})),
   kontoUpdate: vi.fn(async () => ({})),
+  kontoRetrieve: vi.fn(async () => ({ type: "custom", controller: { requirement_collection: "application" } }) as Record<string, unknown>),
   appBruger: true,
+  // after() fra next/server: callbacks samles og køres af koerEfter().
+  efter: [] as (() => unknown)[],
+  graenseKald: [] as string[][],
+}));
+
+vi.mock("next/server", async (orig) => ({
+  ...(await orig<typeof import("next/server")>()),
+  after: (fn: () => unknown) => {
+    m.efter.push(fn);
+  },
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-real-ip": "127.0.0.9" }) }));
@@ -27,7 +39,10 @@ vi.mock("@/lib/rateLimit", () => ({
   FOR_MANGE_FORSOEG: "For mange forsøg.",
   klientIp: async () => "127.0.0.9",
   tjekGraenser: async () => true,
-  tjekGraenserLukket: async () => m.graense,
+  tjekGraenserLukket: async (t: [string, string][]) => {
+    m.graenseKald.push(t.map(([n]) => n));
+    return m.graense;
+  },
   graenseFejl: (s: string) => (s === "for_mange" ? "For mange forsøg." : s === "fejl" ? "Prøv igen om lidt." : null),
   nulstilGraense: vi.fn(async () => {}),
 }));
@@ -35,7 +50,7 @@ vi.mock("@/lib/drift", () => ({ logDriftFejl: m.drift }));
 vi.mock("@/lib/bekraeftAdgangskode", () => ({ bekraeftAdgangskode: m.bekraeftAdgangskode }));
 vi.mock("@/lib/mails/send", () => ({ sendHandelMailDetaljer: m.send }));
 vi.mock("@/lib/stripe", () => ({
-  getStripe: () => ({ customers: { update: m.kundeUpdate }, accounts: { update: m.kontoUpdate } }),
+  getStripe: () => ({ customers: { update: m.kundeUpdate }, accounts: { update: m.kontoUpdate, retrieve: m.kontoRetrieve } }),
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
@@ -53,6 +68,7 @@ vi.mock("@/lib/appApi", async (orig) => ({
 process.env.NEXT_PUBLIC_SUPABASE_URL ??= "https://eksempel.supabase.co";
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??= "anon-test";
 process.env.STRIPE_SECRET_KEY ??= "sk_test_x";
+process.env.SUPABASE_SERVICE_ROLE_KEY ??= "service-role-test";
 
 const lib = await import("@/lib/emailSkift");
 const anmodRute = await import("@/app/api/konto/email/route");
@@ -72,8 +88,17 @@ function req(sti: string, krop: unknown, token: string | null = TOKEN, origin?: 
   return new NextRequest(`http://localhost${sti}`, { method: "POST", body: JSON.stringify(krop), headers });
 }
 
+async function koerEfter() {
+  const fns = m.efter.splice(0);
+  for (const fn of fns) await fn();
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  m.efter = [];
+  m.graenseKald = [];
+  lib.EMAIL_SKIFT_SVARTID.minMs = 0;
+  m.kontoRetrieve.mockResolvedValue({ type: "custom", controller: { requirement_collection: "application" } });
   m.graense = "ok";
   m.appBruger = true;
   m.profil = { stripe_customer_id: "cus_1", stripe_account_id: "acct_1", connect_frakoblet_kl: null };
@@ -87,6 +112,15 @@ describe("kode og hash", () => {
     const k = lib.nyEmailKode();
     expect(k).toMatch(/^\d{6}$/);
     expect(lib.hashEmailKode(BRUGER, "123456")).toMatch(/^[0-9a-f]{64}$/);
+    // HMAC med serverhemmeligheden - ikke en ren sha256, der kan knækkes uden nøglen.
+    expect(lib.hashEmailKode(BRUGER, "123456")).not.toBe(
+      createHash("sha256").update(`bidhamr-email-skift-v1|${BRUGER}|123456`).digest("hex"),
+    );
+    expect(lib.hashEmailKode(BRUGER, "123456")).toBe(
+      createHmac("sha256", `bidhamr-email-skift-v2|${process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY}`)
+        .update(`${BRUGER}|123456`)
+        .digest("hex"),
+    );
     expect(lib.hashEmailKode(BRUGER, "123456")).not.toBe(lib.hashEmailKode("44444444-4444-4444-8444-444444444444", "123456"));
     expect(lib.renEmailKode(" 123 456 ")).toBe("123456");
     expect(lib.renEmailKode("12345")).toBeNull();
@@ -102,8 +136,8 @@ describe("anmodEmailSkiftFor", () => {
     expect(m.bekraeftAdgangskode).not.toHaveBeenCalled();
   });
 
-  it("staff, suspenderede, lukkede og slettede konti stoppes før adgangskoden", async () => {
-    for (const k of ["staff", "suspenderet", "lukket", "slettet"]) {
+  it("staff, firma, suspenderede, lukkede og slettede konti stoppes før adgangskoden", async () => {
+    for (const k of ["staff", "firma", "suspenderet", "lukket", "slettet"]) {
       rpcSvar({ email_skift_konto_spaerret: k });
       const r = await lib.anmodEmailSkiftFor({ bruger, nyEmail: "ny@test.bidhamr.dk", adgangskode: "x" });
       expect(r).toMatchObject({ kode: k });
@@ -119,6 +153,26 @@ describe("anmodEmailSkiftFor", () => {
     expect(r).toMatchObject({ kode: "forkert_adgangskode" });
     expect(m.rpc).not.toHaveBeenCalledWith("email_skift_anmod", expect.anything());
     expect(m.send).not.toHaveBeenCalled();
+    // Grænsen pr. ny adresse tælles først efter en rigtig adgangskode.
+    expect(m.graenseKald.flat()).not.toContain("email_skift_ny_email");
+  });
+
+  it("firmakonto: teksten om at kontakte BidHamr", async () => {
+    rpcSvar({ email_skift_konto_spaerret: "firma" });
+    const r = await lib.anmodEmailSkiftFor({ bruger, nyEmail: "ny@test.bidhamr.dk", adgangskode: "x" });
+    expect(r).toEqual({ fejl: "Kontakt BidHamr for at skifte e-mail på en firmakonto.", kode: "firma" });
+  });
+
+  it("grænsen pr. ny adresse tælles efter adgangskoden", async () => {
+    rpcSvar({ email_skift_konto_spaerret: null, email_skift_anmod: { kode: "ok", optaget: true } });
+    await lib.anmodEmailSkiftFor({ bruger, nyEmail: "ny@test.bidhamr.dk", adgangskode: "rigtig" });
+    expect(m.graenseKald).toEqual([["adgangskode_bruger", "email_skift_bruger"], ["email_skift_ny_email"]]);
+  });
+
+  it("et netop bekræftet skift i gang: prøv igen om lidt", async () => {
+    rpcSvar({ email_skift_konto_spaerret: null, email_skift_anmod: { kode: "igang" } });
+    const r = await lib.anmodEmailSkiftFor({ bruger, nyEmail: "ny@test.bidhamr.dk", adgangskode: "rigtig" });
+    expect(r).toEqual({ fejl: lib.EMAIL_SKIFT.igang, kode: "ikke_tilgaengelig" });
   });
 
   it("grænser fail closed", async () => {
@@ -133,6 +187,9 @@ describe("anmodEmailSkiftFor", () => {
     rpcSvar({ email_skift_konto_spaerret: null, email_skift_anmod: { kode: "ok", optaget: false } });
     const r = await lib.anmodEmailSkiftFor({ bruger, nyEmail: "Ny@Test.bidhamr.dk", adgangskode: "rigtig" });
     expect(r).toEqual({ ok: true, besked: lib.EMAIL_SKIFT.kodeSendt });
+    // Mailen sendes i baggrunden (after), ikke før svaret.
+    expect(m.send).not.toHaveBeenCalled();
+    await koerEfter();
     const kald = m.rpc.mock.calls.find((c) => c[0] === "email_skift_anmod")!;
     expect(kald[1]).toMatchObject({ p_bruger: BRUGER, p_ny: "ny@test.bidhamr.dk" });
     expect(kald[1].p_hash).toMatch(/^[0-9a-f]{64}$/);
@@ -147,7 +204,33 @@ describe("anmodEmailSkiftFor", () => {
     rpcSvar({ email_skift_konto_spaerret: null, email_skift_anmod: { kode: "ok", optaget: true } });
     const r = await lib.anmodEmailSkiftFor({ bruger, nyEmail: "optaget@test.bidhamr.dk", adgangskode: "rigtig" });
     expect(r).toEqual({ ok: true, besked: lib.EMAIL_SKIFT.kodeSendt });
+    await koerEfter();
     expect(m.send).not.toHaveBeenCalled();
+  });
+
+  it("Resend fejler: samme svar, fejlen logges", async () => {
+    rpcSvar({ email_skift_konto_spaerret: null, email_skift_anmod: { kode: "ok", optaget: false } });
+    m.send.mockResolvedValue({ ok: false, fejl: "resend nede" });
+    const r = await lib.anmodEmailSkiftFor({ bruger, nyEmail: "ny@test.bidhamr.dk", adgangskode: "rigtig" });
+    expect(r).toEqual({ ok: true, besked: lib.EMAIL_SKIFT.kodeSendt });
+    await koerEfter();
+    expect(m.drift).toHaveBeenCalledWith(expect.objectContaining({ hvor: "emailSkift/kodemail", fejl: "resend nede" }));
+    // Også når afsendelsen kaster.
+    m.send.mockRejectedValueOnce(new Error("netværk"));
+    await lib.anmodEmailSkiftFor({ bruger, nyEmail: "ny@test.bidhamr.dk", adgangskode: "rigtig" });
+    await koerEfter();
+    expect(m.drift).toHaveBeenCalledTimes(2);
+  });
+
+  it("fast minimumsventetid: ledig og optaget adresse svarer tidligst efter minMs", async () => {
+    lib.EMAIL_SKIFT_SVARTID.minMs = 150;
+    for (const optaget of [false, true]) {
+      rpcSvar({ email_skift_konto_spaerret: null, email_skift_anmod: { kode: "ok", optaget } });
+      const t0 = Date.now();
+      const r = await lib.anmodEmailSkiftFor({ bruger, nyEmail: "ny@test.bidhamr.dk", adgangskode: "rigtig" });
+      expect(r).toEqual({ ok: true, besked: lib.EMAIL_SKIFT.kodeSendt });
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(140);
+    }
   });
 });
 
@@ -183,6 +266,27 @@ describe("bekraeftEmailSkiftFor", () => {
     expect(m.send.mock.calls[0][1].html).toContain("support@bidhamr.dk");
     expect(m.kundeUpdate).toHaveBeenCalledWith("cus_1", { email: "ny@test.bidhamr.dk" });
     expect(m.kontoUpdate).toHaveBeenCalledWith("acct_1", { email: "ny@test.bidhamr.dk" });
+  });
+
+  it("updateUserById kaster: anmodningen afsluttes som fejl (sidder ikke fast)", async () => {
+    rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } });
+    m.updateUserById.mockRejectedValueOnce(new Error("timeout"));
+    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", logUdAndre });
+    expect(r).toEqual({ fejl: lib.EMAIL_SKIFT.generisk, kode: "fejl" });
+    expect(m.rpc).toHaveBeenCalledWith("email_skift_afslut", { p_id: "s1", p_status: "fejl" });
+    expect(m.drift).toHaveBeenCalledWith(expect.objectContaining({ hvor: "emailSkift/updateUserById" }));
+    expect(logUdAndre).not.toHaveBeenCalled();
+    expect(m.send).not.toHaveBeenCalled();
+  });
+
+  it("Express-konto: e-mailen sendes ikke til Connect (sælgerens eget Stripe-login)", async () => {
+    rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } });
+    m.kontoRetrieve.mockResolvedValue({ type: "express", controller: { requirement_collection: "stripe" } });
+    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", logUdAndre });
+    expect(r).toMatchObject({ ok: true });
+    expect(m.kundeUpdate).toHaveBeenCalledWith("cus_1", { email: "ny@test.bidhamr.dk" });
+    expect(m.kontoUpdate).not.toHaveBeenCalled();
+    expect(m.drift).not.toHaveBeenCalled();
   });
 
   it("adressen blev taget i mellemtiden: optaget, intet andet sker", async () => {
