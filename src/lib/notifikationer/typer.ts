@@ -65,7 +65,7 @@ export const NOTIFIKATION_TYPER: readonly NotifikationTypeInfo[] = [
   { type: "bud_paa_egen", navn: "Bud på din auktion", beskrivelse: "Når nogen byder på en af dine auktioner.", paakraevet: false },
   { type: "like", navn: "Nogen har liket din auktion", beskrivelse: "Når nogen gemmer din auktion som favorit.", paakraevet: false },
   { type: "auktion_status", navn: "Auktion på pause", beskrivelse: "Når BidHamr sætter en auktion, du sælger eller har budt på, på pause, og når den åbner igen.", paakraevet: false },
-  { type: "fulgt_slutter_snart", navn: "Favorit slutter snart", beskrivelse: "En time før en auktion, du har gemt, slutter.", paakraevet: false },
+  { type: "fulgt_slutter_snart", navn: "Auktion slutter snart", beskrivelse: "En time før en auktion, du har gemt som favorit eller budt på, slutter – og om du fører.", paakraevet: false },
   { type: "ny_auktion_fulgt_saelger", navn: "Ny auktion fra en sælger, du følger", beskrivelse: "Når en sælger, du følger, sætter en ny vare til salg.", paakraevet: false },
   { type: "ny_besked", navn: "Nye beskeder", beskrivelse: "Når du får en ny besked i en handel eller fra BidHamr.", paakraevet: false },
   { type: "spoergsmaal", navn: "Spørgsmål til auktioner", beskrivelse: "Når nogen stiller et spørgsmål til din auktion, eller sælgeren svarer på dit spørgsmål.", paakraevet: false },

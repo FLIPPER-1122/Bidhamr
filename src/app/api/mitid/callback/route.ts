@@ -1,4 +1,5 @@
 import { type NextRequest } from "next/server";
+import { sikrHenvisningOptjening } from "@/lib/henvisning/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { klientIp, tjekGraenser } from "@/lib/rateLimit";
@@ -117,6 +118,9 @@ export async function GET(req: NextRequest) {
       if (gemFejl) throw gemFejl;
       return tilAppAfslut(afslut);
     }
+    // Henvis en ven: efter lancering skal optjeningen være startet, før
+    // verificeringen vurderer henvisningen (triggeren i databasen).
+    await sikrHenvisningOptjening();
     const { data, error } = await admin.rpc("mitid_registrer", {
       p_bruger: flow.bruger_id,
       p_hash: idHash,

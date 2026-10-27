@@ -36,6 +36,8 @@ const OFFENTLIGE_RUTER: Record<string, Exclude<Klasse, "login" | "admin-vaert" |
   "/": "aaben",
   "/auktioner": "aaben",
   "/auktion/[id]": "aaben",
+  // Auktionens delebillede (Open Graph) - hentes af Facebook/Messenger uden login.
+  "/auktion/[id]/opengraph-image": "aaben",
   "/profil/[id]": "aaben",
   "/erhvervssaelger/[id]": "aaben",
   "/bidhamr-beskyttelse": "aaben",
@@ -84,6 +86,7 @@ const OFFENTLIGE_RUTER: Record<string, Exclude<Klasse, "login" | "admin-vaert" |
   "/api/konto/adgangskode": "offentlig",
   "/api/konto/glemt": "offentlig",
   "/api/konto/data": "offentlig",
+  "/api/konto/henvisning": "offentlig",
   "/api/konto/email": "offentlig",
   "/api/konto/email/bekraeft": "offentlig",
   "/api/firma/skift-pakke": "offentlig",
@@ -124,6 +127,9 @@ function alleRuter(): string[] {
         gaa(path.join(mappe, e.name), [...dele, ...del]);
       } else if (/^(page|route)\.(tsx?|jsx?)$/.test(e.name)) {
         ud.push("/" + dele.join("/"));
+      } else if (/^(opengraph|twitter)-image\.(tsx?|jsx?)$/.test(e.name)) {
+        // Genererede delebilleder er også route handlers.
+        ud.push("/" + [...dele, e.name.replace(/\.[^.]+$/, "")].join("/"));
       } else if (dele.length === 0 && /^robots\.(ts|js)$/.test(e.name)) {
         ud.push("/robots.txt");
       } else if (dele.length === 0 && /^sitemap\.(ts|js)$/.test(e.name)) {

@@ -42,6 +42,11 @@ Navnene renses som på hjemmesiden: trim, ét mellemrum og højst 100 tegn. Adga
 
 ## POST /api/konto/bekraeft
 
+Valgfrit felt `henvisningskode` (Henvis en ven, `20261102230000_henvis_en_ven.sql`): koden fra et link
+`bidhamr.dk/?ven=KODE`. Knyttes kun til en ny konto; en ugyldig eller ukendt kode ignoreres (samme svar). Se
+docs/APP-ENDPOINTS.md.
+
+
 ```json
 { "email": "ida@example.dk", "kode": "123456", "password": "...", "fornavn": "Ida", "efternavn": "Hansen", "vilkaar_version": "<VILKAAR_VERSION>" }
 ```

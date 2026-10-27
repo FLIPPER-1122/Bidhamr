@@ -162,6 +162,26 @@ Bearer, ingen krop. `200 application/pdf` (uden `format`: `application/json`) me
 Gem med `expo-file-system` og del/vis. `429 vent` = allerede hentet inden for den sidste time (grænsen deles med
 hjemmesiden og `rpc("mine_data")`).
 
+## POST /api/konto/henvisning (Henvis en ven)
+
+Migration `20261102230000_henvis_en_ven.sql`. Samme kald som hjemmesidens `/konto/henvis` (`min_henvisning()`,
+`auth.uid()`). Ingen krop. Grænse: `henvisning_app_ip` (300/time). Første kald laver brugerens kode.
+
+- Firmakonto: `200 { ok: true, kan_henvise: false, grund: "erhverv" }` - vis "Henvis en ven er kun for private".
+- Privat: `200 { ok: true, kan_henvise: true, kode, sti: "/?ven=KODE", url: "https://bidhamr.dk/?ven=KODE",
+  kan_faa_point, grund: null | "spaerret", optjening_aaben (false = før lancering: ingen point endnu), point_pr_ven (10),
+  maks_pr_maaned (10), maaned ("ÅÅÅÅ-MM"), belonnet_denne_maaned, tilbage_denne_maaned, antal_venner, antal_afventer,
+  antal_belonnet, point_i_alt, venner: [{ navn, status, point, oprettet_kl, vurderet_kl }] }`.
+- `navn` er vennens korte visningsnavn ("Kasper K."). `status`: `afventer` (venter på MitID), `belonnet`, `loft`,
+  `firma`, `spaerret`, `foer_lancering`, `samme_person`, `tidligere_konto` (teksterne står i
+  `src/lib/tekster/henvisning.ts`).
+- Del-knappen: systemets delingsmenu (`Share.share`) med `url`. Kopiér: udklipsholderen.
+- **Oprettelse:** åbner appen et link `https://bidhamr.dk/?ven=KODE` (Universal Link / App Link), gemmer appen
+  koden og sender den som `henvisningskode` til `POST /api/konto/bekraeft` (docs/APP-SIGNUP.md). Kun en NY konto
+  knyttes; svaret er det samme, uanset om koden blev brugt.
+- Pointene gives af databasen, når vennen bliver MitID-verificeret (også via appens `/api/mitid/app/afslut`), og
+  står i `mine_point().historik` med `type: "henvisning"` ("Henvist en ven").
+
 ## POST /api/auktion/app/fjern-billeder
 
 `{ auktion_id, stier: string[] }` (højst 20; storage-stier `<bruger-id>/<fil>.jpg` eller de offentlige URL'er) →

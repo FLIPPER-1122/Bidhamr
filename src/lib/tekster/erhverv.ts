@@ -1045,8 +1045,11 @@ export const FIRMA_BETALING = {
   // sat manuelt i admin) i stedet for velkomstrabatten.
   // Nye nøgler: skal kobles på i Firma oversigt -> Abonnement.
   gratisMaaned: (dato: string) => `Din første måned er gratis. Du betaler første gang den ${dato}.`,
+  // til: rabattens slutdato (Stripes discount.end, dansk dato). Konvention for
+  // alle rabatdatoer: "til <dato>" - rabatten gælder til det tidspunkt på
+  // dagen, så "til og med" ville love en dag for meget.
   introrabat: (procent: number, til: string) =>
-    `Du har ${procent} % rabat på dit abonnement til og med ${til}. Derefter betaler du den almindelige pris.`,
+    `Du har ${procent} % rabat på dit abonnement til ${til}. Derefter betaler du den almindelige pris.`,
   ingenGebyr: "Du betaler intet gebyr af dine salg. Du får hele buddet.",
   knapBetal: "Betal for din pakke",
   knapSender: "Sender dig videre …",
@@ -1394,8 +1397,8 @@ export const FIRMA_ABONNEMENT = {
   beloebMedMoms: (ekskl: string, inkl: string) => `${ekskl} + moms (${inkl})`,
   // beloeb fx "999,50 kr. + moms (1.249,38 kr.)". rabat: velkomstSkiftRabat -
   // slags afgør teksten (ikke procenten: en introrabat kan også være 50 %).
-  // intro.til er en dansk dato ("31. marts 2027") eller null, hvis rabatten
-  // ikke er sat på abonnementet endnu.
+  // intro.til er rabattens slutdato fra Stripe (dansk dato, "31. marts 2027" -
+  // samme konvention som introrabat: "til <dato>") eller null uden slutdato.
   bekraeftOpgraderFraGratisMaaned: (
     navn: string,
     beloeb: string,
@@ -1408,15 +1411,32 @@ export const FIRMA_ABONNEMENT = {
     if (rabat.slags === "velkomst") return `${start} (halv pris). Fra næste måned betaler du fuld pris.`;
     if (rabat.slags === "intro") {
       const periode = rabat.til
-        ? `til og med ${rabat.til}`
+        ? `til ${rabat.til}`
         : `i ${rabat.maaneder === 1 ? "1 måned" : `${rabat.maaneder} måneder`}`;
       return `${start} (${rabat.procent} % rabat ${periode}). Derefter betaler du pakkens almindelige pris.`;
     }
     return `${start}. Det er pakkens almindelige pris, og den betaler du også fra næste måned.`;
   },
-  // Skift op fra den gratis måned, mens en aftalt introrabat er ved at blive
-  // sat på abonnementet (opgraderFraVelkomst venter).
-  skiftVenterRabat: "Din rabat er ved at blive sat op. Prøv at skifte pakke igen om lidt. Der er ikke trukket nogen penge.",
+  // Skift op fra den gratis måned (opgraderFraVelkomst) afvist, før noget er
+  // trukket:
+  //  - introrabatten kunne ikke sættes på endnu (fx månedsskifte - op til et døgn)
+  skiftVenterRabat:
+    "Din rabat er ved at blive sat op. Det kan tage op til et døgn. Prøv at skifte pakke igen senere. Der er ikke trukket nogen penge.",
+  //  - introrabatten er lige sat på: prisen er en anden end den viste
+  skiftRabatSatOp:
+    "Din rabat er nu sat op, så prisen er ændret. Se den nye pris, og vælg pakken igen. Der er ikke trukket nogen penge.",
+  //  - rabatten i Stripe og hos os er uenige (staff har fået en alarm)
+  skiftRetRabat: "Vi skal lige rette din rabat. Kontakt os, eller prøv igen senere. Der er ikke trukket nogen penge.",
+  //  - rabatten er ændret, siden siden blev vist
+  skiftPrisAendret:
+    "Prisen er ændret, siden du åbnede siden. Se den nye pris, og vælg pakken igen. Der er ikke trukket nogen penge.",
+  // I bekræftelsen, når der ikke kan vises et beløb (velkomstSkiftUdfald):
+  //  - venter: introrabatten er aftalt, men ikke sat på endnu
+  bekraeftOpgraderVenterRabat:
+    "Din aftalte rabat er ikke sat på dit abonnement endnu. Når du trykker, sætter vi den op først. Der bliver ikke trukket nogen penge nu. Bagefter kan du se prisen og skifte pakke.",
+  //  - ret_rabat: skiftet kan ikke gennemføres lige nu
+  knapSaetRabatOp: "Sæt min rabat op",
+  bekraeftOpgraderRetRabat:"Vi skal lige rette din rabat, før du kan skifte pakke. Kontakt os, eller prøv igen senere.",
   knapSkiftNu: "Skift til denne pakke",
 } as const;
 

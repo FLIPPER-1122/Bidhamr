@@ -1,7 +1,8 @@
-import { type NextRequest } from "next/server";
+import { type NextRequest, type NextResponse } from "next/server";
 import { adminGate, saetAdminHeadere, updateSession } from "@/lib/supabase/middleware";
 import { lavCsp, lavNonce } from "@/lib/csp";
 import { erAdminVaert } from "@/lib/adminVaert";
+import { HENVISNING_COOKIE, HENVISNING_COOKIE_SEK, HENVISNING_PARAM, renHenvisningskode } from "@/lib/henvisning/kode";
 
 export async function proxy(request: NextRequest) {
   // Ny nonce for hver forespoergsel. Den sendes med til renderingen (request-
@@ -22,7 +23,26 @@ export async function proxy(request: NextRequest) {
   const csp = lavCsp(nonce);
   const response = await updateSession(request, { "x-nonce": nonce, "Content-Security-Policy": csp });
   response.headers.set("Content-Security-Policy", csp);
+  gemHenvisning(request, response);
   return response;
+}
+
+// Henvis en ven: et link med ?ven=KODE (fx bidhamr.dk/?ven=KODE) husker
+// koden i en nødvendig cookie, til kontoen er oprettet og e-mailen bekræftet
+// (verificerSignupKode læser og sletter den). Kun en gyldig kode og kun ved
+// GET. Det seneste link vinder, indtil kontoen findes - derefter kan
+// henviseren ikke skiftes (databasen).
+function gemHenvisning(request: NextRequest, response: NextResponse) {
+  if (request.method !== "GET") return;
+  const kode = renHenvisningskode(request.nextUrl.searchParams.get(HENVISNING_PARAM));
+  if (!kode) return;
+  response.cookies.set(HENVISNING_COOKIE, kode, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: request.nextUrl.protocol === "https:",
+    path: "/",
+    maxAge: HENVISNING_COOKIE_SEK,
+  });
 }
 
 // Kun rigtige statiske filer springes over: Next' egne filer, favicon, filerne
