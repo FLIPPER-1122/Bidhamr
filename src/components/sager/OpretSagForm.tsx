@@ -5,7 +5,7 @@
 // Billederne uploades direkte til Storage ved afsendelse, derefter kaldes
 // opretSag() med stierne.
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useId, useRef, useState, type FormEvent } from "react";
 import { opretSag, type SagMuligheder } from "@/app/actions/sager";
 import {
@@ -21,7 +21,6 @@ import BilledVaelger, { KATEGORI_FELTER, useFrigivPreviews, type KategoriFelt } 
 import { uploadBilleder, type ValgtBillede } from "./sagUpload";
 import { sagTid } from "./visning";
 import { useHydreret } from "@/lib/useHydreret";
-import { SAG_REFUSION_NY } from "@/lib/tekster/beskyttelse";
 
 // Korte forklaringer under hver type.
 const TYPE_HJAELP: Record<SagType, string> = {
@@ -29,6 +28,7 @@ const TYPE_HJAELP: Record<SagType, string> = {
   skadet: "Varen er gået i stykker under forsendelsen.",
   ikke_som_beskrevet: "Varen er tydeligt anderledes end beskrevet i auktionen.",
   svindel: "Fx en tom pakke, en helt anden vare, en falsk kopi eller en vare, der aldrig er sendt.",
+  andet: "Noget andet. Forklar det med dine egne ord - BidHamr finder ud af resten.",
 };
 
 export default function OpretSagForm({
@@ -49,7 +49,9 @@ export default function OpretSagForm({
 }) {
   const router = useRouter();
   const id = useId();
-  const [aaben, setAaben] = useState(false);
+  // Linket i beskeden "Pakken er leveret" (?meld=problem) åbner formularen.
+  const soeg = useSearchParams();
+  const [aaben, setAaben] = useState(soeg?.get("meld") === "problem");
   const [type, setType] = useState<SagType | "">(
     muligheder.typer.length === 1 ? muligheder.typer[0] : "",
   );
@@ -83,6 +85,8 @@ export default function OpretSagForm({
     ? SAG_KRAEVEDE_KATEGORIER.filter((k) => !billeder.some((b) => b.kategori === k))
     : [];
   const tekstLaengde = beskrivelse.trim().length;
+  const hvisRet = type ? (muligheder.valg.find((v) => v.type === type)?.hvisDuFaarRet ?? null) : null;
+  void nyPrismodel;
 
   async function send(e: FormEvent) {
     e.preventDefault();
@@ -189,10 +193,11 @@ export default function OpretSagForm({
           Der er et problem med min vare
         </h2>
         <p className="mt-1 text-sm text-tekst-daempet">
-          Pengene sættes på pause, mens BidHamr ser på sagen.
+          Sælgeren får ikke pengene, mens sagen kører.
           {muligheder.fristKl && <> Frist: {sagTid(muligheder.fristKl)}.</>}
         </p>
-        {nyPrismodel && <p className="mt-1 text-sm text-tekst-daempet">{SAG_REFUSION_NY}</p>}
+        {/* "Hvis du får ret" for den valgte type (src/lib/tekster/sagValg.ts). */}
+        {hvisRet && <p className="mt-1 text-sm text-tekst-daempet">{hvisRet}</p>}
         {beskyttelseInfo && <div className="mt-4">{beskyttelseInfo}</div>}
         <form onSubmit={send} method="post" className="mt-5 space-y-6" noValidate>
           <fieldset>
@@ -251,7 +256,7 @@ export default function OpretSagForm({
             <h3 className="text-sm font-semibold text-tekst">Billeder</h3>
             <p className="mb-3 mt-1 text-sm text-tekst-daempet">
               {billederKraeves
-                ? "Tag billeder af pakken, labelen og indholdet. De bruges til at vurdere sagen."
+                ? "Tag et billede af pakken med labelen og et af indholdet. De bruges til at vurdere sagen."
                 : "Har du billeder, der viser problemet, så tilføj dem gerne."}
             </p>
             <BilledVaelger

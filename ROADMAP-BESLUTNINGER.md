@@ -632,3 +632,14 @@ Alle fire skal være færdige før lanceringen, på både hjemmesiden og i appen
 - **Ansvarsforbehold for botten (Filip, 27. okt. 2026):** dens svar er vejledende, og det er reglerne og handelsbetingelserne, der gælder.
 
 Tips til gode billeder er fravalgt (Filip, 27. okt. 2026).
+
+## Køb af boost-point i appen (Filip, 27. okt. 2026)
+- Apple (App Store-reglerne 3.1.1 og 3.1.3(g)) og Google Play kræver deres egen betaling for digitale varer som boost-point.
+- **I appen** købes boost-point derfor via **Apple In-App Purchase og Google Play Billing**. Pakkerne er de samme som på hjemmesiden (100/300/700 point). Kun private kan købe; firmaer kan ikke bruge boost.
+- **På bidhamr.dk** købes de fortsat via Stripe, uændret.
+- Appen må ikke nævne, at det er billigere på hjemmesiden, og må ikke linke dertil for at købe.
+- Point købt i appen udløber aldrig (Apple 3.1.1).
+- Refunderer Apple eller Google et køb, trækkes pointene tilbage. Er de allerede brugt, kan saldoen gå i minus, og chefen får besked.
+- Apple og Google er sælger over for køberen ved køb i appen. De opkræver moms og udsteder kvitteringen, og BidHamr får beløbet efter gebyr: 15 % med Apples Small Business Program og 15 % hos Google. Bogføres som omsætning via Apple og Google (spørg revisoren).
+- **Firmaabonnement og Ugens butik kan ikke købes i appen.** Appen viser kun firmaets pakke, kvote og status. Teksterne "Se pakkerne", "Skift pakke på bidhamr.dk" og "Book en uge på bidhamr.dk" fjernes fra appen (Filip, 27. okt. 2026).
+- Stripe bruges fortsat i appen til fysiske handler: varen, købergebyr, BidHamr Beskyttelse og fragt.

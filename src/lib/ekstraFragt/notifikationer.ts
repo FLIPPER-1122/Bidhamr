@@ -24,6 +24,7 @@ import { send, type NotifikationInput } from "@/lib/notifikationer/send";
 import { sagSti } from "@/lib/sager";
 import { kroner } from "@/lib/kroner";
 import { EKSTRA_FRAGT_PAAMIND_DAGE, STOERRELSE_NAVN, type EkstraFragtStatus } from "@/lib/ekstraFragt/tekster";
+import { erReturfragtRegning } from "@/lib/ekstraFragt/visning";
 
 const DAG = 24 * 3600 * 1000;
 const MAKS = 300;
@@ -95,7 +96,13 @@ export function ekstraFragtBeskeder(r: EkstraFragtBeskedRaekke, nu: number = Dat
   // refunderet, før beskeden blev sendt (så sælgeren ikke først får "betal" og
   // straks efter "frafaldet"/"tak"). Kun første runde (en genåbning har sin
   // egen besked).
-  if (runde === 0 && (r.status === "afventer_betaling" || r.status === "behandles" || r.status === "indsigelse")) op(
+  const returfragt = erReturfragtRegning(r);
+  if (returfragt && runde === 0 && (r.status === "afventer_betaling" || r.status === "behandles" || r.status === "indsigelse")) op(
+    "oprettet",
+    "Returfragt: varen er sendt retur til dig",
+    `Varen blev skadet under fragten, og billederne viser, at den ikke var pakket forsvarligt. Køberen har fået medhold og har sendt varen retur til dig. Som sælger betaler du returfragten på ${beloeb}. Betal på handlen senest ${dato(r.frist)}. Er du uenig, kan du gøre indsigelse én gang på handlen inden fristen. Betaler du ikke inden fristen, kan du ikke oprette nye auktioner, før beløbet er betalt.`,
+  );
+  else if (runde === 0 && (r.status === "afventer_betaling" || r.status === "behandles" || r.status === "indsigelse")) op(
     "oprettet",
     "Ekstra fragt: din pakke var større end den valgte størrelse",
     `Fragtfirmaet har målt en pakke, du har sendt. Du valgte ${valgt}${maalt ? `, men fragtfirmaet målte pakken til ${maalt}` : ", men pakken var større eller tungere"}. Derfor har fragtfirmaet opkrævet ekstra. Forskellen er ${beloeb}. Den betaler du som sælger. Betal på handlen senest ${dato(r.frist)}. Dér kan du også se fragtfirmaets dokumentation. Mener du, at målingen er forkert, kan du gøre indsigelse én gang på handlen inden fristen. Betaler du ikke inden fristen, kan du ikke oprette nye auktioner, før beløbet er betalt.`,
@@ -115,8 +122,10 @@ export function ekstraFragtBeskeder(r: EkstraFragtBeskedRaekke, nu: number = Dat
   if (r.status === "afventer_betaling" && nu < frist && nu - start >= EKSTRA_FRAGT_PAAMIND_DAGE * DAG) {
     op(
       runde === 0 ? "paamind" : `paamind:${runde}`,
-      "Husk at betale for ekstra fragt",
-      `Du mangler at betale ${beloeb} for ekstra fragt, fordi pakken var større eller tungere end den størrelse, du valgte. Fristen er ${dato(r.frist)}. Du betaler på handlen.${r.afgoerelse ? "" : " Mener du, at målingen er forkert, kan du gøre indsigelse dér."} Betaler du ikke inden fristen, kan du ikke oprette nye auktioner, før beløbet er betalt.`,
+      returfragt ? "Husk at betale returfragten" : "Husk at betale for ekstra fragt",
+      returfragt
+        ? `Du mangler at betale returfragten på ${beloeb} for varen, der blev sendt retur til dig. Fristen er ${dato(r.frist)}. Du betaler på handlen. Betaler du ikke inden fristen, kan du ikke oprette nye auktioner, før beløbet er betalt.`
+        : `Du mangler at betale ${beloeb} for ekstra fragt, fordi pakken var større eller tungere end den størrelse, du valgte. Fristen er ${dato(r.frist)}. Du betaler på handlen.${r.afgoerelse ? "" : " Mener du, at målingen er forkert, kan du gøre indsigelse dér."} Betaler du ikke inden fristen, kan du ikke oprette nye auktioner, før beløbet er betalt.`,
     );
   }
 

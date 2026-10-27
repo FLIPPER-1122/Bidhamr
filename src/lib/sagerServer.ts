@@ -10,13 +10,18 @@ import { refunderBetaling } from "@/lib/betaling/stripeBetaling";
 import { pengeTilSaelger } from "@/lib/betaling/udbetaling";
 import { sendSaelgerAfregning } from "@/lib/betaling/handelsbeskeder";
 import {
+  SAG_PROBLEM_PAAMIND_TIMER_FOER,
   SAG_RETUR_VENTETID_DAGE,
+  SAG_SVAR_PAAMIND_TIMER_FOER,
   SAG_TYPE_NAVN,
   type SagPengeHandling,
   type SagType,
   erSagType,
   sagLink,
+  sagSti,
+  sagSvarFristKl,
 } from "@/lib/sager";
+import { SAG_TYPER_HELE_BELOEBET } from "@/lib/betaling/beregn";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -55,7 +60,12 @@ async function betalingModel(
 // / beregn.ts sagRefusionOere): ny prismodel = kun buddet; gammel med tilkøbt
 // BidHamr Beskyttelse = alt undtagen Beskyttelsen; ellers alle pengene.
 // Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
-function refusionTekster(h: { beskyttelse: boolean; prismodel: Prismodel }): { hvad: string; note: string } {
+// 20261102210000 (Filip, 27. okt. 2026): bortkommet pakke og transportskade =
+// hele beløbet (bud, gebyr og fragt) for alle modeller.
+function refusionTekster(h: { beskyttelse: boolean; prismodel: Prismodel }, type?: SagType | null): { hvad: string; note: string } {
+  if (type && (SAG_TYPER_HELE_BELOEBET as readonly string[]).includes(type)) {
+    return { hvad: "hele beløbet – bud, gebyr og fragt", note: "" };
+  }
   if (erNyPrivatPrismodel(h.prismodel)) return { hvad: "prisen for varen (dit bud)", note: " Gebyr og fragt får du ikke tilbage." };
   if (h.prismodel === "gammel" && h.beskyttelse) {
     return { hvad: "pengene for varen, gebyret og fragten", note: " Prisen for BidHamr Beskyttelse får du ikke tilbage." };
@@ -63,6 +73,32 @@ function refusionTekster(h: { beskyttelse: boolean; prismodel: Prismodel }): { h
   // Erhverv (ingen BidHamr Beskyttelse) og gamle handler uden Beskyttelse.
   // Samme ord i admin (refusionHvadTekst i SagHandlinger.tsx).
   return { hvad: "alle pengene", note: "" };
+}
+
+// Hvem betaler returfragten (sager.returfragt_betaler, 20261102210000)?
+export type ReturfragtBetaler = "koeber" | "saelger" | "bidhamr" | null;
+
+export function returfragtTekster(b: ReturfragtBetaler): { koeber: string; saelger: string } {
+  if (b === "saelger") {
+    return {
+      koeber: "Du betaler ikke returfragten.",
+      saelger:
+        "Du betaler returfragten, fordi varen ikke var pakket forsvarligt. Du får en regning med en betalingsknap, når returpakken er afleveret.",
+    };
+  }
+  if (b === "bidhamr") {
+    return { koeber: "Du betaler ikke returfragten.", saelger: "BidHamr betaler returfragten." };
+  }
+  return { koeber: "Du betaler selv returfragten.", saelger: "Køberen betaler selv returfragten." };
+}
+
+async function sagReturfragtBetaler(admin: Admin, sagId: string): Promise<ReturfragtBetaler> {
+  const { data } = await admin
+    .from("sager")
+    .select("returfragt_betaler")
+    .eq("id", sagId)
+    .maybeSingle<{ returfragt_betaler: ReturfragtBetaler }>();
+  return data?.returfragt_betaler ?? null;
 }
 
 // Tidspunkt til beskeder, fx "tirsdag den 7. oktober kl. 14.05". Fast
@@ -91,24 +127,29 @@ export async function notificerSagOprettet(sagId: string): Promise<boolean> {
       .update({ notificeret_kl: new Date().toISOString() })
       .eq("id", sagId)
       .is("notificeret_kl", null)
-      .select("id, trade_id, type")
-      .maybeSingle<{ id: string; trade_id: string; type: string }>();
+      .select("id, trade_id, type, oprettet_kl")
+      .maybeSingle<{ id: string; trade_id: string; type: string; oprettet_kl: string }>();
     if (!sag || !erSagType(sag.type)) return false;
     const h = await handelOgTitel(admin, sag.trade_id);
     if (!h) return false;
     const hvad = SAG_TYPE_NAVN[sag.type].toLowerCase();
     const link = sagLink(sag.trade_id);
     const data = { trade_id: sag.trade_id, sag_id: sag.id };
+    // Sælgerens frist for at give sin forklaring (regel 3, 48 timer).
+    const svarFrist = sagSvarFristKl(sag.oprettet_kl);
+    const svarTekst = svarFrist
+      ? ` Du kan give din forklaring med tekst og billeder på sagen til ${sagFristTekst(svarFrist)}.`
+      : "";
     await send(h.buyer_id, "sag", {
-      titel: "Din sag er oprettet",
-      tekst: `Vi har modtaget din sag om "${h.titel}" (${hvad}). Sælgeren får ikke pengene udbetalt, mens BidHamr kigger på sagen. Vi vender tilbage hurtigst muligt.`,
+      titel: "Tak – vi har fået din sag",
+      tekst: `Vi har fået din sag om "${h.titel}" (${hvad}). Sælgeren får ikke pengene, mens BidHamr ser på sagen. Du får besked, når der sker noget.`,
       link,
       data,
       noegle: `sag_oprettet_koeber:${sag.id}`,
     });
     await send(h.seller_id, "sag", {
-      titel: "Køberen har oprettet en sag",
-      tekst: `Køberen har oprettet en sag om "${h.titel}" (${hvad}). Udbetalingen venter, til BidHamr har afgjort sagen.`,
+      titel: "Køberen har meldt et problem",
+      tekst: `Køberen har meldt et problem med "${h.titel}" (${hvad}). BidHamr ser på sagen. Du får ikke pengene, før sagen er afgjort. Dine billeder af indpakningen er lagt ved sagen.${svarTekst}`,
       link,
       data,
       noegle: `sag_oprettet_saelger:${sag.id}`,
@@ -211,7 +252,8 @@ export async function notificerSagAfgoerelse(
     const ankefrist = dato ? ` ${dato}` : " om 4 dage";
     // Det køberen får tilbage ved medhold. Returfragten betaler køberen selv
     // direkte til fragtfirmaet - den trækkes ikke fra refusionen.
-    const { hvad, note: beskyttelseNote } = refusionTekster(h);
+    const { hvad, note: beskyttelseNote } = refusionTekster(h, type);
+    const rf = returfragtTekster(await sagReturfragtBetaler(admin, sagId));
 
     const tekster: Record<SagUdfaldBesked, { koeber: [string, string]; saelger: [string, string] }> = {
       planlagt_refusion: {
@@ -223,12 +265,12 @@ export async function notificerSagAfgoerelse(
       // eller til BidHamr giver besked (ankens afgørelse) - ellers kunne en
       // omgørelse give sælgeren både varen og pengene.
       afvent_retur: {
-        koeber: ["Du har fået medhold i din sag", `BidHamr har afgjort sagen om "${t}" til din fordel. Sælgeren kan anke afgørelsen inden for 4 dage. Vent med at sende varen retur, til ankefristen er udløbet${ankefrist}, eller til BidHamr giver dig besked. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage${forbehold}.${beskyttelseNote}${grund}`],
-        saelger: ["Varen sendes retur", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Er du uenig, kan du anke afgørelsen inden for 4 dage. Køberen sender varen retur til dig, når ankefristen er udløbet${ankefrist}, og betaler selv returfragten. Når pakken er afleveret, får køberen pengene tilbage${forbehold}.${grund}`],
+        koeber: ["Du har fået medhold i din sag", `BidHamr har afgjort sagen om "${t}" til din fordel. Sælgeren kan anke afgørelsen inden for 4 dage. Vent med at sende varen retur, til ankefristen er udløbet${ankefrist}, eller til BidHamr giver dig besked. ${rf.koeber} Når pakken er afleveret, får du ${hvad} tilbage${forbehold}.${beskyttelseNote}${grund}`],
+        saelger: ["Varen sendes retur", `BidHamr har afgjort sagen om "${t}" til køberens fordel. Er du uenig, kan du anke afgørelsen inden for 4 dage. Køberen sender varen retur til dig, når ankefristen er udløbet${ankefrist}. ${rf.saelger} Når pakken er afleveret, får køberen pengene tilbage${forbehold}.${grund}`],
       },
       retur_kan_sendes: {
-        koeber: ["Send varen retur nu", `Ankefristen i sagen om "${t}" er udløbet. Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote} ${RETUR_FRIST_NOTE}`],
-        saelger: ["Køberen sender varen retur", `Ankefristen i sagen om "${t}" er udløbet. Køberen sender nu varen retur til dig og betaler selv returfragten.`],
+        koeber: ["Send varen retur nu", `Ankefristen i sagen om "${t}" er udløbet. Send varen retur til sælgeren nu. ${rf.koeber} Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote} ${RETUR_FRIST_NOTE}`],
+        saelger: ["Køberen sender varen retur", `Ankefristen i sagen om "${t}" er udløbet. Køberen sender nu varen retur til dig. ${rf.saelger}`],
       },
       planlagt_frigivelse: {
         koeber: ["Sagen er afgjort", `BidHamr har afgjort sagen om "${t}" til sælgerens fordel. Pengene udbetales til sælgeren${tidligst}${forbehold}.${grund}`],
@@ -557,7 +599,14 @@ export async function notificerAnkeAfgjort(
     const t = h.titel;
     const grund = begrundelse ? ` Begrundelse: ${begrundelse}` : "";
     const endelig = "Afgørelsen er endelig.";
-    const { hvad, note: beskyttelseNote } = refusionTekster(h);
+    const { data: sagRaekke } = await admin
+      .from("sager")
+      .select("type, returfragt_betaler")
+      .eq("id", sagId)
+      .maybeSingle<{ type: string; returfragt_betaler: ReturfragtBetaler }>();
+    const sagType = sagRaekke && erSagType(sagRaekke.type) ? sagRaekke.type : null;
+    const { hvad, note: beskyttelseNote } = refusionTekster(h, sagType);
+    const rf = returfragtTekster(sagRaekke?.returfragt_betaler ?? null);
 
     // Kun "nu", når pengene faktisk er flyttet. Ellers en tekst uden tidspunkt.
     const returFristNote = RETUR_FRIST_NOTE;
@@ -576,8 +625,8 @@ export async function notificerAnkeAfgjort(
               }
             : { koeber: "", saelger: "" },
       koeber_retur: {
-        koeber: `Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote} ${returFristNote}`,
-        saelger: "Køberen sender varen retur til dig og betaler selv returfragten. Når pakken er afleveret, får køberen pengene tilbage.",
+        koeber: `Send varen retur til sælgeren nu. ${rf.koeber} Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote} ${returFristNote}`,
+        saelger: `Køberen sender varen retur til dig. ${rf.saelger} Når pakken er afleveret, får køberen pengene tilbage.`,
       },
       lukket: {
         koeber: "Sagen forbliver lukket, og handlen fortsætter som normalt.",
@@ -674,4 +723,119 @@ export async function afviklForfaldneSager(): Promise<number> {
   const liste = (Array.isArray(data) ? data : []) as SagAfvikling[];
   for (const a of liste) await udfoerSagAfvikling(a);
   return liste.length;
+}
+
+// ------------------------------------------------------------------ Sælgerens svar (regel 3)
+
+// Sælgeren har svaret på sagen: besked til køberen (påkrævet type 'sag'), med
+// fast nøgle pr. sag. Svaret ses også af staff i admin. Kaster aldrig.
+export async function notificerSagSvar(sagId: string): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data: sag } = await admin
+      .from("sager")
+      .select("id, trade_id")
+      .eq("id", sagId)
+      .maybeSingle<{ id: string; trade_id: string }>();
+    if (!sag) return false;
+    const h = await handelOgTitel(admin, sag.trade_id);
+    if (!h) return false;
+    const r = await send(h.buyer_id, "sag", {
+      titel: "Sælgeren har svaret på din sag",
+      tekst: `Sælgeren har givet sin forklaring i sagen om "${h.titel}". Du kan læse den på sagen. BidHamr læser den, før sagen afgøres.`,
+      link: sagLink(sag.trade_id),
+      data: { trade_id: sag.trade_id, sag_id: sag.id },
+      noegle: `sag_svar_koeber:${sag.id}`,
+    });
+    return leveret(r);
+  } catch (err) {
+    console.error("Notifikation om sælgerens svar fejlede:", sagId, err);
+    return false;
+  }
+}
+
+// Cron: påmindelse til sælgeren 12 timer før svarfristen (sælgeren har ikke
+// svaret, sagen er åben). Fast nøgle pr. sag - sendes højst én gang.
+export async function paamindSaelgereOmSvar(): Promise<number> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("sag_svar_paamind_kandidater", { p_timer: SAG_SVAR_PAAMIND_TIMER_FOER });
+  if (error) {
+    // Før migrationen 20261102210000 findes funktionen ikke.
+    if (error.code === "PGRST202" || error.code === "42883") return 0;
+    console.error("sag_svar_paamind_kandidater fejlede:", error.message);
+    return 0;
+  }
+  let antal = 0;
+  for (const k of (data ?? []) as { sag_id: string; trade_id: string; saelger_id: string; frist_kl: string }[]) {
+    const h = await handelOgTitel(admin, k.trade_id);
+    if (!h) continue;
+    const r = await send(
+      k.saelger_id,
+      "sag",
+      {
+        titel: "Husk at give din forklaring",
+        tekst: `Køberen har meldt et problem med "${h.titel}". Du kan give din forklaring med tekst og billeder til ${sagFristTekst(k.frist_kl)}. Derefter afgør BidHamr sagen ud fra billederne og det, der er skrevet.`,
+        link: sagLink(k.trade_id),
+        data: { trade_id: k.trade_id, sag_id: k.sag_id },
+        noegle: `sag_svar_paamind:${k.sag_id}`,
+      },
+      { springOverVedClaimFejl: true },
+    );
+    if (!r.dublet && !r.sprunget && (r.klokke || r.mail || r.push)) antal++;
+  }
+  return antal;
+}
+
+// ------------------------------------------------------------------ Fristen for at melde et problem (regel 5)
+
+// Tid tilbage som tekst, fx "1 dag og 4 timer" / "5 timer" / "under en time".
+export function tidTilbageTekst(fristIso: string, nu: number = Date.now()): string {
+  const ms = Date.parse(fristIso) - nu;
+  if (Number.isNaN(ms) || ms <= 0) return "ingen tid";
+  const timer = Math.floor(ms / 3_600_000);
+  if (timer < 1) return "under en time";
+  const dage = Math.floor(timer / 24);
+  const rest = timer % 24;
+  const t = (n: number) => `${n} ${n === 1 ? "time" : "timer"}`;
+  if (dage === 0) return t(timer);
+  const d = `${dage} ${dage === 1 ? "dag" : "dage"}`;
+  return rest === 0 ? d : `${d} og ${t(rest)}`;
+}
+
+// Link direkte til trin 1 i "Meld et problem" på handelssiden.
+export function meldProblemLink(tradeId: string): string {
+  return `${sagSti(tradeId)}?meld=problem#sag`;
+}
+
+// Cron: påmindelse til køberen 6 timer før fristen (ingen sag, ikke godkendt,
+// ikke frigivet). Fast nøgle pr. handel og frist - sendes højst én gang.
+export async function paamindKoebereOmProblemFrist(): Promise<number> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("handel_problem_frist_paamind_kandidater", {
+    p_timer: SAG_PROBLEM_PAAMIND_TIMER_FOER,
+  });
+  if (error) {
+    if (error.code === "PGRST202" || error.code === "42883") return 0;
+    console.error("handel_problem_frist_paamind_kandidater fejlede:", error.message);
+    return 0;
+  }
+  let antal = 0;
+  for (const k of (data ?? []) as { trade_id: string; buyer_id: string; auction_id: string; frist_kl: string }[]) {
+    const { data: a } = await admin.from("auctions").select("titel").eq("id", k.auction_id).maybeSingle<{ titel: string | null }>();
+    const titel = a?.titel ?? "din vare";
+    const r = await send(
+      k.buyer_id,
+      "pakke_leveret",
+      {
+        titel: "Er alt i orden med varen?",
+        tekst: `Du har ${tidTilbageTekst(k.frist_kl)} til at melde et problem med "${titel}" – senest ${sagFristTekst(k.frist_kl)}. Gem pakken og labelen indtil da. Er alt i orden, så godkend varen. Så får sælgeren sine penge.`,
+        link: meldProblemLink(k.trade_id),
+        data: { trade_id: k.trade_id },
+        noegle: `problem_frist_paamind:${k.trade_id}:${Date.parse(k.frist_kl)}`,
+      },
+      { springOverVedClaimFejl: true },
+    );
+    if (!r.dublet && !r.sprunget && (r.klokke || r.mail || r.push)) antal++;
+  }
+  return antal;
 }

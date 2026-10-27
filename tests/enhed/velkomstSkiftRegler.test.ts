@@ -12,6 +12,7 @@ import {
   velkomstVisning,
   oereMedRabat,
 } from "@/lib/erhverv/abonnementRegler";
+import { dbRangStoerre, erOpgraderingTil } from "@/lib/erhverv/regler";
 
 describe("tolkVelkomstVisning: en sendt, men ugyldig visning bliver aldrig stille til null", () => {
   it("mangler: null (serveren afgør, om den er krævet)", () => {
@@ -30,14 +31,13 @@ describe("tolkVelkomstVisning: en sendt, men ugyldig visning bliver aldrig still
   });
 });
 
-describe("erVelkomstSkiftTil: samme regel som siden (PakkeValg.fraVelkomst)", () => {
-  const basis = { iVelkomstMaaned: true, stoerre: true, maaned1: "halv", maanedsprisKr: 999 };
+describe("erVelkomstSkiftTil: samme regel som serveren (skiftIGratisPeriode) og siden (PakkeValg.fraVelkomst)", () => {
+  const basis = { iVelkomstMaaned: true, stoerre: true, maaned1: "halv" };
   it("skift op til Butik/Pro i velkomstmåneden", () => expect(erVelkomstSkiftTil(basis)).toBe(true));
-  it("ikke uden for velkomstmåneden, ikke ned, ikke til en gratis pakke, ikke uden pris", () => {
+  it("ikke uden for velkomstmåneden, ikke ned, ikke til en gratis pakke", () => {
     expect(erVelkomstSkiftTil({ ...basis, iVelkomstMaaned: false })).toBe(false);
     expect(erVelkomstSkiftTil({ ...basis, stoerre: false })).toBe(false);
     expect(erVelkomstSkiftTil({ ...basis, maaned1: "gratis" })).toBe(false);
-    expect(erVelkomstSkiftTil({ ...basis, maanedsprisKr: null })).toBe(false);
   });
   it("maaned1 ukendt (migration ikke kørt): som 'halv'", () => {
     expect(erVelkomstSkiftTil({ ...basis, maaned1: undefined })).toBe(true);
@@ -86,6 +86,53 @@ describe("velkomstSkiftTilbud: det appen viser er det serveren trækker", () => 
   it("ret_rabat: intet beløb og ingen knap", () => {
     const u = udfald({ abonnement: { introer: [], andre: 1, introNoegle: null } });
     expect(velkomstSkiftTilbud(u, 999)).toEqual({ udfald: "ret_rabat", visning: "ret_rabat", rabat: null, beloeb: null, kanSkifte: false });
+  });
+  it("pakken har ingen pris: stadig et skift op fra den gratis måned (visning), men intet beløb og ingen knap", () => {
+    expect(velkomstSkiftTilbud(udfald(), null)).toEqual({
+      udfald: "skift",
+      visning: "velkomst:50",
+      rabat: null,
+      beloeb: null,
+      kanSkifte: false,
+    });
+    const venter = udfald({ aftale: { status: "planlagt", procent: 30, maaneder: 3, kuponId: null, noegle: "n", gaelder: true } });
+    expect(velkomstSkiftTilbud(venter, null).kanSkifte).toBe(false);
+  });
+});
+
+describe("dbRangStoerre: som Postgres' > på erhverv_pakke_rang (numeric[])", () => {
+  it("element for element", () => {
+    expect(dbRangStoerre([100, 4, 1999], [10, 0, 499])).toBe(true);
+    expect(dbRangStoerre([10, 0, 499], [100, 4, 1999])).toBe(false);
+    expect(dbRangStoerre([10, 5, 0], [10, 4, 9999])).toBe(true);
+    expect(dbRangStoerre([10, 4, 1999], [10, 4, 1999])).toBe(false);
+  });
+  it("pris null er 0 i databasen (coalesce): en pakke uden pris med flere auktioner er stadig større", () => {
+    expect(dbRangStoerre([100, 4, 0], [10, 0, 499])).toBe(true);
+  });
+  it("tal som tekst (numeric fra PostgREST) og NULL størst", () => {
+    expect(dbRangStoerre(["1000000000", "0", "0"], ["100", "4", "1999"])).toBe(true);
+    expect(dbRangStoerre([10, null, 0], [10, 4, 0])).toBe(true);
+    expect(dbRangStoerre([10, 4, 0], [10, null, 0])).toBe(false);
+  });
+  it("ukendt pakke eller ugyldig værdi kaster (appen må ikke gætte)", () => {
+    expect(() => dbRangStoerre(null, [1])).toThrow();
+    expect(() => dbRangStoerre(["x"], [1])).toThrow();
+  });
+});
+
+describe("erOpgraderingTil: siden afgør op/ned som databasen", () => {
+  const start = { auktioner_pr_maaned: 10, fremhaevninger_pr_maaned: 0, maanedspris: 499 };
+  const pro = { auktioner_pr_maaned: 100, fremhaevninger_pr_maaned: 4, maanedspris: 1999 };
+  it("større pakke er op, mindre er ned", () => {
+    expect(erOpgraderingTil(pro, start)).toBe(true);
+    expect(erOpgraderingTil(start, pro)).toBe(false);
+  });
+  it("en arkiveret nuværende pakke er mindst (firma_skift_pakke_server)", () => {
+    expect(erOpgraderingTil(start, { ...pro, arkiveret: true })).toBe(true);
+  });
+  it("pris null: rangen afgør (som coalesce(maanedspris, 0))", () => {
+    expect(erOpgraderingTil({ ...pro, maanedspris: null }, start)).toBe(true);
   });
 });
 

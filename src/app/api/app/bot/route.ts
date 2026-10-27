@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { FOR_MANGE_FORSOEG, klientIp, tjekGraenser } from "@/lib/rateLimit";
+import { FOR_MANGE_FORSOEG, klientIpNoegle, tjekGraenser } from "@/lib/rateLimit";
 import { APP_IKKE_LOGGET_IND, APP_UGYLDIG, appSvar, fremmedOrigin, laesJsonKrop } from "@/lib/appApi";
 import { BOT_LOFT_PR_DOEGN, BOT_MAKS_TEGN, laesBotInput } from "@/lib/bot/konfig";
 import { BOT_IKKE_TILGAENGELIG, startBotSvar } from "@/lib/bot/motor";
@@ -39,7 +39,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   if (fremmedOrigin(req)) return appSvar(403, { fejl: "Ugyldig forespørgsel.", kode: "ikke_tilladt" });
 
-  const ip = await klientIp();
+  // IPv6 pr. /64 (src/lib/ipNoegle.ts).
+  const ip = await klientIpNoegle();
   if (!(await tjekGraenser([["bot_ip", ip]]))) return appSvar(429, { fejl: FOR_MANGE_FORSOEG, kode: "for_mange" });
 
   const login = await appBotLogin(req);

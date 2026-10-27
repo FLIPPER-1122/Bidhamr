@@ -127,6 +127,17 @@ Kun du selv og vores medarbejdere kan se navnet og fødselsdatoen fra MitID. Du 
 - **Fragtfirma** [TODO Filip: ikke i drift endnu]: når fragtintegrationen er på plads, sender vi de oplysninger, der skal til for at sende pakken – fx sælgerens og købers navn, købers pakkeshop, e-mail og telefonnummer – til fragtfirmaet DAO (Dansk Avis Omdeling A/S) [TODO: i testperioden går det via Shipmondo; når DAO-aftalen er i drift, sendes det direkte til DAO].
 - **Regnskabsprogram** [TODO Filip: ikke i drift endnu]: fakturaer på BidHamrs gebyrer laves i et regnskabsprogram (sandsynligvis Dinero).
 
+### 3.12 BidHamr-bot (AI-chat)
+
+På hjemmesiden og i appen kan du stille spørgsmål til BidHamr-bot. Det er en AI – ikke et menneske – og det står øverst i chatten. Svarene er vejledende; det er BidHamrs regler og handelsbetingelser, der gælder.
+
+- **Det gemmer vi**: dine beskeder til botten og bottens svar, hvornår de er skrevet, om samtalen er fra hjemmesiden eller appen, og – hvis du er logget ind – din konto. Er du ikke logget ind og beder om en medarbejder, gemmer vi også den e-mail, du skriver. Vi gemmer desuden en sløret kode for din IP-adresse (en HMAC-hash med en hemmelig nøgle – aldrig selve adressen) til grænsen for antal beskeder pr. døgn.
+- **Dine egne data**: er du logget ind, kan botten slå dine egne handler, auktioner, bud og sager op, når du spørger om dem. Den kan ikke se andres data og kan ikke ændre noget.
+- **Anthropic**: beskederne og de oplysninger, botten slår op, sendes til vores leverandør Anthropic PBC (USA), som laver svaret (se afsnit 6.3 og 7). Anthropic bruger ikke oplysningerne til at træne sine modeller. [TODO Filip: bekræft i Anthropics vilkår og databehandleraftale (Commercial Terms/DPA), at API-data ikke bruges til træning, og hvor længe Anthropic selv gemmer dem.]
+- **Kontakt en rigtig medarbejder**: trykker du på knappen, sendes samtalen til vores medarbejdere som en henvendelse.
+- **Skriv ikke** adgangskoder, kortnumre, CPR-numre eller andre følsomme oplysninger i chatten.
+- Hvor længe: se afsnit 8.
+
 ---
 
 ## 4. Hvorfor behandler vi oplysningerne, og hvad er retsgrundlaget?
@@ -145,6 +156,7 @@ Kun du selv og vores medarbejdere kan se navnet og fødselsdatoen fra MitID. Du 
 | Bekræfte din identitet med MitID: 18 år, én konto pr. person og at lukkede svindlere ikke kommer igen | Navn, fødselsdato og sløret MitID-id fra MitID | Aftale – litra b (det er en betingelse for at byde og sælge), og legitim interesse i at forebygge svindel og dobbeltkonti – litra f [ADVOKAT] |
 | Fejlfinding og drift | Fejllog, tekniske logs | Legitim interesse – litra f |
 | Besvare henvendelser | Kontaktformular, e-mail | Legitim interesse – litra f (og aftale, hvis det handler om en handel) |
+| BidHamr-bot: svare på spørgsmål om BidHamr og dine egne handler, sende samtalen til en medarbejder, når du beder om det, og begrænse misbrug (grænse pr. døgn) | Beskeder til og fra botten, dine egne handler, auktioner, bud og sager (kun når du spørger), e-mail (uden login), sløret IP-kode | Legitim interesse – litra f (hurtig hjælp og at forhindre misbrug), og aftale – litra b, når det handler om dine egne handler [ADVOKAT: se noter-til-advokat.md nr. 140] |
 | Venteliste | E-mail | [ADVOKAT: samtykke – litra a – eller legitim interesse?] |
 | Push-beskeder på telefonen | Push-token | Samtykke – litra a (du siger ja i telefonens indstillinger og kan slå det fra der) |
 | Cookies, der ikke er nødvendige | – | Samtykke – litra a. Vi bruger ingen i dag (se `/cookies`) |
@@ -203,8 +215,9 @@ Vores medarbejdere har adgang til de oplysninger, de skal bruge til fx sager, an
 | **Idura ApS** (tidligere Criipto) | MitID-login (broker): bekræfter din identitet og sender os navn, fødselsdato og MitID-id | Danmark/EU | Nej [TODO Filip: bekræft i Iduras databehandleraftale, hvor data behandles] |
 | **Expo** (650 Industries) | Sender push-beskeder til appen videre til Apple og Google | USA | Ja |
 | **Apple** og **Google** | Levering af push-beskeder til din telefon | – | [ADVOKAT: databehandlere eller selvstændigt dataansvarlige?] |
+| **Anthropic PBC** | AI-modellen bag BidHamr-bot (afsnit 3.12): modtager dine beskeder til botten, samtalen indtil nu og de af dine egne data, botten slår op, og sender svaret tilbage. Vi sender ikke din e-mail, dit navn eller din IP-adresse | USA | Ja – EU-US Data Privacy Framework, hvis Anthropic er certificeret, ellers EU-Kommissionens standardkontraktbestemmelser (SCC) i Anthropics databehandleraftale [TODO Filip: tjek certificeringen og acceptér Anthropics DPA] [ADVOKAT] |
 
-[TODO Filip: bekræft databehandleraftale (DPA) med Supabase, Vercel, Resend, Idura og Expo – de fleste har en standardaftale, der skal accepteres i deres dashboard.]
+[TODO Filip: bekræft databehandleraftale (DPA) med Supabase, Vercel, Resend, Idura, Expo og Anthropic – de fleste har en standardaftale, der skal accepteres i deres dashboard.]
 
 Vi bruger ikke Google Analytics, Facebook Pixel, reklamenetværk eller andre sporingsværktøjer. Skrifttyper og billeder hentes fra vores eget domæne.
 
@@ -232,7 +245,7 @@ Vi sælger aldrig dine oplysninger.
 
 ## 7. Overførsel til lande uden for EU/EØS
 
-Vores database og vores serverkode kører i EU (Irland). Nogle af vores leverandører er dog amerikanske virksomheder (Supabase, Vercel, Resend, Expo og Stripe), og oplysninger kan derfor blive overført til eller set fra USA, fx når leverandøren yder support eller drift. Når oplysninger overføres til USA, sker det på grundlag af EU-US Data Privacy Framework, hvis leverandøren er certificeret, og ellers EU-Kommissionens standardkontraktbestemmelser.
+Vores database og vores serverkode kører i EU (Irland). Nogle af vores leverandører er dog amerikanske virksomheder (Supabase, Vercel, Resend, Expo, Stripe og Anthropic), og oplysninger kan derfor blive overført til eller set fra USA, fx når leverandøren yder support eller drift. Skriver du med BidHamr-bot, sendes beskederne altid til Anthropic i USA for at lave svaret. Når oplysninger overføres til USA, sker det på grundlag af EU-US Data Privacy Framework, hvis leverandøren er certificeret, og ellers EU-Kommissionens standardkontraktbestemmelser.
 
 [ADVOKAT: Bekræft grundlaget for hver leverandør (DPF-certificering/SCC) og behovet for en overførselsvurdering (TIA). Gælder også Vercel, selvom serverkoden nu kører i EU (dub1).] [TODO Filip: tjek på dataprivacyframework.gov, hvilke af leverandørerne der er certificeret.]
 
@@ -248,6 +261,7 @@ Vores database og vores serverkode kører i EU (Irland). Nogle af vores leverand
 | Bedømmelser og sælgers svar | Så længe BidHamr findes. Efter sletning af kontoen vises de som fra "Slettet bruger" |
 | Samtaler med BidHamr | Slettes ikke automatisk i dag [ADVOKAT] |
 | Henvendelser via kontaktformularen | Slettes ikke automatisk i dag [ADVOKAT] |
+| Samtaler med BidHamr-bot | Teksten slettes, og samtalen kobles fra din konto og e-mail, 90 dage efter den sidste besked. Er samtalen sendt til en medarbejder, sker det 2 år efter, at den blev sendt (også kopien i henvendelsen). Den slørede IP-kode slettes efter 7 dage. Vi gemmer antal tokens, pris og model uden indhold (statistik over omkostningen). Et dagligt oprydningsjob sørger for det [ADVOKAT: nr. 140] |
 | Advarsler, begrundelser for indgreb og medarbejder-log | Slettes ikke automatisk i dag (dokumentation for afgørelser) [ADVOKAT] |
 | Anmeldelser og rapporter | Behandlede rapporter flyttes til et arkiv efter 48 timer og gemmes der. Anmelderens navn, e-mail, konto-kobling og fritekst i DSA-anmeldelser anonymiseres 12 måneder efter afgørelsen. Statistik og begrundelser gemmes |
 | MitID: sløret MitID-id | Også efter, at du har slettet din konto – så en konto, der er lukket for svindel, ikke kan oprettes igen, og så vi kan se, hvis samme person kommer tilbage (fx med advarsler på den gamle konto) [ADVOKAT: hvor længe?] |
@@ -276,6 +290,7 @@ Når kontoen slettes:
 - Din e-mail, dit telefonnummer, din adresse, dit profilbillede (også selve filen), dine push-tokens og dit gemte kort fjernes.
 - Favoritter, følger (begge veje), gemte søgninger, notifikationer, blokeringer, skabeloner og enheder slettes.
 - Auktioner uden bud afsluttes og arkiveres.
+- Teksten i dine samtaler med BidHamr-bot slettes (også kopien i en henvendelse til vores medarbejdere). Antal tokens, pris og model gemmes uden indhold.
 - Din login-bruger spærres, og e-mailen sløres, så du ikke kan logge ind. Du kan senere oprette en ny konto med samme e-mail.
 - Du får en mail om, at kontoen er slettet.
 - Mærket "MitID-verificeret" fjernes. Navn og fødselsdato fra MitID slettes, medmindre du har handlet (så gemmes de som handelsdata). Det slørede MitID-id gemmes, så samme MitID ikke kan bruges til at omgå en lukning. Du kan godt oprette en ny konto med samme MitID senere, medmindre din konto er lukket permanent.

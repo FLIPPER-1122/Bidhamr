@@ -97,6 +97,15 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    udbetaling direkte** – den starter 48-timers uret (punkt 10).
 8. **Retur i sager**: returlabel (køber → pakkeshop nær sælgeren). Bag `FRAGT_RETURLABEL_AKTIV` (slået fra i
    produktion). DAO: Shop2Shop med køberen som afsender og `shopid=0` (DAO vælger shoppen nærmest sælgeren).
+   **Transportskade med medhold (Filip, 27. okt. 2026 - `20261102210000_sagsregler.sql`): køberen betaler IKKE
+   returfragten.** Staff vælger i afgørelsen: sælgeren (dårlig indpakning - opkræves som ekstra fragt, slags
+   `returfragt_sag`, når returpakken er registreret afleveret) eller BidHamr (god indpakning - reklamation hos
+   fragtfirmaet). `returfragt_start` laver da en dækket række (`returfragt_betalinger.betaler` = `saelger`/`bidhamr`,
+   status `betalt` uden PaymentIntent, kode `daekket`), og returkoden laves med det samme. En dækket række
+   refunderes aldrig hos Stripe og faktureres ikke køberen; kan koden ikke laves, annulleres den
+   (`returfragt_daekket_annuller`). Hjemmesiden: `lavDaekketReturlabelAction(tradeId, afsender)`. Appen:
+   `returfragt` svarer `{ ok, daekket: true, clientSecret: null, label }`. Ved "ikke som beskrevet" gælder resten af
+   dette punkt uændret.
    **Køberen betaler selv returfragten, før returkoden laves** (Filip, 13. okt. 2026 -
    `src/lib/betaling/returfragt.ts`, `20261022010000_returfragt_betaling.sql`): handelssiden viser køberen
    "Send varen retur" med prisen (= fragten ud), adresse + mobil og Stripes Payment Element ("Betal returfragt
@@ -140,7 +149,14 @@ og `20261013020000_afhentning_valg.sql` (afhentning som valg i checkout, BHT04/B
    - Appen: `supabase.rpc("mit_ikke_afhentet", { p_trade })` → køberen `{ rolle: 'koeber', registreret_kl,
      refusion_oere, koebergebyr_oere, beskyttelse_oere, fragt_oere, returfragt_oere, refunderet }`,
      sælgeren `{ rolle: 'saelger', registreret_kl }`, ellers `null`. Handlen står som `annulleret`.
-10. **Leveringsmeldingen starter 48-timers uret** (`20261030010000_fragt_leveret_starter_48t.sql`,
+10. **Fristen er 72 timer (Filip, 27. okt. 2026 - `20261102210000_sagsregler.sql`):** fristen for at melde et
+   problem og den automatiske frigivelse er nu 72 timer efter levering. Den låses pr. handel i
+   `trades.problem_frist_kl` (triggeren `trades_problem_frist`, når `received_at` sættes); handler modtaget før
+   migrationen beholder 48 timer. Beskeden "Pakken er leveret – tjek varen" viser tid tilbage, siger "Gem pakken og
+   labelen" og linker direkte til "Meld et problem" (`?meld=problem#sag`); køberen får en påmindelse 6 timer før
+   fristen (`handel_problem_frist_paamind_kandidater`). Hvor der nedenfor står 48 timer om denne frist, gælder nu
+   72 (ældre handler: 48).
+   **Leveringsmeldingen starter uret** (`20261030010000_fragt_leveret_starter_48t.sql`,
    `src/lib/betaling/fragtUr.ts`; ROADMAP-BESLUTNINGER afsnit 1): når fragtfirmaet melder pakken
    leveret/afhentet (`forsendelser.leveret_kl`), går handlen af sig selv til `modtaget` – præcis som købers
    "Jeg har modtaget pakken" – med `trades.modtaget_kilde = 'fragt'`. Køberen skal ikke trykke noget.

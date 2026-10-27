@@ -70,7 +70,65 @@ import {
   erSagType,
   sagReturFristKl,
   sagSti,
+  sagSvarFristKl,
 } from "@/lib/sager";
+
+type AdminKlient = Awaited<ReturnType<typeof assertRole>>["admin"];
+
+// 20261102210000: rettet type, "smidt ud" og sælgerens svar (med signerede
+// links). Tåler en database uden migrationen.
+async function hentSagEkstra(admin: AdminKlient, sagId: string) {
+  const tom = {
+    oprindeligType: null as SagType | null,
+    typeRettetKl: null as string | null,
+    pakkeSmidtUd: false,
+    pakkeSmidtUdBegrundelse: null as string | null,
+    saelgerSvar: null as SagDetalje["saelgerSvar"],
+  };
+  const { data: x, error } = await admin
+    .from("sager")
+    .select("oprindelig_type, type_rettet_kl, pakke_smidt_ud, pakke_smidt_ud_begrundelse")
+    .eq("id", sagId)
+    .maybeSingle<{
+      oprindelig_type: string | null;
+      type_rettet_kl: string | null;
+      pakke_smidt_ud: boolean;
+      pakke_smidt_ud_begrundelse: string | null;
+    }>();
+  if (error || !x) return tom;
+  const ud = {
+    ...tom,
+    oprindeligType: erSagType(x.oprindelig_type) ? x.oprindelig_type : null,
+    typeRettetKl: x.type_rettet_kl,
+    pakkeSmidtUd: !!x.pakke_smidt_ud,
+    pakkeSmidtUdBegrundelse: x.pakke_smidt_ud_begrundelse,
+  };
+  const { data: svar } = await admin
+    .from("sag_svar")
+    .select("id, tekst, oprettet_kl")
+    .eq("sag_id", sagId)
+    .maybeSingle<{ id: string; tekst: string; oprettet_kl: string }>();
+  if (!svar) return ud;
+  const { data: b } = await admin
+    .from("sag_svar_billeder")
+    .select("id, sti, kategori, oprettet_kl")
+    .eq("svar_id", svar.id)
+    .order("oprettet_kl", { ascending: true });
+  const billeder = (b ?? []) as { id: string; sti: string; kategori: SagBilledeKategori; oprettet_kl: string }[];
+  const urls = new Map<string, string>();
+  if (billeder.length > 0) {
+    const { data: sig } = await admin.storage.from(SAG_BUCKET).createSignedUrls(billeder.map((x) => x.sti), 3600);
+    for (const u of sig ?? []) if (u.path && u.signedUrl) urls.set(u.path, u.signedUrl);
+  }
+  return {
+    ...ud,
+    saelgerSvar: {
+      tekst: svar.tekst,
+      oprettetKl: svar.oprettet_kl,
+      billeder: billeder.map((x) => ({ id: x.id, kategori: x.kategori, url: urls.get(x.sti) ?? null, oprettetKl: x.oprettet_kl })),
+    },
+  };
+}
 
 // Hvem må afgøre en sag (inkl. de pengehandlinger, afgørelsen udløser)?
 // Databasen (sag_afgoer/sag_retur_afleveret) kræver mindst medarbejder.
@@ -161,6 +219,20 @@ const KODE_FEJL: Record<string, string> = {
   // datoen i genaabnSag).
   retur_ventetid_genaabn:
     "Køberen har stadig frist til at sende varen retur. Sagen kan først genåbnes, når fristen er udløbet.",
+  // 20261102210000: transportskade, "andet" og ret sagstype.
+  vaelg_returfragt_betaler:
+    "Vælg, hvem der betaler returfragten: sælgeren (dårlig indpakning) eller BidHamr (god indpakning).",
+  ugyldig_returfragt_betaler: "Kun ved transportskade kan sælgeren eller BidHamr betale returfragten.",
+  indpakning_ordentlig:
+    "Indpakningen er vurderet ordentlig i denne sag. Vælg BidHamr som betaler – eller fortryd vurderingen først.",
+  indpakning_daarlig:
+    "Sælgeren har fået påmindelse/advarsel for dårlig indpakning i denne sag. Vælg sælgeren som betaler.",
+  vaelg_type: "Sagen er af typen \"Andet\". Ret sagstypen, før køberen får medhold.",
+  ugyldig_type: "Vælg en sagstype.",
+  uaendret: "Sagen har allerede den type.",
+  afviklet: "Pengene er allerede flyttet, så typen kan ikke rettes.",
+  kraever_beskyttelse:
+    "Køberen har ikke BidHamr Beskyttelse på handlen, så sagen kan ikke få en type med retur (skadet / ikke som beskrevet / andet).",
 };
 
 function kodeFejl(kode: string | undefined): string {
@@ -260,8 +332,23 @@ export type SagDetalje = SagListeRaekke & {
   internNote: string | null;
   afgjortAfNavn: string | null;
   returKraeves: boolean;
-  returfragtBetaler: "koeber" | "bidhamr" | null;
+  returfragtBetaler: "koeber" | "saelger" | "bidhamr" | null;
   returAfleveretKl: string | null;
+  // 20261102210000: staff har rettet typen (den oprindelige type), køberen har
+  // smidt pakken ud (forklaringen vurderes), og sælgerens svar.
+  oprindeligType: SagType | null;
+  typeRettetKl: string | null;
+  pakkeSmidtUd: boolean;
+  pakkeSmidtUdBegrundelse: string | null;
+  saelgerSvar: {
+    tekst: string;
+    oprettetKl: string;
+    billeder: { id: string; kategori: SagBilledeKategori; url: string | null; oprettetKl: string }[];
+  } | null;
+  // Sælgerens svarfrist (oprettet + 48 timer).
+  saelgerSvarFristKl: string | null;
+  // Sagen er åben, sælgeren har ikke svaret, og fristen er ikke udløbet.
+  saelgerKanSvare: boolean;
   genaabnetAntal: number;
   genaabnetKl: string | null;
   // Ankefrist: hvad der sker med pengene, hvornår, og om det er sket.
@@ -354,7 +441,7 @@ type SagDbRaekke = {
   begrundelse: string | null;
   intern_note: string | null;
   retur_kraeves: boolean;
-  returfragt_betaler: "koeber" | "bidhamr" | null;
+  returfragt_betaler: "koeber" | "saelger" | "bidhamr" | null;
   retur_afleveret_kl: string | null;
   refusion_oere: number | null;
   genaabnet_antal: number;
@@ -715,6 +802,8 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
       }
     }
 
+    const ekstra = await hentSagEkstra(admin, s.id);
+
     // Varen, som den stod i auktionen: stand, beskrivelse og sælgerens svar
     // på spørgsmål - bruges især ved "ikke som beskrevet". Fejler opslaget
     // (fx før 20261006040000 er kørt), vises bare ingenting.
@@ -752,6 +841,12 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
         returKraeves: s.retur_kraeves,
         returfragtBetaler: s.returfragt_betaler,
         returAfleveretKl: s.retur_afleveret_kl,
+        ...ekstra,
+        saelgerSvarFristKl: sagSvarFristKl(s.oprettet_kl),
+        saelgerKanSvare: (() => {
+          const f = sagSvarFristKl(s.oprettet_kl);
+          return s.status === "aaben" && !ekstra.saelgerSvar && !!f && Date.parse(f) > Date.now();
+        })(),
         genaabnetAntal: s.genaabnet_antal,
         genaabnetKl: s.genaabnet_kl,
         pengeHandling: s.penge_handling,
@@ -784,7 +879,7 @@ export async function hentSag(sagId: string): Promise<{ sag: SagDetalje } | { fe
               totalOere: seBeloeb ? Number(betaling.total_oere) : null,
               beskyttelseOere: seBeloeb ? Number(betaling.beskyttelse_oere) : null,
               refusionOere: seBeloeb && s.refusion_oere !== null ? Number(s.refusion_oere) : null,
-              medholdRefusionOere: seBeloeb ? sagRefusionOere(betaling) : null,
+              medholdRefusionOere: seBeloeb ? sagRefusionOere(betaling, s.type) : null,
               prismodel: betaling.prismodel ?? null,
             }
           : null,
@@ -902,7 +997,9 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
     // Omgørelse, mens sagen venter på retur: behandleren har tjekket, at
     // køberen ikke har sendt varen (databasen kræver det).
     const returIkkeSendt = tekst(formData, "retur_ikke_sendt") === "ja";
+    const rfBetaler = tekst(formData, "returfragt_betaler");
     if (!erUuid(ankeId)) throw new BrugerFejl("Anken findes ikke.");
+    if (rfBetaler && !["saelger", "bidhamr"].includes(rfBetaler)) throw new BrugerFejl(KODE_FEJL.vaelg_returfragt_betaler);
     if (udfald !== "stadfaest" && udfald !== "omgoer") throw new BrugerFejl(KODE_FEJL.ugyldigt_udfald);
     if (!begrundelse) throw new BrugerFejl(KODE_FEJL.begrundelse_mangler);
     if (begrundelse.length > SAG_BEGRUNDELSE_MAKS || internNote.length > 4000) {
@@ -916,6 +1013,7 @@ export async function afgoerAnke(formData: FormData): Promise<Udfald | { fejl: s
       p_begrundelse: begrundelse,
       p_intern_note: internNote || null,
       p_retur_ikke_sendt: returIkkeSendt,
+      ...(udfald === "omgoer" && rfBetaler ? { p_returfragt_betaler: rfBetaler } : {}),
     });
     if (error) throw new Error(error.message);
     const svar = (data ?? { kode: "" }) as {
@@ -1075,8 +1173,11 @@ export async function afgoerSag(formData: FormData): Promise<Udfald | { fejl: st
     // Sagen venter på retur, og udfaldet er til sælger eller luk: staff har
     // bekræftet, at køberen ikke har sendt varen retur (databasen kræver det).
     const returIkkeSendt = tekst(formData, "retur_ikke_sendt") === "ja";
+    // Transportskade med medhold (20261102210000): hvem betaler returfragten.
+    const rfBetaler = tekst(formData, "returfragt_betaler");
     if (!erUuid(sagId)) throw new BrugerFejl("Sagen findes ikke.");
     if (!["koeber", "saelger", "lukket"].includes(udfald)) throw new BrugerFejl(KODE_FEJL.ugyldigt_udfald);
+    if (rfBetaler && !["saelger", "bidhamr"].includes(rfBetaler)) throw new BrugerFejl(KODE_FEJL.vaelg_returfragt_betaler);
     if (!begrundelse) throw new BrugerFejl(KODE_FEJL.begrundelse_mangler);
     if (begrundelse.length > SAG_BEGRUNDELSE_MAKS || internNote.length > 4000) {
       throw new BrugerFejl(KODE_FEJL.for_lang_tekst);
@@ -1089,6 +1190,7 @@ export async function afgoerSag(formData: FormData): Promise<Udfald | { fejl: st
       p_begrundelse: begrundelse,
       p_intern_note: internNote || null,
       p_retur_ikke_sendt: returIkkeSendt,
+      ...(udfald === "koeber" && rfBetaler ? { p_returfragt_betaler: rfBetaler } : {}),
     });
     if (error) throw new Error(error.message);
     const svar = (data ?? { kode: "" }) as RpcSvar;
@@ -1398,5 +1500,35 @@ export async function aabnSagChat(
     sagType: SAG_CHAT_TYPE,
     sagId,
     besked: besked ?? null,
+  });
+}
+
+// ------------------------------------------------------------------ Ret sagstypen (20261102210000)
+
+// Staff retter sagstypen (fx "Andet" -> "Varen er gået i stykker"). Logget i
+// moderation_log ('sag_type_rettet') med begrundelsen (intern). Kun før
+// afgørelsen - eller mens en anke venter. Databasen (sag_ret_type) tjekker
+// rolle, inhabilitet og BidHamr Beskyttelse. formData: sagId, type, begrundelse.
+export async function retSagType(formData: FormData): Promise<{ ok: true; tekst: string } | { fejl: string }> {
+  return koer("retSagType", async () => {
+    const { admin, userId } = await assertRole(AFGOER_ROLLE);
+    const sagId = tekst(formData, "sagId");
+    const type = tekst(formData, "type");
+    const begrundelse = tekst(formData, "begrundelse");
+    if (!erUuid(sagId)) throw new BrugerFejl("Sagen findes ikke.");
+    if (!erSagType(type)) throw new BrugerFejl(KODE_FEJL.ugyldig_type);
+    if (!begrundelse) throw new BrugerFejl("Skriv en kort begrundelse (intern).");
+    if (begrundelse.length > SAG_BEGRUNDELSE_MAKS) throw new BrugerFejl(KODE_FEJL.for_lang_tekst);
+    const { data, error } = await admin.rpc("sag_ret_type", {
+      p_medarbejder: userId,
+      p_sag: sagId,
+      p_type: type,
+      p_begrundelse: begrundelse,
+    });
+    if (error) throw new Error(error.message);
+    const svar = (data ?? { kode: "" }) as { kode: string; trade_id?: string };
+    if (svar.kode !== "ok") throw new BrugerFejl(kodeFejl(svar.kode));
+    revalider(sagId, svar.trade_id);
+    return { ok: true as const, tekst: `Sagstypen er rettet til "${SAG_TYPE_NAVN[type]}".` };
   });
 }

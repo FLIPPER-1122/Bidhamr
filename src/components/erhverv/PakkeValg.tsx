@@ -11,7 +11,7 @@ import { useRef, useState, useTransition } from "react";
 import type { SkiftPakkeSvar } from "@/app/actions/erhverv";
 import { kaldOffentligHandling } from "@/lib/offentligHandling";
 import { FIRMA_ABONNEMENT as FA, FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA as X, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
-import { erStoerrePakke, type ErhvervPakke } from "@/lib/erhverv/regler";
+import { erOpgraderingTil, type ErhvervPakke } from "@/lib/erhverv/regler";
 import { kr, krFraOere } from "@/lib/erhverv/visning";
 import { oereMedRabat, velkomstVisning, type VelkomstSkiftUdfald } from "@/lib/erhverv/abonnementRegler";
 import { E_KNAP_PRIMAER, E_KNAP_SEKUNDAER, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
@@ -72,9 +72,13 @@ export default function PakkeValg({
   const svarRef = useRef<HTMLDivElement>(null);
 
   // Et skift op fra Starts gratis måned til en pakke, der ikke er gratis i
-  // måned 1: siden viser beløbet ud fra velkomstSkift og sender det viste med.
+  // måned 1 (samme regel som serveren - erVelkomstSkiftTil): siden viser
+  // beløbet ud fra velkomstSkift og sender det viste med. Uden pris kan
+  // pakken ikke vælges (serveren ville afvise): tekst, ingen knap.
   const fraVelkomst = (p: ErhvervPakke, op: boolean) =>
-    !!velkomstSkift && iGratisPeriode && op && p.maaned1 !== "gratis" && p.maanedspris != null;
+    !!velkomstSkift && iGratisPeriode && op && p.maaned1 !== "gratis";
+  const kanIkkeVaelges = (p: ErhvervPakke, op: boolean) =>
+    fraVelkomst(p, op) && (velkomstSkift?.udfald === "ret_rabat" || p.maanedspris == null);
 
   function skift(p: ErhvervPakke, op: boolean) {
     setSvar(null);
@@ -125,7 +129,8 @@ export default function PakkeValg({
       {andre.length > 0 && <h3 className="font-sans text-[20px] font-semibold text-tekst">{A.andrePakker}</h3>}
       <ul className="space-y-4">
         {andre.map((p) => {
-          const op = erStoerrePakke(p, nuvaerende);
+          // Samme afgørelse som databasen (arkiveret nuværende pakke = mindst).
+          const op = erOpgraderingTil(p, nuvaerende);
           const erAaben = aaben === p.id;
           const afventer = afventerId === p.id;
           return (
@@ -155,19 +160,21 @@ export default function PakkeValg({
                     {op || iGratisPeriode ? A.bekraeftOpgraderTitel(p.navn) : A.bekraeftNedgraderTitel(p.navn)}
                   </p>
                   <p className={`mt-2 ${E_TEKST}`}>
-                    {velkomstSkift && fraVelkomst(p, op) && p.maanedspris != null
-                      ? velkomstSkift.udfald === "skift"
-                        ? FA.bekraeftOpgraderFraGratisMaaned(
-                            p.navn,
-                            FA.beloebMedMoms(
-                              krFraOere(oereMedRabat(p.maanedspris, velkomstSkift.rabat.procent).ekskl),
-                              krFraOere(oereMedRabat(p.maanedspris, velkomstSkift.rabat.procent).inkl),
-                            ),
-                            velkomstSkift.rabat,
-                          )
-                        : velkomstSkift.udfald === "venter"
-                          ? FA.bekraeftOpgraderVenterRabat
-                          : FA.bekraeftOpgraderRetRabat
+                    {velkomstSkift && fraVelkomst(p, op)
+                      ? p.maanedspris == null
+                        ? FA.bekraeftOpgraderPrisIkkeSat
+                        : velkomstSkift.udfald === "skift"
+                          ? FA.bekraeftOpgraderFraGratisMaaned(
+                              p.navn,
+                              FA.beloebMedMoms(
+                                krFraOere(oereMedRabat(p.maanedspris, velkomstSkift.rabat.procent).ekskl),
+                                krFraOere(oereMedRabat(p.maanedspris, velkomstSkift.rabat.procent).inkl),
+                              ),
+                              velkomstSkift.rabat,
+                            )
+                          : velkomstSkift.udfald === "venter"
+                            ? FA.bekraeftOpgraderVenterRabat
+                            : FA.bekraeftOpgraderRetRabat
                       : iGratisPeriode
                         ? op
                           ? FA.bekraeftOpgraderGratis
@@ -177,8 +184,8 @@ export default function PakkeValg({
                           : A.bekraeftNedgraderTekst(naestePeriode)}
                   </p>
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                    {/* ret_rabat: intet at trykke på (serveren ville afvise). */}
-                    {!(velkomstSkift?.udfald === "ret_rabat" && fraVelkomst(p, op)) && (
+                    {/* ret_rabat eller ingen pris: intet at trykke på (serveren ville afvise). */}
+                    {!kanIkkeVaelges(p, op) && (
                       <button
                         type="button"
                         onClick={() => skift(p, op)}

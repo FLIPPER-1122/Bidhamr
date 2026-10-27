@@ -116,6 +116,38 @@ export function erStoerrePakke(a: RangFelter, b: RangFelter): boolean {
   return false;
 }
 
+// Er et skift fra `nu` til `til` en opgradering? SAMME regel som databasen
+// (firma_skift_pakke_server): en arkiveret nuværende pakke regnes som mindst,
+// ellers afgør rangen. Siden (PakkeValg) bruger den, så den viser det samme
+// som serveren gør.
+export function erOpgraderingTil(
+  til: RangFelter,
+  nu: RangFelter & { arkiveret?: boolean | null },
+): boolean {
+  return !!nu.arkiveret || erStoerrePakke(til, nu);
+}
+
+// Sammenligner to værdier fra databasens erhverv_pakke_rang (numeric[]) som
+// Postgres' `>` på arrays: element for element, NULL er større end ethvert
+// tal, og ved lige elementer er det længste array størst. Appens GET bruger
+// databasens egen rang, så den aldrig er uenig med POST'en.
+export function dbRangStoerre(a: readonly unknown[] | null, b: readonly unknown[] | null): boolean {
+  if (!a || !b) throw new Error("erhverv_pakke_rang: pakken findes ikke");
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const x = a[i] == null ? null : Number(a[i]);
+    const y = b[i] == null ? null : Number(b[i]);
+    if ((x != null && Number.isNaN(x)) || (y != null && Number.isNaN(y))) {
+      throw new Error("erhverv_pakke_rang: ugyldig værdi");
+    }
+    if (x === y) continue;
+    if (x == null) return true;
+    if (y == null) return false;
+    return x > y;
+  }
+  return a.length > b.length;
+}
+
 // Fremhævninger i måneden (pakke + ekstra fra BidHamr).
 export type FremhaevningKvote = { pakke: number; ekstra: number; maks: number; brugt: number; tilbage: number };
 
