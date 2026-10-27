@@ -20,7 +20,7 @@ export async function ugensButikVisesNu(): Promise<string | null> {
 
 // Hvor mange af firmaets auktioner kan vises i Ugens butik lige nu? Samme
 // filter som forside_ugens_butik: aktiv, ikke skjult, ikke arkiveret, ikke på
-// pause, ikke slut og ikke under kunst-kontrol. RLS: sælgeren ser sine egne.
+// pause og ikke slut. RLS: sælgeren ser sine egne.
 export async function antalVisbareAuktioner(brugerId: string): Promise<number | null> {
   const supabase = await createClient();
   const { count, error } = await supabase
@@ -31,8 +31,10 @@ export async function antalVisbareAuktioner(brugerId: string): Promise<number | 
     .not("skjult", "is", true)
     .is("arkiveret_kl", null)
     .is("pauset_kl", null)
-    .gt("slutter_kl", new Date().toISOString())
-    .or("kunst_kontrol.is.null,kunst_kontrol.neq.afventer");
+    .gt("slutter_kl", new Date().toISOString());
+  // kunst_kontrol kan ikke læses af brugeren (kolonne-rettighed) - en auktion
+  // under kunst-kontrol tælles derfor med her. Selve visningen ("Vises nu")
+  // afgøres af ugensButikVisesNu (RPC'en).
   if (error) {
     console.error("antalVisbareAuktioner:", error.message);
     return null;

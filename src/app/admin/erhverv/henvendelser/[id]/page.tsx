@@ -45,10 +45,6 @@ export default async function HenvendelseSide({ params }: { params: Promise<{ id
     [X.felter.by, h.bynavn],
     [X.felter.modtaget, datoTid(h.oprettet_kl)],
     [X.felter.behandletAf, h.behandlet_af_navn ? `${h.behandlet_af_navn} (${datoTid(h.behandlet_kl)})` : null],
-    // Formularen spørger ikke længere om antal varer - kun ældre henvendelser har det.
-    ...(h.antal_varer_ca != null
-      ? ([[X.felter.antalVarer, h.antal_varer_ca.toLocaleString("da-DK")]] as [string, string | null][])
-      : []),
   ];
 
   return (
