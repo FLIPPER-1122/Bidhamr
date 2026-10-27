@@ -1392,12 +1392,28 @@ export const FIRMA_ABONNEMENT = {
   // Fra Starts gratis måned til Butik/Pro: ikke gratis (Filip, 27. okt. 2026).
   // Fx "999,50 kr. + moms (1.249,38 kr.)".
   beloebMedMoms: (ekskl: string, inkl: string) => `${ekskl} + moms (${inkl})`,
-  // beloeb fx "999,50 kr. + moms (1.249,38 kr.)"; rabatProcent: 50 (velkomst),
-  // introrabattens procent eller 0 (særpris - ingen velkomstrabat).
-  bekraeftOpgraderFraGratisMaaned: (navn: string, beloeb: string, rabatProcent: number) =>
-    `Din gratis måned slutter, når du skifter. I dag betaler du ${beloeb} for din første måned med ${navn}${
-      rabatProcent === 50 ? " (halv pris)" : rabatProcent > 0 ? ` (${rabatProcent} % rabat)` : ""
-    }. Fra næste måned betaler du ${rabatProcent > 0 && rabatProcent !== 50 ? "pakkens pris med din rabat, så længe den gælder" : "pakkens almindelige pris"}.`,
+  // beloeb fx "999,50 kr. + moms (1.249,38 kr.)". rabat: velkomstSkiftRabat -
+  // slags afgør teksten (ikke procenten: en introrabat kan også være 50 %).
+  // intro.til er en dansk dato ("31. marts 2027") eller null, hvis rabatten
+  // ikke er sat på abonnementet endnu.
+  bekraeftOpgraderFraGratisMaaned: (
+    navn: string,
+    beloeb: string,
+    rabat:
+      | { slags: "velkomst"; procent: number }
+      | { slags: "intro"; procent: number; til: string | null; maaneder: number }
+      | { slags: "saerpris"; procent: number },
+  ) => {
+    const start = `Din gratis måned slutter, når du skifter. I dag betaler du ${beloeb} for din første måned med ${navn}`;
+    if (rabat.slags === "velkomst") return `${start} (halv pris). Fra næste måned betaler du fuld pris.`;
+    if (rabat.slags === "intro") {
+      const periode = rabat.til
+        ? `til og med ${rabat.til}`
+        : `i ${rabat.maaneder === 1 ? "1 måned" : `${rabat.maaneder} måneder`}`;
+      return `${start} (${rabat.procent} % rabat ${periode}). Derefter betaler du pakkens almindelige pris.`;
+    }
+    return `${start}. Det er pakkens almindelige pris, og den betaler du også fra næste måned.`;
+  },
   // Skift op fra den gratis måned, mens en aftalt introrabat er ved at blive
   // sat på abonnementet (opgraderFraVelkomst venter).
   skiftVenterRabat: "Din rabat er ved at blive sat op. Prøv at skifte pakke igen om lidt. Der er ikke trukket nogen penge.",

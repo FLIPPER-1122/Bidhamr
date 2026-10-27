@@ -24,6 +24,7 @@ import {
   plusMaaneder,
 } from "@/lib/erhverv/abonnementRegler";
 import { ERHVERV_FEJL, erhvervFejlTekst, erStoerrePakke, kvoteBrugt } from "@/lib/erhverv/regler";
+import { FIRMA_ABONNEMENT } from "@/lib/tekster/erhverv";
 
 const sek = (iso: string) => Math.floor(new Date(iso).getTime() / 1000);
 const iso = (s: number) => new Date(s * 1000).toISOString();
@@ -338,13 +339,52 @@ describe("regel for måned 1 (Filip, 27. okt. 2026)", () => {
     expect(maaned1Regel({ pakke: "halv", velkomst: true, introGaelder: false, saerprisGaelder: true })).toBe("ingen");
   });
   it("skift op fra Starts gratis måned: rabat og beløb (særpris 0 %, introrabattens procent, ellers 50 %)", () => {
-    expect(velkomstSkiftRabat({ saerprisGaelder: false, introProcent: null })).toBe(50);
-    expect(velkomstSkiftRabat({ saerprisGaelder: false, introProcent: 30 })).toBe(30);
-    expect(velkomstSkiftRabat({ saerprisGaelder: true, introProcent: null })).toBe(0);
+    expect(velkomstSkiftRabat({ saerprisGaelder: false, intro: null })).toEqual({ slags: "velkomst", procent: 50 });
+    expect(velkomstSkiftRabat({ saerprisGaelder: false, intro: { procent: 30, til: "31. marts 2027", maaneder: 6 } })).toEqual({
+      slags: "intro",
+      procent: 30,
+      til: "31. marts 2027",
+      maaneder: 6,
+    });
+    // Standard-introrabatten er OGSÅ 50 % - slags afgør, ikke procenten.
+    expect(velkomstSkiftRabat({ saerprisGaelder: false, intro: { procent: 50, til: null, maaneder: 6 } }).slags).toBe("intro");
+    expect(velkomstSkiftRabat({ saerprisGaelder: true, intro: null })).toEqual({ slags: "saerpris", procent: 0 });
+    // Særpris og introrabat kan ikke kombineres; særprisen vinder (ingen fordel).
+    expect(velkomstSkiftRabat({ saerprisGaelder: true, intro: { procent: 50, til: null, maaneder: 6 } }).slags).toBe("saerpris");
     // Pro 1.999 kr. til halv pris: 999,50 kr. + moms (1.249,38 kr.).
     expect(oereMedRabat(1999, 50)).toEqual({ ekskl: 99_950, inkl: 124_938 });
     expect(oereMedRabat(999, 50)).toEqual({ ekskl: 49_950, inkl: 62_438 });
     expect(oereMedRabat(999, 0)).toEqual({ ekskl: 99_900, inkl: 124_875 });
+  });
+  it("tekst ved skift op fra Starts gratis måned: velkomst, intro (også 50 %) og særpris", () => {
+    const tekst = FIRMA_ABONNEMENT.bekraeftOpgraderFraGratisMaaned;
+    const beloeb = "999,50 kr. + moms (1.249,38 kr.)";
+    const velkomst = tekst("Pro", beloeb, velkomstSkiftRabat({ saerprisGaelder: false, intro: null }));
+    expect(velkomst).toBe(
+      "Din gratis måned slutter, når du skifter. I dag betaler du 999,50 kr. + moms (1.249,38 kr.) for din første måned med Pro (halv pris). Fra næste måned betaler du fuld pris.",
+    );
+    // Standard-introrabatten (50 % i måned 1-6): IKKE "halv pris"/"fuld pris fra næste måned".
+    const intro50 = tekst("Pro", beloeb, velkomstSkiftRabat({ saerprisGaelder: false, intro: { procent: 50, til: "31. marts 2027", maaneder: 6 } }));
+    expect(intro50).toBe(
+      "Din gratis måned slutter, når du skifter. I dag betaler du 999,50 kr. + moms (1.249,38 kr.) for din første måned med Pro (50 % rabat til og med 31. marts 2027). Derefter betaler du pakkens almindelige pris.",
+    );
+    expect(intro50).not.toContain("halv pris");
+    expect(intro50).not.toContain("Fra næste måned betaler du");
+    const intro30 = tekst("Butik", "699,30 kr. + moms (874,13 kr.)", velkomstSkiftRabat({ saerprisGaelder: false, intro: { procent: 30, til: "1. maj 2027", maaneder: 3 } }));
+    expect(intro30).toContain("(30 % rabat til og med 1. maj 2027)");
+    // Introrabat aftalt, men ikke sat på abonnementet endnu: antal måneder i stedet for dato.
+    expect(tekst("Pro", beloeb, velkomstSkiftRabat({ saerprisGaelder: false, intro: { procent: 50, til: null, maaneder: 6 } }))).toContain(
+      "(50 % rabat i 6 måneder)",
+    );
+    expect(tekst("Pro", beloeb, velkomstSkiftRabat({ saerprisGaelder: false, intro: { procent: 20, til: null, maaneder: 1 } }))).toContain(
+      "(20 % rabat i 1 måned)",
+    );
+    const saerpris = tekst("Pro", "1.999,00 kr. + moms (2.498,75 kr.)", velkomstSkiftRabat({ saerprisGaelder: true, intro: null }));
+    expect(saerpris).toBe(
+      "Din gratis måned slutter, når du skifter. I dag betaler du 1.999,00 kr. + moms (2.498,75 kr.) for din første måned med Pro. Det er pakkens almindelige pris, og den betaler du også fra næste måned.",
+    );
+    expect(saerpris).not.toMatch(/rabat|halv pris/);
+    for (const t of [velkomst, intro50, intro30, saerpris]) expect(t.toLowerCase()).not.toContain("forsikring");
   });
   it("Checkout-plan: Start trial, Butik/Pro engangskupon - staff-måneder erstatter 50 %", () => {
     expect(checkoutPlan({ maaned1: "gratis", velkomstMaaneder: 1, ekstra: 0 })).toEqual({ velkomstGratis: 1, ekstra: 0, halvPris: false });

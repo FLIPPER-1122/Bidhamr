@@ -1533,6 +1533,38 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
     expect(await beloeb()).toEqual([Math.round(PRO_OERE * 0.7)]);
   }, 400_000);
 
+  it("R4b. introrabat 'aktiv' i databasen, men fjernet fra abonnementet: skiftet spærres ikke - fuld pris, ingen 50 %, drift-alarm (20261102180000)", async () => {
+    await startIGratisMaaned("BidHamr maaned1 intro-mangler");
+    expect(
+      await rpc("erhverv_firma_intro_gem", {
+        p_staff: SAELGERROLLE,
+        p_firma: FIRMA,
+        p_procent: 30,
+        p_maaneder: 3,
+        p_fra: "efter_gratis",
+        p_begrundelse: "Stripe-test: introrabat fjernet i Stripe",
+      }),
+    ).toMatchObject({ kode: "ok" });
+    expect(await introTilStripe(FIRMA)).toMatchObject({ status: "ok" });
+    expect((await firma()).intro_status).toBe("aktiv");
+    // Kuponen fjernes direkte i Stripe (databasen står stadig 'aktiv').
+    await stripe.subscriptions.update(subId, { discounts: "" });
+    const foer = new Date().toISOString();
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, PRO)).toMatchObject({ ok: true, kode: "opgraderet" });
+    const sub = await stripe.subscriptions.retrieve(subId, { expand: ["discounts", "discounts.source.coupon"] });
+    expect(sub.status).toBe("active");
+    expect(sub.discounts).toEqual([]);
+    // Ingen 50 % (ellers fik firmaet for meget rabat, når introrabatten sættes på igen).
+    expect(await beloeb()).toEqual([PRO_OERE]);
+    const { data: alarmer } = await db
+      .from("drift_fejl")
+      .select("besked")
+      .gte("oprettet_kl", foer)
+      .like("besked", `erhverv/velkomst-intro-mangler:%${FIRMA}%`);
+    expect(alarmer?.length).toBe(1);
+  }, 400_000);
+
   it("R5. CVR-historik: det gamle CVR på et firma med abonnement tæller stadig som 'har haft abonnement før'", async () => {
     const f = await firma();
     expect(f.stripe_subscription_id).toBeTruthy();
