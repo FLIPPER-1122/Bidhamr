@@ -7,6 +7,7 @@ import { logDriftFejl } from "@/lib/drift";
 import {
   introKuponMaaneder,
   introKuponMaanederCheckout,
+  introGaelder,
   introPasser,
   introResterende,
   nyGratisSlut,
@@ -14,6 +15,7 @@ import {
   TRIAL_MAKS_DAGE,
   type IntroFra,
 } from "@/lib/erhverv/abonnementRegler";
+import { ADMIN_FIRMA_ABONNEMENT } from "@/lib/tekster/erhverv";
 
 // Betaling af erhvervsabonnementer med Stripe Billing (bygget 8. okt. 2026 i
 // Stripes TESTMILJØ efter Filips ønske; Niels gennemgår - se
@@ -230,13 +232,14 @@ type FirmaRaekke = {
   intro_status: "planlagt" | "aktiv" | null;
   intro_noegle: string | null;
   intro_coupon_id: string | null;
+  intro_til: string | null;
   saerpris_oere: number | string | null;
   saerpris_pakke_id: string | null;
 };
 
 const FIRMA_FELTER =
   "id, bruger_id, firmanavn, cvr, adresse, postnummer, bynavn, telefon, kontakt_email, pakke_id, abonnement_status, pauset_aarsag, naeste_pakke_id, stripe_customer_id, stripe_subscription_id, stripe_abonnement_status, opsiges_fra, " +
-  "proeve_maaneder, proeve_givet_kl, intro_procent, intro_maaneder, intro_fra, intro_status, intro_noegle, intro_coupon_id, saerpris_oere, saerpris_pakke_id";
+  "proeve_maaneder, proeve_givet_kl, intro_procent, intro_maaneder, intro_fra, intro_status, intro_noegle, intro_coupon_id, intro_til, saerpris_oere, saerpris_pakke_id";
 
 async function hentFirma(kolonne: "id" | "bruger_id" | "stripe_customer_id", vaerdi: string): Promise<FirmaRaekke | null> {
   const { data, error } = await createAdminClient()
@@ -2189,7 +2192,8 @@ export type AbonnementHandlingSvar =
   | {
       status: "afvist";
       // proev_igen: kan ikke gøres præcist lige nu (introrabat ved månedsskifte).
-      kode: "i_gang" | "opsagt" | "ikke_aktiv" | "skift_venter" | "for_lang" | "allerede" | "proev_igen";
+      // intro_aktiv: særpris og introrabat kan ikke kombineres (Filip, 27. okt. 2026).
+      kode: "i_gang" | "opsagt" | "ikke_aktiv" | "skift_venter" | "for_lang" | "allerede" | "proev_igen" | "intro_aktiv";
       fejl: string;
     }
   | { status: "fejl"; fejl: string };
@@ -2750,6 +2754,12 @@ export async function saetSaerprisStripe(
   let laas: string | null = null;
   try {
     const f = await hentFirma("id", firmaId);
+    // Særpris og introrabat kan ikke kombineres (Filip, 27. okt. 2026): en
+    // særpris sættes aldrig på i Stripe, mens firmaet har en introrabat
+    // (fjerne er altid tilladt). Databasen tjekker det samme.
+    if (f && oere != null && introGaelder(f)) {
+      return { status: "afvist", kode: "intro_aktiv", fejl: ADMIN_FIRMA_ABONNEMENT.saerpris.introAktiv };
+    }
     if (!f?.stripe_subscription_id || !stripeTilgaengelig()) return { status: "ingen_stripe" };
     laas = await tagPakkeskiftLaas(firmaId);
     if (!laas) return { status: "afvist", kode: "i_gang", fejl: PAKKESKIFT_I_GANG };

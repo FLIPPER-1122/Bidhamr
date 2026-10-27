@@ -120,6 +120,8 @@ export function FirmaHurtighandlinger({
     gratisTil: string | null;
     gratisVedStart: number;
     intro: IntroTilstand;
+    // Introrabatten er planlagt eller kører (intro_til tom eller i fremtiden).
+    introAktiv: boolean;
     ekstraAuktioner: number;
     ekstraFremh: number;
     ubegraenset: boolean;
@@ -141,13 +143,21 @@ export function FirmaHurtighandlinger({
         ) : (
           <GratisPeriodeKort firmaId={firmaId} gratisTil={a.gratisTil} vedStart={a.gratisVedStart} />
         )}
+        {/* Særpris og introrabat kan ikke kombineres (Filip, 27. okt. 2026): har
+            firmaet den ene, er kortet for den anden låst med en forklaring.
+            Har et firma begge fra før reglen, er begge kort åbne, så den ene
+            kan fjernes (serveren afviser at sætte en ny). */}
         {lukket ? (
           <LaastKort titel={T.hurtig.intro.titel} under={T.hurtig.uge.underIkkeAktiv} />
+        ) : a.saerpris != null && !a.introAktiv ? (
+          <LaastKort titel={T.hurtig.intro.titel} under={T.hurtig.intro.laastSaerpris} />
         ) : (
           <IntrorabatKort firmaId={firmaId} intro={a.intro} />
         )}
         {lukket ? (
           <LaastKort titel={T.hurtig.saerpris.titel} under={T.hurtig.uge.underIkkeAktiv} />
+        ) : a.introAktiv && a.saerpris == null ? (
+          <LaastKort titel={T.hurtig.saerpris.titel} under={T.hurtig.saerpris.laastIntro} />
         ) : (
           <SaerprisKort firmaId={firmaId} saerpris={a.saerpris} pakkeNavn={pakkeNavn} pakkePris={pakkePris} />
         )}

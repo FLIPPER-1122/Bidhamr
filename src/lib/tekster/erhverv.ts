@@ -481,16 +481,26 @@ export const ADMIN_ERHVERV = {
     // Bekræftelsen: pakke og pris, fx "Butik – 999 kr./md. + moms. Måned 1 er
     // gratis. Derefter 50 % rabat i 6 måneder (499,50 kr./md. + moms), så
     // 999 kr./md. + moms."
+    // gratis: "ny" = nyt CVR (1 gratis måned), "ingen" = CVR'et har haft et
+    // abonnement før (ingen gratis måned), "saeraftale" = 1 gratis måned som
+    // særaftale (Filip, 27. okt. 2026).
     pakkeOpsummering: (
       pakke: string,
       pris: string | null,
       intro: { procent: number; maaneder: number; pris: string | null } | null,
+      gratis: "ny" | "ingen" | "saeraftale" = "ny",
     ) => {
       const prisMd = pris ? `${pris}/md. + moms` : "pris ikke sat";
-      const start = `${pakke} – ${prisMd}. Måned 1 er gratis.`;
+      const md = intro ? (intro.maaneder === 1 ? "1 måned" : `${intro.maaneder} måneder`) : "";
+      const introPris = intro?.pris ? ` (${intro.pris}/md. + moms)` : "";
+      if (gratis === "ingen") {
+        const foerste = intro ? (intro.pris ? `${intro.pris}/md. + moms` : `${intro.procent} % rabat`) : prisMd;
+        const start = `${pakke} – ${prisMd}. Ingen gratis måned. Første betaling: ${foerste}, når firmaet starter abonnementet.`;
+        if (!intro) return start;
+        return `${start} ${intro.procent} % rabat i ${md}${introPris}, så ${prisMd}.`;
+      }
+      const start = `${pakke} – ${prisMd}. ${gratis === "saeraftale" ? "1 gratis måned (særaftale)." : "Måned 1 er gratis."}`;
       if (!intro) return `${start} Derefter ${prisMd}.`;
-      const md = intro.maaneder === 1 ? "1 måned" : `${intro.maaneder} måneder`;
-      const introPris = intro.pris ? ` (${intro.pris}/md. + moms)` : "";
       return `${start} Derefter ${intro.procent} % rabat i ${md}${introPris}, så ${prisMd}.`;
     },
     cvrTjekket: "CVR tjekket: aktivt dansk firma.",
@@ -724,7 +734,17 @@ export const ADMIN_ERHVERV_EKSTRA = {
   cvrTidligere: {
     titel: "CVR'et har haft et abonnement før",
     tekst:
-      "Firmaet har haft en firmakonto hos BidHamr før. Den gratis måned er til nye firmaer, så tjek oplysningerne herunder, før du opretter kontoen. Der er ikke oprettet noget endnu.",
+      "Firmaet har haft en firmakonto hos BidHamr før. Tjek oplysningerne herunder, før du opretter kontoen. Der er ikke oprettet noget endnu.",
+    // Filip, 27. okt. 2026: et tidligere CVR får ingen gratis måned - kun som særaftale.
+    ingenGratis:
+      "Firmaet får ingen gratis måned, fordi CVR'et har haft abonnement før. Første betaling trækkes, når firmaet starter abonnementet.",
+    saeraftaleSlaa: "Giv alligevel 1 gratis måned (særaftale)",
+    saeraftaleHjaelp: "Kun efter aftale. Begrundelsen gemmes i loggen med dit navn.",
+    saeraftaleBegrundelse: "Begrundelse for særaftalen (5-500 tegn)",
+    saeraftalePladsholder: "Fx aftalt med Filip 27/10: firmaet har været lukket i 2 år",
+    saeraftaleUgyldig: "Skriv en begrundelse på 5-500 tegn.",
+    resultatIngen: "Ingen gratis måned",
+    resultatSaeraftale: "1 gratis måned (særaftale)",
     status: "Status",
     start: "Startet",
     opsagt: "Opsagt",
@@ -1257,6 +1277,8 @@ export const ADMIN_FIRMA_ABONNEMENT = {
       "Introrabatten er gemt, men kunne ikke sættes på abonnementet i Stripe lige nu. Det prøves igen automatisk inden for 5 minutter.",
     fjernet: "Introrabatten er fjernet.",
     ingen: "Firmaet har ingen introrabat.",
+    // Særpris og introrabat kan ikke kombineres (Filip, 27. okt. 2026).
+    saerprisAktiv: "Firmaet har en særpris. Fjern særprisen først, hvis firmaet skal have introrabat i stedet.",
   },
   saerpris: {
     ugyldig: "Skriv prisen i hele kroner ekskl. moms (mindst 1 kr.).",
@@ -1265,6 +1287,8 @@ export const ADMIN_FIRMA_ABONNEMENT = {
     fjernet: "Særprisen er fjernet. Pakkens almindelige pris gælder fra næste betaling.",
     pakkeSkiftet: "Firmaets pakke er skiftet imens. Opdater siden, og prøv igen.",
     stripeFejl: "Prisen er IKKE ændret: abonnementet i Stripe kunne ikke opdateres. Prøv igen om lidt.",
+    // Særpris og introrabat kan ikke kombineres (Filip, 27. okt. 2026).
+    introAktiv: "Firmaet har en introrabat. Fjern introrabatten først, hvis firmaet skal have en særpris i stedet.",
   },
   ekstra: {
     ugyldig: "Skriv et antal (fx 5). Et minus trækker fra.",
@@ -1331,6 +1355,9 @@ export const FIRMA_ABONNEMENT = {
   gratisFoersteBetaling: (dato: string, beloeb: string) =>
     `Du betaler første gang den ${dato}. Prisen er ${beloeb}.`,
   knapStartGratis: "Start gratis",
+  // Ingen gratis måned (fx et CVR, der har haft abonnement før): knappen på
+  // /firma og /firma/abonnement (Filip, 27. okt. 2026).
+  knapStartAbonnement: "Start abonnement",
   iDag: "I dag betaler du 0 kr.",
   gratisNu: (dato: string) => `Du er i din gratis periode til og med ${dato}. Indtil da betaler du ikke noget.`,
   dinPris: "Din pris",

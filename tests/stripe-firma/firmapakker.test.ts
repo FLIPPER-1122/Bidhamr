@@ -16,9 +16,11 @@
 //      gratis periode, introrabatten er sat på (kupon, repeating), kortet spejlet.
 //   4. Opgradering i den gratis periode (Start -> Butik): med det samme, uden
 //      betaling.
-//   5. Særpris på Butik (799 kr.) og +1 gratis måned (introrabatten flyttes).
+//   5. Særpris afvises, mens introrabatten kører (særpris og introrabat kan
+//      ikke kombineres - Filip, 27. okt. 2026), og +1 gratis måned
+//      (introrabatten flyttes).
 //   6. Tiden spoles frem: 2 gratis måneder (0 kr.), 6 fakturaer med 50 % rabat
-//      på 799 kr. + moms, og derefter fuld pris.
+//      på Butiks pris (999 kr.) + moms, og derefter fuld pris.
 //   7. Opgradering, mens abonnementet er aktivt (Butik -> Pro): forskellen
 //      trækkes på kortet med det samme, og pakken skifter.
 //   8. Hel refusion af en betalt regning med kreditnota - også en regning
@@ -44,6 +46,10 @@
 //      til planen er afgjort; "fjern" afvises med en dansk besked.
 //  15. Introkupon fra Checkout, der ikke rammer præcis N betalte måneder,
 //      sættes på igen ved spejlingen.
+//
+// Fjerde del (kun databasen, 20261102050000):
+//  16. Særpris og introrabat kan ikke kombineres: begge veje, fjerne er altid
+//      tilladt, og en udløbet introrabat blokerer ikke.
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -55,7 +61,6 @@ import {
   lukAabneCheckout,
   refunderRegningStripe,
   saetSaerprisStripe,
-  frigivPakkeskiftLaas,
   startBetaling,
   synkAbonnement,
   synkFaktura,
@@ -66,12 +71,15 @@ import {
 } from "@/lib/erhverv/betaling";
 import { skiftPakkeForBruger } from "@/lib/erhverv/pakkeskift";
 import { introPasser, plusMaaneder } from "@/lib/erhverv/abonnementRegler";
+import { ADMIN_FIRMA_ABONNEMENT } from "@/lib/tekster/erhverv";
 
 const FIRMA = "26849ab7-6678-47b7-a8bd-4d618dfdf9f3";
 const SAELGERROLLE = "11111111-1111-4111-8111-000000000008";
 const START = "7e57a000-0000-4000-8000-000000000001";
 const BUTIK = "7e57a000-0000-4000-8000-000000000002";
 const PRO = "7e57a000-0000-4000-8000-000000000003";
+// Butiks pris ekskl. moms i øre (999 kr.).
+const BUTIK_OERE = 99_900;
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2026-05-27.dahlia" });
 const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -286,26 +294,24 @@ describe("firmapakker mod Stripes testmiljø", () => {
     expect((await fakturaer()).filter((x) => x.amount_due > 0)).toHaveLength(0);
   });
 
-  it("5. særpris 799 kr. og +1 gratis måned (introrabatten flyttes med)", async () => {
+  it("5. særpris afvises, mens introrabatten kører; +1 gratis måned (introrabatten flyttes med)", async () => {
+    // Særpris og introrabat kan ikke kombineres (Filip, 27. okt. 2026): Stripe
+    // røres ikke, og databasen afviser også.
     const saer = await saetSaerprisStripe(FIRMA, BUTIK, 79_900, "naeste_betaling");
-    expect(saer.status).toBe("ok");
-    if (saer.status !== "ok") return;
-    try {
-      expect(
-        await rpc("erhverv_firma_saerpris_gem", {
-          p_staff: SAELGERROLLE,
-          p_firma: FIRMA,
-          p_oere: 79_900,
-          p_pakke: BUTIK,
-          p_aftale: "Stripe-test: aftalt særpris",
-          p_fra: "naeste_betaling",
-        }),
-      ).toMatchObject({ kode: "ok" });
-    } finally {
-      await frigivPakkeskiftLaas(FIRMA, saer.laas);
-    }
+    expect(saer).toMatchObject({ status: "afvist", kode: "intro_aktiv", fejl: ADMIN_FIRMA_ABONNEMENT.saerpris.introAktiv });
+    expect(
+      await rpc("erhverv_firma_saerpris_gem", {
+        p_staff: SAELGERROLLE,
+        p_firma: FIRMA,
+        p_oere: 79_900,
+        p_pakke: BUTIK,
+        p_aftale: "Stripe-test: aftalt særpris",
+        p_fra: "naeste_betaling",
+      }),
+    ).toMatchObject({ kode: "intro_aktiv" });
+    expect((await firma()).saerpris_oere).toBeNull();
     const s = await stripe.subscriptions.retrieve(subId);
-    expect(s.items.data[0].price).toMatchObject({ unit_amount: 79_900, metadata: { pakke_id: BUTIK, firma_id: FIRMA } });
+    expect(s.items.data[0].price).toMatchObject({ unit_amount: BUTIK_OERE, metadata: { pakke_id: BUTIK } });
 
     const gratis = await givGratisPeriodeStripe(FIRMA, 1);
     expect(gratis.status).toBe("ok");
@@ -329,16 +335,16 @@ describe("firmapakker mod Stripes testmiljø", () => {
     expect((await introTilStripe(FIRMA)).status).toBe("ok");
   });
 
-  it("6. fakturaerne: 2 gratis måneder, 6 med 50 % rabat på 799 kr. + moms, så fuld pris", async () => {
+  it("6. fakturaerne: 2 gratis måneder, 6 med 50 % rabat på 999 kr. + moms, så fuld pris", async () => {
     // Højst 2 måneder pr. spol (Stripes grænse for månedlige abonnementer).
     for (const m of [2, 4, 6, 8]) await spol(plusMaaneder(t0, m) + 1800);
     await spol(plusMaaneder(t0, 9) + 1800);
     const alle = (await fakturaer()).filter((f) => f.billing_reason === "subscription_cycle" || f.billing_reason === "subscription_create");
     const beloeb = alle.map((f) => f.total);
     // Fakturaen ved oprettelsen (gratis), 2. måned gratis ligger i samme trial,
-    // derefter 6 x (399,50 kr. + 25 % moms = 499,38 kr.) og fuld pris (998,75 kr.).
-    const halv = Math.round(79_900 * 0.5 * 1.25);
-    const fuld = Math.round(79_900 * 1.25);
+    // derefter 6 x (499,50 kr. + 25 % moms = 624,38 kr.) og fuld pris (1.248,75 kr.).
+    const halv = Math.round(BUTIK_OERE * 0.5 * 1.25);
+    const fuld = Math.round(BUTIK_OERE * 1.25);
     expect(beloeb[0]).toBe(0);
     expect(beloeb.slice(1, 7)).toEqual([halv, halv, halv, halv, halv, halv]);
     expect(beloeb[7]).toBe(fuld);
@@ -359,7 +365,7 @@ describe("firmapakker mod Stripes testmiljø", () => {
     expect(svar).toMatchObject({ ok: true, kode: "opgraderet" });
     const f = await firma();
     expect(f.pakke_id).toBe(PRO);
-    // Særprisen gjaldt Butik og er bortfaldet.
+    // Ingen særpris (den blev afvist i 5 - introrabatten kørte).
     expect(f.saerpris_oere).toBeNull();
     const s = await stripe.subscriptions.retrieve(subId);
     expect(s.items.data[0].price).toMatchObject({ unit_amount: 199_900, metadata: { pakke_id: PRO } });
@@ -391,7 +397,7 @@ describe("firmapakker mod Stripes testmiljø", () => {
   }, 120_000);
 
   it("8b. refusion af en regning med introrabat: refund_amount = det betalte; en refusion, databasen ikke fulgte, spejles", async () => {
-    const halv = Math.round(79_900 * 0.5 * 1.25);
+    const halv = Math.round(BUTIK_OERE * 0.5 * 1.25);
     const { data: r } = await db
       .from("firma_regninger")
       .select("id, stripe_invoice_id, beloeb_oere")
@@ -939,4 +945,95 @@ describe("introrabat fra Checkout, der ikke rammer præcis N betalte måneder (2
     const fuld = Math.round(49_900 * 1.25);
     expect(betalte.map((x) => x.total)).toEqual([halv, halv, halv, halv, halv, halv, fuld, fuld]);
   }, 600_000);
+});
+
+// =============================================================================
+// Fjerde del: særpris og introrabat kan ikke kombineres (20261102050000)
+// =============================================================================
+describe("særpris og introrabat kan ikke kombineres (20261102050000)", () => {
+  const saerprisArgs = (oere: number | null) => ({
+    p_staff: SAELGERROLLE,
+    p_firma: FIRMA,
+    p_oere: oere,
+    p_pakke: BUTIK,
+    p_aftale: "Stripe-test: særpris-regel",
+    p_fra: "naeste_betaling",
+  });
+  const introArgs = (procent: number | null) => ({
+    p_staff: SAELGERROLLE,
+    p_firma: FIRMA,
+    p_procent: procent,
+    p_maaneder: procent == null ? null : 6,
+    p_fra: procent == null ? null : "efter_gratis",
+    p_begrundelse: "Stripe-test: introrabat-regel",
+  });
+
+  beforeAll(async () => {
+    // Intet abonnement i Stripe: kun databasen.
+    await nulstilFirma(BUTIK, {
+      intro_procent: null,
+      intro_maaneder: null,
+      intro_fra: null,
+      intro_status: null,
+      intro_coupon_id: null,
+      intro_til: null,
+    });
+    subId = "";
+  }, 120_000);
+
+  afterAll(async () => {
+    await db
+      .from("firmaer")
+      .update({
+        intro_procent: null,
+        intro_maaneder: null,
+        intro_fra: null,
+        intro_status: null,
+        intro_coupon_id: null,
+        intro_til: null,
+        saerpris_oere: null,
+        saerpris_pakke_id: null,
+        saerpris_aftale: null,
+        pakke_id: START,
+      })
+      .eq("id", FIRMA);
+  }, 60_000);
+
+  it("16a. særpris først: introrabat afvises med saerpris_aktiv, til særprisen er fjernet", async () => {
+    expect(await rpc("erhverv_firma_saerpris_gem", saerprisArgs(79_900))).toMatchObject({ kode: "ok" });
+    expect(await rpc("erhverv_firma_intro_gem", introArgs(50))).toMatchObject({ kode: "saerpris_aktiv" });
+    expect((await firma()).intro_procent).toBeNull();
+    // Fjerne særprisen er altid tilladt - så kan introrabatten gives.
+    expect(await rpc("erhverv_firma_saerpris_gem", saerprisArgs(null))).toMatchObject({ kode: "ok" });
+    expect(await rpc("erhverv_firma_intro_gem", introArgs(50))).toMatchObject({ kode: "ok" });
+  });
+
+  it("16b. introrabat (planlagt eller kører): særpris afvises med intro_aktiv - også før Stripe", async () => {
+    // Planlagt (intro_til tom).
+    expect(await rpc("erhverv_firma_saerpris_gem", saerprisArgs(79_900))).toMatchObject({ kode: "intro_aktiv" });
+    expect(await saetSaerprisStripe(FIRMA, BUTIK, 79_900, "naeste_betaling")).toMatchObject({ status: "afvist", kode: "intro_aktiv" });
+    // Kører (intro_status 'aktiv', slutdato i fremtiden).
+    await db
+      .from("firmaer")
+      .update({ intro_status: "aktiv", intro_til: new Date(Date.now() + 30 * 86400_000).toISOString() })
+      .eq("id", FIRMA);
+    expect(await rpc("erhverv_firma_saerpris_gem", saerprisArgs(79_900))).toMatchObject({ kode: "intro_aktiv" });
+    expect((await firma()).saerpris_oere).toBeNull();
+    // At fjerne en (ikke-eksisterende) særpris er stadig tilladt.
+    expect(await rpc("erhverv_firma_saerpris_gem", saerprisArgs(null))).toMatchObject({ kode: "ok" });
+  });
+
+  it("16c. en udløbet introrabat (endnu ikke meldt færdig af Stripe) blokerer ikke en særpris", async () => {
+    await db
+      .from("firmaer")
+      .update({ intro_status: "aktiv", intro_til: new Date(Date.now() - 86400_000).toISOString() })
+      .eq("id", FIRMA);
+    expect(await rpc("erhverv_firma_saerpris_gem", saerprisArgs(79_900))).toMatchObject({ kode: "ok" });
+    expect((await firma()).saerpris_oere).toBe(79_900);
+  });
+
+  it("16d. en særpris på en anden pakke (bortfaldet ved pakkeskift) blokerer ikke en introrabat", async () => {
+    await db.from("firmaer").update({ pakke_id: PRO }).eq("id", FIRMA);
+    expect(await rpc("erhverv_firma_intro_gem", introArgs(50))).toMatchObject({ kode: "ok" });
+  });
 });

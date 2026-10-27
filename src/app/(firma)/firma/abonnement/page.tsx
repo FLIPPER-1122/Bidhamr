@@ -107,6 +107,10 @@ export default async function FirmaAbonnement({
   // samme antal måneder).
   const foersteBetaling = gratisVedStart > 0 ? langDato(new Date(plusMaaneder(Math.floor(nu / 1000), gratisVedStart) * 1000).toISOString()) : null;
   const foerstePris = intro && introPlanlagt && intro.fra === "efter_gratis" && introPris != null ? introPris : pris;
+  // Uden gratis måned (fx et CVR, der har haft abonnement før - Filip, 27.
+  // okt. 2026) trækkes første betaling med det samme - med en aftalt
+  // introrabat, hvis den er planlagt.
+  const prisNu = intro && introPlanlagt && introPris != null ? introPris : pris;
   const pauseFra = f.betaling_mislykket_kl
     ? new Date(new Date(f.betaling_mislykket_kl).getTime() + 7 * 24 * 3600 * 1000).toISOString()
     : null;
@@ -154,14 +158,20 @@ export default async function FirmaAbonnement({
                 ? B.betalTekst(pakke.navn, kr(pris))
                 : B.betalTekstUdenPris}
           </p>
-          {pris != null && (
+          {prisNu != null && (
             <p className="mt-3 text-[20px] font-semibold text-tekst">
-              {B.prisMedMoms(krFraOere(oereInklMoms(pris).ekskl), krFraOere(oereInklMoms(pris).inkl))}
+              {B.prisMedMoms(krFraOere(oereInklMoms(prisNu).ekskl), krFraOere(oereInklMoms(prisNu).inkl))}
             </p>
+          )}
+          {intro && introPlanlagt && (
+            <p className={`mt-2 ${E_TEKST}`}>{FA.introPlanlagt(intro.procent, intro.maaneder, false)}</p>
           )}
           <p className={`mt-2 ${E_TEKST_DAEMPET}`}>{B.maanedligTekst}</p>
           <div className="mt-5">
-            <StripeKnap handling="firma-betal" tekst={B.knapBetal} />
+            <StripeKnap
+              handling="firma-betal"
+              tekst={f.abonnement_status === "pauset" ? B.knapBetal : FA.knapStartAbonnement}
+            />
           </div>
           <p className={`mt-4 ${E_TEKST_DAEMPET}`}>{B.stripeForklaring}</p>
         </Kort>

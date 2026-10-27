@@ -38,7 +38,14 @@ import {
   saetSaerprisTilbage,
   type AbonnementHandlingSvar,
 } from "@/lib/erhverv/betaling";
-import { GRATIS_MAANEDER_MAKS, INTRO_GRAENSER, gyldigBegrundelse, type IntroFra } from "@/lib/erhverv/abonnementRegler";
+import {
+  GRATIS_MAANEDER_MAKS,
+  INTRO_GRAENSER,
+  gyldigBegrundelse,
+  introGaelder,
+  saerprisGaelder,
+  type IntroFra,
+} from "@/lib/erhverv/abonnementRegler";
 import { kr, krFraOere, langDato } from "@/lib/erhverv/visning";
 import { ADMIN_FIRMA_ABONNEMENT as T, FIRMA_ABONNEMENT_MAIL as M } from "@/lib/tekster/erhverv";
 import { opdaterFirma } from "@/app/actions/adminErhverv";
@@ -115,13 +122,18 @@ type FirmaInfo = {
   intro_procent: number | null;
   intro_maaneder: number | null;
   intro_fra: IntroFra | null;
+  intro_til: string | null;
+  saerpris_oere: number | string | null;
+  saerpris_pakke_id: string | null;
   proeve_slut: string | null;
 };
 
 async function hentFirma(admin: Admin, firmaId: string): Promise<FirmaInfo> {
   const { data, error } = await admin
     .from("firmaer")
-    .select("id, bruger_id, firmanavn, kontakt_email, pakke_id, stripe_subscription_id, intro_procent, intro_maaneder, intro_fra, proeve_slut")
+    .select(
+      "id, bruger_id, firmanavn, kontakt_email, pakke_id, stripe_subscription_id, intro_procent, intro_maaneder, intro_fra, intro_til, saerpris_oere, saerpris_pakke_id, proeve_slut",
+    )
     .eq("id", firmaId)
     .maybeSingle<FirmaInfo>();
   if (error) throw new Error(error.message);
@@ -152,6 +164,9 @@ const DB_FEJL: Record<string, string> = {
   allerede: "Det er allerede gjort. Opdater siden.",
   allerede_udfoert: T.alleredeUdfoert,
   kan_ikke_starte: T.gratis.kanIkkeStarte,
+  // Særpris og introrabat kan ikke kombineres (20261102050000).
+  intro_aktiv: T.saerpris.introAktiv,
+  saerpris_aktiv: T.intro.saerprisAktiv,
 };
 
 async function rpc(admin: Admin, navn: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -287,6 +302,9 @@ export async function saetFirmaIntrorabat(input: {
     const begrundelse = tjekBegrundelse(input.begrundelse);
     const klik = tjekKlik(input.klikId);
     const f = await hentFirma(admin, firmaId);
+    // Særpris og introrabat kan ikke kombineres (Filip, 27. okt. 2026) -
+    // databasen tjekker det igen (erhverv_firma_intro_gem: 'saerpris_aktiv').
+    if (saerprisGaelder(f)) throw new BrugerFejl(T.intro.saerprisAktiv);
 
     // Aftalen gemmes ('planlagt'), og Stripe-delen sætter kuponen på. Fejler
     // Stripe, prøver betalings-cron'en igen (koerAbonnementSynk) - aftalen
@@ -392,6 +410,10 @@ export async function saetFirmaSaerpris(input: {
     const klik = tjekKlik(input.klikId);
     const f = await hentFirma(admin, firmaId);
     const oere = pris === null ? null : pris * 100;
+    // Særpris og introrabat kan ikke kombineres (Filip, 27. okt. 2026) - FØR
+    // Stripe kaldes. At fjerne særprisen er altid tilladt. saetSaerprisStripe
+    // og databasen (erhverv_firma_saerpris_gem: 'intro_aktiv') tjekker igen.
+    if (oere !== null && introGaelder(f)) throw new BrugerFejl(T.saerpris.introAktiv);
     await afvisBrugtKlik(admin, klik);
 
     const stripeSvar = await saetSaerprisStripe(firmaId, f.pakke_id, oere, fra, klik);

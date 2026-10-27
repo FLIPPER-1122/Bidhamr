@@ -172,3 +172,45 @@ export function gyldigBegrundelse(v: unknown): string | null {
   const s = typeof v === "string" ? v.trim().replace(/\s+/g, " ") : "";
   return s.length >= BEGRUNDELSE.min && s.length <= BEGRUNDELSE.maks ? s : null;
 }
+
+// --- Særpris og introrabat kan ikke kombineres (Filip, 27. okt. 2026) -----------
+// Et firma har enten en særpris eller rabat på normalprisen, aldrig begge. Samme
+// regel som databasen (erhverv_intro_gaelder/erhverv_saerpris_gaelder,
+// 20261102050000). At fjerne den ene eller den anden er altid tilladt.
+
+// Introrabat, der er planlagt (ingen slutdato endnu) eller kører (slutdato i
+// fremtiden). intro_status alene kan ikke bruges - den står 'aktiv', til Stripe
+// har meldt rabatten færdig.
+export function introGaelder(
+  f: { intro_procent: number | null | undefined; intro_til: string | null | undefined },
+  nuMs: number = Date.now(),
+): boolean {
+  if (f.intro_procent == null) return false;
+  return !f.intro_til || new Date(f.intro_til).getTime() > nuMs;
+}
+
+// Særpris på firmaets nuværende pakke (en særpris på en anden pakke er
+// bortfaldet ved pakkeskift).
+export function saerprisGaelder(f: {
+  saerpris_oere: number | string | null | undefined;
+  saerpris_pakke_id: string | null | undefined;
+  pakke_id: string;
+}): boolean {
+  return f.saerpris_oere != null && f.saerpris_pakke_id === f.pakke_id;
+}
+
+// --- Gratis måned til et CVR, der har haft abonnement før (Filip, 27. okt. 2026) -
+// Ingen gratis måned - kun som særaftale med en begrundelse på 5-500 tegn
+// (erhverv_firma_opret, 20261102050000).
+export const SAERAFTALE_BEGRUNDELSE = { min: 5, maks: 500 } as const;
+
+export function gyldigSaeraftaleBegrundelse(v: unknown): string | null {
+  const s = typeof v === "string" ? v.trim().replace(/\s+/g, " ") : "";
+  return s.length >= SAERAFTALE_BEGRUNDELSE.min && s.length <= SAERAFTALE_BEGRUNDELSE.maks ? s : null;
+}
+
+// Gratis måneder ved oprettelse: 1 for et nyt CVR; 0 for et CVR, der har haft
+// abonnement før, medmindre staff giver 1 som særaftale.
+export function velkomstMaanederVedOprettelse(input: { cvrTidligere: boolean; saeraftale: boolean }): 0 | 1 {
+  return !input.cvrTidligere || input.saeraftale ? 1 : 0;
+}
