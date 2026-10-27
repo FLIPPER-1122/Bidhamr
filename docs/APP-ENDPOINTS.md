@@ -169,16 +169,21 @@ Migration `20261102230000_henvis_en_ven.sql`. Samme kald som hjemmesidens `/kont
 
 - Firmakonto: `200 { ok: true, kan_henvise: false, grund: "erhverv" }` - vis "Henvis en ven er kun for private".
 - Privat: `200 { ok: true, kan_henvise: true, kode, sti: "/?ven=KODE", url: "https://bidhamr.dk/?ven=KODE",
-  kan_faa_point, grund: null | "spaerret", optjening_aaben (false = før lancering: ingen point endnu), point_pr_ven (10),
+  kan_faa_point, grund: null | "spaerret", mitid_verificeret (false = brugeren er ikke selv bekræftet med MitID og
+  får ingen point - vis en MitID-knap; feltet kom med `20261102270000_henvis_rettelser.sql`), optjening_aaben (false = før lancering: ingen point endnu), point_pr_ven (10),
   maks_pr_maaned (10), maaned ("ÅÅÅÅ-MM"), belonnet_denne_maaned, tilbage_denne_maaned, antal_venner, antal_afventer,
   antal_belonnet, point_i_alt, venner: [{ navn, status, point, oprettet_kl, vurderet_kl }] }`.
 - `navn` er vennens korte visningsnavn ("Kasper K."). `status`: `afventer` (venter på MitID), `belonnet`, `loft`,
-  `firma`, `spaerret`, `foer_lancering`, `samme_person`, `tidligere_konto` (teksterne står i
+  `firma`, `spaerret`, `foer_lancering`, `samme_person`, `tidligere_konto`, `henviser_uverificeret` (du var ikke
+  selv MitID-verificeret, da vennen blev det - 0 point; ny i `20261102270000_henvis_rettelser.sql`) (teksterne står i
   `src/lib/tekster/henvisning.ts`).
 - Del-knappen: systemets delingsmenu (`Share.share`) med `url`. Kopiér: udklipsholderen.
 - **Oprettelse:** åbner appen et link `https://bidhamr.dk/?ven=KODE` (Universal Link / App Link), gemmer appen
   koden og sender den som `henvisningskode` til `POST /api/konto/bekraeft` (docs/APP-SIGNUP.md). Kun en NY konto
-  knyttes; svaret er det samme, uanset om koden blev brugt.
+  knyttes; svaret er det samme, uanset om koden blev brugt. Hjemmesiden bruger ingen cookie (Filip, 27. okt. 2026):
+  koden står i et synligt felt "Henvisningskode" på opret konto, som brugeren kan rette - appen bør gøre det samme.
+- **Kun henviseren med MitID:** henviseren skal selv have en aktiv MitID-verificering, når vennen bliver
+  verificeret - ellers `henviser_uverificeret` (0 point, endeligt).
 - Pointene gives af databasen, når vennen bliver MitID-verificeret (også via appens `/api/mitid/app/afslut`), og
   står i `mine_point().historik` med `type: "henvisning"` ("Henvist en ven").
 

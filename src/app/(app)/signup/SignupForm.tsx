@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import HenvisningLink from "@/components/henvisning/HenvisningLink";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { opretKonto } from "@/app/actions/auth";
@@ -9,10 +9,12 @@ import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
 import { FELT, FELT_FEJL, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
 import { BETINGELSER_STI, PRIVATLIV_STI, VILKAAR_VERSION } from "@/lib/vilkaar";
 import { useHydreret } from "@/lib/useHydreret";
+import { medHenvisning, renHenvisningskode } from "@/lib/henvisning/kode";
+import { HENVISNING_TEKST } from "@/lib/tekster/henvisning";
 import Turnstile from "@/components/Turnstile";
 import { CAPTCHA_MANGLER, turnstileAktiv } from "@/lib/turnstile";
 
-type Felt = "fornavn" | "efternavn" | "email" | "password" | "vilkaar";
+type Felt = "fornavn" | "efternavn" | "email" | "password" | "vilkaar" | "henvisningskode";
 
 // Samme regel som på serveren (renNavn i actions/auth.ts): mellemrum samles og
 // trimmes, før vi tjekker, om feltet er tomt.
@@ -22,13 +24,24 @@ function renset(v: string): string {
 
 // kunInviterede: tilmeldingen er lukket, og kun inviterede beta-testere kan
 // oprette sig (serveren og databasen tjekker invitationen).
-export default function SignupForm({ kunInviterede = false }: { kunInviterede?: boolean }) {
+// henvisningskode: koden fra ?ven=KODE (Henvis en ven). Vises i et synligt,
+// valgfrit felt, som vennen kan rette eller slette - intet gemmes i
+// browseren. Koden sendes videre i adressen til "Indtast koden" og knyttes
+// først, når e-mailen er bekræftet (verificerSignupKode).
+export default function SignupForm({
+  kunInviterede = false,
+  henvisningskode = "",
+}: {
+  kunInviterede?: boolean;
+  henvisningskode?: string;
+}) {
   const router = useRouter();
   const [fornavn, setFornavn] = useState("");
   const [efternavn, setEfternavn] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [accepterer, setAccepterer] = useState(false);
+  const [henvKode, setHenvKode] = useState(henvisningskode);
   const [loading, setLoading] = useState(false);
   // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
   const hydreret = useHydreret();
@@ -74,6 +87,12 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
       return;
     }
 
+    const renKode = henvKode.trim() ? renHenvisningskode(henvKode) : null;
+    if (henvKode.trim() && !renKode) {
+      visFejl(HENVISNING_TEKST.signupKodeUgyldig, "henvisningskode");
+      return;
+    }
+
     if (turnstileAktiv() && !captchaToken) {
       visFejl(CAPTCHA_MANGLER, null);
       return;
@@ -87,6 +106,7 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
       password,
       vilkaarVersion: VILKAAR_VERSION,
       captchaToken: captchaToken ?? undefined,
+      henvisningskode: renKode ?? undefined,
     });
     if ("fejl" in svar) {
       // Tokenet er brugt - et nyt til næste forsøg.
@@ -98,7 +118,8 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
 
     if (svar.bekraeftMail) {
       // Beta: samme svar, uanset om e-mailen er inviteret (ingen afsløring).
-      router.push(svar.beta ? "/tjek-indbakke?fra=beta" : "/tjek-indbakke");
+      // Henvisningskoden følger med i adressen (ingen cookie).
+      router.push(medHenvisning(svar.beta ? "/tjek-indbakke?fra=beta" : "/tjek-indbakke", renKode));
     } else {
       router.push("/velkommen");
       router.refresh();
@@ -187,6 +208,34 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
             />
 
             <div>
+              <label htmlFor="henvisningskode" className={LABEL}>
+                {HENVISNING_TEKST.signupFelt} <span className="font-normal text-tekst-daempet">(valgfri)</span>
+              </label>
+              <input
+                id="henvisningskode"
+                type="text"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                maxLength={20}
+                value={henvKode}
+                onChange={(e) => {
+                  setHenvKode(e.target.value);
+                  if (fejlFelt === "henvisningskode") {
+                    setFejl(null);
+                    setFejlFelt(null);
+                  }
+                }}
+                aria-invalid={fejlFelt === "henvisningskode" || undefined}
+                aria-describedby="henvisningskode-hjaelp"
+                className={`mt-1.5 ${FELT} uppercase ${fejlFelt === "henvisningskode" ? FELT_FEJL : ""}`}
+              />
+              <p id="henvisningskode-hjaelp" className="mt-1.5 text-[13px] text-tekst-daempet">
+                {HENVISNING_TEKST.signupHjaelp}
+              </p>
+            </div>
+
+            <div>
               <div className="flex items-start gap-3">
                 <input
                   id="vilkaar"
@@ -244,9 +293,9 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
 
         <p className="mt-6 text-center text-sm text-tekst-svag">
           Har du allerede en konto?{" "}
-          <Link href="/login" className={LINK}>
+          <HenvisningLink href="/login" className={LINK}>
             Log ind
-          </Link>
+          </HenvisningLink>
         </p>
       </div>
     </main>
