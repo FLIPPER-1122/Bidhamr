@@ -503,7 +503,23 @@ export async function spejlUgensButikPi(pi: Stripe.PaymentIntent): Promise<strin
     await refunderUgensButik(svar.id);
   }
   if (kode === "kasseret") await refunderKasseret(pi, svar?.id ?? null);
+  if (kode === "betalt") await planlaegUgensButikFaktura();
   return kode;
+}
+
+// Fakturaen for Ugens butik oprettes i fakturakøen med det samme, når købet er
+// betalt, så firmaet ser den under Regninger ("på vej", til Dinero har lavet
+// den) - ellers først ved betalings-cron'ens næste kørsel (koerFakturaKoe ->
+// faktura_planlaeg_ugens_butik). Funktionen er idempotent (unikt indeks på
+// ugens_butik_id + dokument), så cron'en og dette kald kan ikke lave to.
+// Fejl her må aldrig stoppe betalingen - cron'en tager den så.
+async function planlaegUgensButikFaktura(): Promise<void> {
+  try {
+    const { error } = await createAdminClient().rpc("faktura_planlaeg_ugens_butik", { p_graense: 20 });
+    if (error && !manglerUgensButik(error)) console.error("faktura_planlaeg_ugens_butik:", error.message);
+  } catch (err) {
+    console.error("faktura_planlaeg_ugens_butik:", err);
+  }
 }
 
 // Returen fra betalingen (Firma oversigt): firmaet kommer tilbage med

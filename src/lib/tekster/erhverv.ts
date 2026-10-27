@@ -252,9 +252,12 @@ export const ERHVERV_VELKOMSTMAIL = {
     "Tryk på knappen herunder, og vælg din adgangskode. Så kan du logge ind og se din Firma oversigt.",
   ],
   knap: "Vælg din adgangskode",
-  // Linket følger "Email OTP expiration" i Supabase (i dag 3600 sekunder).
-  // Ret teksten, hvis indstillingen ændres.
-  udloeber: "Linket virker i 1 time. Er det udløbet, så skriv til os, så sender vi et nyt.",
+  // Linket er BidHamrs egen billet, der gælder i 24 timer
+  // (src/lib/erhverv/velkomstBillet.ts, VELKOMST_TIMER).
+  udloeber: "Linket virker i 24 timer. Er det udløbet, så skriv til os, så sender vi et nyt.",
+  // Reserve, hvis billetten ikke kunne laves: så er det Supabases eget link,
+  // som følger "Email OTP expiration" (i dag 3600 sekunder).
+  udloeber1Time: "Linket virker i 1 time. Er det udløbet, så skriv til os, så sender vi et nyt.",
   separatKonto: "Firmakontoen er en ny konto. Har du også en privat konto, er den ikke ændret.",
   hjaelp: "Har du spørgsmål? Skriv til os på erhverv@bidhamr.dk.",
   fodnote: (email: string) =>

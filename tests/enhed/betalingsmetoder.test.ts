@@ -197,6 +197,18 @@ describe("kildekoden bruger den fælles liste overalt", () => {
     expect(PAYMENT_ELEMENT_WALLETS.link).toBe("never");
   });
 
+  it("hver Stripe Checkout-session slår Link fra", () => {
+    const steder: string[] = [];
+    for (const { f, t } of KILDE) {
+      for (const m of t.matchAll(/checkout\.sessions\.create\(/g)) {
+        steder.push(f);
+        // "card" alene slår ikke Link fra i Checkout - wallet_options skal med.
+        expect(t.slice(m.index!, m.index! + 1500), f).toMatch(/wallet_options:\s*\{\s*link:\s*\{\s*display:\s*"never"\s*\}\s*\}/);
+      }
+    }
+    expect(steder).toEqual(["src/lib/erhverv/betaling.ts"]);
+  });
+
   it("CustomerSessions slår hverken Link eller gem til", () => {
     for (const { f, t } of KILDE) {
       for (const m of t.matchAll(/customerSessions\.create\(/g)) {

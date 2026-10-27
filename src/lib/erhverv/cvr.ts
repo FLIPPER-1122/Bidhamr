@@ -31,6 +31,20 @@ export type CvrOpslag =
     }
   | { ok: false; grund: "ugyldigt_cvr" | "ikke_fundet" | "utilgaengelig" };
 
+// Serverens tjek ved oprettelse af en firmakonto (opretFirmakonto):
+//   "ok"            aktivt CVR
+//   "ikke_aktivt"   CVR'et findes, men er ophørt (slutdato) - afvises
+//   "ikke_fundet"   registret siger med sikkerhed, at CVR'et ikke findes - afvises
+//   "ugyldigt_cvr"  ikke 8 cifre - afvises
+//   "utilgaengelig" opslaget er nede eller svarede med en fejl - TILLADES
+//                   (logges), så en midlertidig fejl ikke spærrer.
+export type CvrOprettelse = "ok" | "ikke_aktivt" | "ikke_fundet" | "ugyldigt_cvr" | "utilgaengelig";
+
+export function cvrTilOprettelse(svar: CvrOpslag): CvrOprettelse {
+  if (svar.ok) return svar.aktiv ? "ok" : "ikke_aktivt";
+  return svar.grund;
+}
+
 type CvrApiSvar = {
   vat?: number | string;
   name?: string;

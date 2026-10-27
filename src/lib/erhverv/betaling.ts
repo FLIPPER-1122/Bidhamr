@@ -586,6 +586,8 @@ export async function startBetaling(brugerId: string, base: string): Promise<Lin
       sess.metadata?.gratis_velkomst === String(velkomstDel) &&
       (sess.metadata?.intro_kupon ?? "") === (introKupon ?? "") &&
       (sess.metadata?.intro_noegle ?? "") === (introMeta.intro_noegle ?? "") &&
+      // En åben session fra før Link blev slået fra, genbruges ikke.
+      sess.wallet_options?.link?.display === "never" &&
       sess.url
     ) {
       return { ok: true, url: sess.url };
@@ -599,6 +601,13 @@ export async function startBetaling(brugerId: string, base: string): Promise<Lin
       customer: kunde,
       line_items: [{ price: prisId, quantity: 1 }],
       payment_method_types: ["card"],
+      // Link (Stripes "Gem mine oplysninger") er ikke tilladt (Filip, 20. okt.
+      // 2026). "card" alene slår IKKE Link fra i Checkout - Stripe viser Link
+      // som en kort-wallet, når Link er slået til i dashboardet
+      // (docs.stripe.com/payments/link/link-payment-integrations). Derfor
+      // wallet_options.link.display 'never' (docs.stripe.com/api/checkout/
+      // sessions/create#create_checkout_session-wallet_options-link-display).
+      wallet_options: { link: { display: "never" } },
       // Kortet gemmes altid - også når der trækkes 0 kr. i den gratis periode.
       payment_method_collection: "always",
       locale: "da",

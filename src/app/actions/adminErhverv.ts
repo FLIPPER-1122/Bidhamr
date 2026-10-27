@@ -23,7 +23,8 @@ import { fjernBillet, fjernBilletFraMetadata, nyBillet } from "@/lib/kontoOprett
 import { sendHandelMailDetaljer } from "@/lib/mails/send";
 import { firmaVelkomstMail } from "@/lib/mails/erhverv";
 import { sideUrl } from "@/lib/mails/layout";
-import { slaaCvrOpOffentligt, type CvrOpslag } from "@/lib/erhverv/cvr";
+import { cvrTilOprettelse, slaaCvrOpOffentligt, type CvrOpslag } from "@/lib/erhverv/cvr";
+import { udstedVelkomstBillet, VELKOMST_TIMER } from "@/lib/erhverv/velkomstBillet";
 import {
   fortrydOpsigelse,
   opsigAbonnement,
@@ -36,7 +37,7 @@ import {
   stripeTilgaengelig,
   type AdminPrisSvar,
 } from "@/lib/erhverv/betaling";
-import { ADMIN_ERHVERV_BETALING as AB } from "@/lib/tekster/erhverv";
+import { ADMIN_ERHVERV, ADMIN_ERHVERV_BETALING as AB } from "@/lib/tekster/erhverv";
 import {
   EMAIL,
   ERHVERV_GRAENSER as G,
@@ -103,6 +104,9 @@ const KODE_FEJL: Record<string, string> = {
   ikke_ny_konto: "E-mailen har allerede en konto hos BidHamr. Brug en anden e-mail til firmakontoen.",
   ugyldigt_cvr: "CVR-nummeret skal have 8 cifre.",
   cvr_findes: "Der findes allerede en aktiv firmakonto med det CVR-nummer.",
+  // Samme tekst som formularen viser efter "Slå CVR op".
+  cvr_ikke_aktivt: ADMIN_ERHVERV.opret.fejl.cvrIkkeAktivt,
+  cvr_ikke_fundet: "CVR-nummeret findes ikke i CVR-registret. Tjek nummeret. Kontoen kan ikke oprettes.",
   cvr_tidligere: "CVR'et har haft et abonnement før. Prøv igen, og bekræft, at kontoen skal oprettes alligevel.",
   ugyldig_pakke: "Vælg en pakke (arkiverede pakker kan ikke vælges).",
   ugyldig_rabat_intro: "Introrabatten skal være 1-100 % i 1-24 måneder - udfyld begge eller ingen af dem.",
@@ -346,6 +350,26 @@ export async function slaaCvrOp(cvrInput: string) {
   });
 }
 
+// Serverens tjek ved oprettelse af en firmakonto (UI'et viser det samme, men
+// kan omgås). Afviser, når cvrapi.dk med sikkerhed svarer, at CVR'et ikke
+// findes (NOT_FOUND/404) eller er ophørt (slutdato). Er opslaget nede eller
+// svarer med en fejl ("utilgaengelig"), tillades oprettelsen, og det logges -
+// en midlertidig fejl hos CVR-registret må ikke spærre for nye firmaer.
+async function kraevAktivtCvr(cvr: string, staffId: string): Promise<void> {
+  const vurdering = cvrTilOprettelse(await slaaCvrOpOffentligt(cvr));
+  if (vurdering === "ok") return;
+  if (vurdering === "ikke_aktivt") kodeFejl("cvr_ikke_aktivt");
+  if (vurdering === "ugyldigt_cvr") kodeFejl("ugyldigt_cvr");
+  if (vurdering === "ikke_fundet") kodeFejl("cvr_ikke_fundet");
+  console.warn(`opretFirmakonto: CVR-opslag utilgængeligt for ${cvr} - oprettelsen tillades uden tjek.`);
+  await logDriftFejl({
+    kilde: "action",
+    hvor: "opretFirmakonto.cvr_opslag",
+    fejl: `CVR-registret (cvrapi.dk) svarede ikke ved oprettelse af en firmakonto med CVR ${cvr}. Kontoen blev oprettet uden tjek af, om CVR'et er aktivt - kontrollér det på datacvr.virk.dk.`,
+    brugerId: staffId,
+  });
+}
+
 // --- Firmaer ---------------------------------------------------------------------
 
 export type FirmaAdmin = {
@@ -442,6 +466,27 @@ function velkomstLink(hashedToken: string, type: "invite" | "recovery") {
   return sideUrl(`/auth/callback?${p.toString()}`);
 }
 
+// Linket i velkomstmailen: BidHamrs egen billet, der gælder i 24 timer og
+// laver et frisk Supabase-link, hver gang den åbnes (src/lib/erhverv/
+// velkomstBillet.ts, /auth/velkomst). Kan billetten ikke laves (migrationen
+// 20261102040000 er ikke kørt, eller databasen fejler), bruges Supabase-linket
+// direkte som før - det gælder kun 1 time (projektets "Email OTP
+// expiration"), og mailen siger det.
+async function velkomstMailLink(
+  admin: Awaited<ReturnType<typeof assertErhverv>>["admin"],
+  brugerId: string,
+  staffId: string,
+  supabaseLink: () => Promise<string>,
+): Promise<{ url: string; timer: number }> {
+  try {
+    const url = await udstedVelkomstBillet(admin, brugerId, staffId);
+    if (url) return { url, timer: VELKOMST_TIMER };
+  } catch (err) {
+    await logDriftFejl({ kilde: "action", hvor: "erhverv/velkomstbillet", fejl: err, brugerId: staffId });
+  }
+  return { url: await supabaseLink(), timer: 1 };
+}
+
 // Sletter den tomme auth-bruger, som generateLink lige har oprettet, når
 // erhverv_firma_opret fejler. Først fjerner databasen public.users-rækken
 // (kun hvis kontoen er helt ny og tom - ellers 'ikke_tom'), derefter slettes
@@ -531,6 +576,11 @@ export async function opretFirmakonto(
     ) {
       kodeFejl("ugyldig_rabat_intro");
     }
+
+    // CVR-registret (samme opslag som knappen "Slå CVR op"): kun et aktivt
+    // dansk CVR kan få en firmakonto. Afvises kun, når opslaget med sikkerhed
+    // siger, at CVR'et ikke findes eller er ophørt.
+    await kraevAktivtCvr(felter.cvr, userId);
 
     // Forhåndstjek FØR auth-brugeren oprettes (en auth-bruger kan ikke
     // slettes igen, når users-rækken findes - handelsdata/arkiv). Databasen
@@ -669,10 +719,13 @@ export async function opretFirmakonto(
     // introrabat) starter, når firmaet trykker "Betal for din pakke".
     const betaling = await startAbonnement(svar.firma_id);
 
+    const hashedToken = link.properties.hashed_token;
+    const velkomst = await velkomstMailLink(admin, link.user.id, userId, async () => velkomstLink(hashedToken, "invite"));
     const mail = firmaVelkomstMail({
       firmanavn: felter.firmanavn,
       email: loginEmail,
-      linkUrl: velkomstLink(link.properties.hashed_token, "invite"),
+      linkUrl: velkomst.url,
+      linkTimer: velkomst.timer,
     });
     const sendt = await sendHandelMailDetaljer(loginEmail, mail);
     if (!sendt.ok) {
@@ -712,19 +765,23 @@ export async function gensendFirmaVelkomst(firmaId: string) {
     }
     if (!(await indenForGraense("erhverv_velkomst_firma", firma.id))) throw new BrugerFejl(FOR_MANGE_FORSOEG);
 
-    const { data: link, error: linkFejl } = await admin.auth.admin.generateLink({
-      type: "recovery",
-      email: firma.users.email,
+    const email = firma.users.email;
+    // Ny billet (24 timer) - den gamle annulleres. Er migrationen
+    // 20261102040000 ikke kørt, sendes et Supabase-link (1 time) som før.
+    const velkomst = await velkomstMailLink(admin, firma.bruger_id, userId, async () => {
+      const { data: link, error: linkFejl } = await admin.auth.admin.generateLink({ type: "recovery", email });
+      if (linkFejl || !link?.properties?.hashed_token) {
+        throw new Error(`generateLink recovery: ${linkFejl?.code ?? ""} ${linkFejl?.message ?? ""}`);
+      }
+      return velkomstLink(link.properties.hashed_token, "recovery");
     });
-    if (linkFejl || !link?.properties?.hashed_token) {
-      throw new Error(`generateLink recovery: ${linkFejl?.code ?? ""} ${linkFejl?.message ?? ""}`);
-    }
     const sendt = await sendHandelMailDetaljer(
-      firma.users.email,
+      email,
       firmaVelkomstMail({
         firmanavn: firma.firmanavn,
-        email: firma.users.email,
-        linkUrl: velkomstLink(link.properties.hashed_token, "recovery"),
+        email,
+        linkUrl: velkomst.url,
+        linkTimer: velkomst.timer,
         gensendt: true,
       }),
     );

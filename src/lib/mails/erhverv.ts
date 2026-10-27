@@ -34,6 +34,9 @@ export function firmaVelkomstMail(input: {
   firmanavn: string;
   email: string;
   linkUrl: string;
+  // Hvor længe linket virker: 24 (BidHamrs billet, standard) eller 1
+  // (Supabases eget link - reserve, se velkomstMailLink i adminErhverv.ts).
+  linkTimer?: number;
   gensendt?: boolean;
 }) {
   return {
@@ -43,7 +46,7 @@ export function firmaVelkomstMail(input: {
       overskriftHtml: escapeHtml(T.overskrift),
       afsnitHtml: [
         ...T.tekst.map((t) => escapeHtml(t)),
-        escapeHtml(T.udloeber),
+        escapeHtml(input.linkTimer === 1 ? T.udloeber1Time : T.udloeber),
         escapeHtml(T.separatKonto),
         escapeHtml(T.hjaelp).replace(ERHVERV_EMAIL, `<a href="mailto:${ERHVERV_EMAIL}">${ERHVERV_EMAIL}</a>`),
       ],

@@ -26,7 +26,7 @@ import { logDriftFejl } from "@/lib/drift";
 import { applicationFeeOere, forventetTotalOere, type Prismodel } from "@/lib/betaling/beregn";
 import { egenDatabase } from "@/lib/betaling/fremmedeTestdata";
 import { sendIndsigelseTilSaelger } from "@/lib/betaling/indsigelseBeskeder";
-import { kontoSpejl, nyKontoParametre, sikrKontoopsaetning } from "@/lib/betaling/connect";
+import { kontoSpejl, nyKontoParametre, sikrKontoopsaetning, type FirmaForudfyld } from "@/lib/betaling/connect";
 import { BetalingsmodelFejl, kraevDestination } from "@/lib/betaling/model";
 import { hentNoedstop, NYE_BETALINGER_STOPPET_TEKST } from "@/lib/betaling/noedstop";
 import {
@@ -2725,6 +2725,78 @@ export async function sendUdbetalingskontoNulstillet(
   }
 }
 
+// Firmaets oplysninger til forudfyldning af Stripe-kontoen (kun en
+// firmakonto med en række i firmaer). Fejl her må ikke stoppe onboardingen -
+// så oprettes kontoen blot uden forudfyldning, og Stripe spørger selv.
+async function hentFirmaForudfyld(userId: string): Promise<FirmaForudfyld | null> {
+  const { data, error } = await createAdminClient()
+    .from("firmaer")
+    .select("firmanavn, cvr, adresse, postnummer, bynavn, telefon, kontakt_email")
+    .eq("bruger_id", userId)
+    .maybeSingle<{
+      firmanavn: string;
+      cvr: string;
+      adresse: string;
+      postnummer: string;
+      bynavn: string;
+      telefon: string;
+      kontakt_email: string;
+    }>();
+  if (error) {
+    console.error("hentFirmaForudfyld:", error.message);
+    return null;
+  }
+  if (!data) return null;
+  return {
+    firmanavn: data.firmanavn,
+    cvr: data.cvr,
+    adresse: data.adresse,
+    postnummer: data.postnummer,
+    bynavn: data.bynavn,
+    telefon: data.telefon,
+    kontaktEmail: data.kontakt_email,
+  };
+}
+
+// accounts.create med idempotency key. Afviser Stripe et af de forudfyldte
+// firmafelter (company.* eller business_profile.name/support_*), oprettes
+// kontoen i stedet uden forudfyldning (med sin egen nøgle), og fejlen
+// logges - så en enkelt mærkelig oplysning aldrig spærrer for onboardingen.
+// Ved en afvisning (400) opretter Stripe ingen konto, så der kan ikke opstå
+// to konti. En StripeIdempotencyError (samme nøgle, andre parametre) prøves
+// IKKE igen med en ny nøgle - så kunne der blive oprettet en konto mere.
+async function opretConnectKonto(
+  stripe: Stripe,
+  params: Stripe.AccountCreateParams,
+  noegle: string,
+  userId: string,
+): Promise<Stripe.Account> {
+  try {
+    return await stripe.accounts.create(params, { idempotencyKey: noegle });
+  } catch (err) {
+    const felt = err instanceof Stripe.errors.StripeInvalidRequestError ? (err.param ?? "") : "";
+    const erForudfyldtFelt =
+      felt.startsWith("company") ||
+      felt.startsWith("business_profile[name") ||
+      felt.startsWith("business_profile[support_");
+    if (!params.company || !erForudfyldtFelt) throw err;
+    await logDriftFejl({
+      kilde: "server",
+      hvor: "connect/forudfyld",
+      fejl: `Stripe afviste forudfyldt firmafelt ${felt} (${(err as Error).message}) - kontoen oprettes uden forudfyldning.`,
+      brugerId: userId,
+    });
+    const uden: Stripe.AccountCreateParams = { ...params };
+    delete uden.company;
+    const bp = { ...(params.business_profile ?? {}) };
+    delete bp.name;
+    delete bp.support_email;
+    delete bp.support_phone;
+    uden.business_profile = bp;
+    return stripe.accounts.create(uden, { idempotencyKey: `${noegle}-uden-firma` });
+  }
+}
+
 // Opretter (én gang) sælgerens Connect Express-konto og returnerer et
 // onboarding-link. Kaldes KUN med en id fra en verificeret session (server
 // action og GET /api/stripe/connect/onboarding).
@@ -2762,18 +2834,22 @@ export async function onboardingLink(
   const erFirma = bruger?.konto_type === "erhverv";
 
   if (!profil?.stripe_account_id) {
-    const konto = await stripe.accounts.create(
+    // Efter en admin-nulstilling (udbetalingskonto_nulstil) skal der
+    // oprettes en NY konto - med den gamle nøgle ville Stripe (inden for
+    // 24 timer) svare med den gamle, frakoblede konto.
+    const noegle = profil?.connect_nulstillet_antal
+      ? `bidhamr-connect-${userId}-${profil.connect_nulstillet_antal}`
+      : `bidhamr-connect-${userId}`;
+    // Firmakonto: firmanavn, CVR, adresse, telefon og kontakt-e-mail
+    // forudfyldes (connect.ts, firmaForudfyldning) - kun ved oprettelsen.
+    const firma = erFirma ? await hentFirmaForudfyld(userId) : null;
+    const konto = await opretConnectKonto(
+      stripe,
       // card_payments + transfers + MobilePay + Revolut Pay, firma/privat, manuel plan,
       // MCC/url/descriptor - src/lib/betaling/connect.ts.
-      nyKontoParametre({ userId, email: bruger?.email, erFirma, url: offentligSideUrl() }),
-      // Efter en admin-nulstilling (udbetalingskonto_nulstil) skal der
-      // oprettes en NY konto - med den gamle nøgle ville Stripe (inden for
-      // 24 timer) svare med den gamle, frakoblede konto.
-      {
-        idempotencyKey: profil?.connect_nulstillet_antal
-          ? `bidhamr-connect-${userId}-${profil.connect_nulstillet_antal}`
-          : `bidhamr-connect-${userId}`,
-      },
+      nyKontoParametre({ userId, email: bruger?.email, erFirma, url: offentligSideUrl(), firma }),
+      noegle,
+      userId,
     );
 
     await createAdminClient()
