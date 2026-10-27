@@ -141,6 +141,8 @@ export default function BidPanel({
   const [kvittering, setKvittering] = useState<{ tekst: string; tone: "succes" | "advarsel" } | null>(null);
   // Meget højt maksimum: beløbet, der venter på "Er du sikker?".
   const [bekraeftMaks, setBekraeftMaks] = useState<number | null>(null);
+  // Fører man og byder én gang til: beløbet, der venter på "Vil du hæve dit bud?".
+  const [bekraeftHaev, setBekraeftHaev] = useState<number | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<string>("aktiv");
   // Skjult af BidHamr (kun sælger, deltagere og staff ser siden): der kan
   // ikke bydes, selvom auktionen stadig står som aktiv.
@@ -372,6 +374,19 @@ export default function BidPanel({
     }
 
     setBekraeftMaks(null);
+    // Fører man allerede, bydes der ikke over sig selv uden en bekræftelse.
+    if (jegFoerer) {
+      setBekraeftHaev(beløbTal);
+      return;
+    }
+    await sendBud(beløbTal);
+  }
+
+  // Almindeligt bud (efter validering og evt. "Vil du hæve dit bud?").
+  async function sendBud(beløbTal: number) {
+    if (senderRef.current) return;
+    setBekraeftHaev(null);
+    setError(null);
     setLoading(true);
     senderRef.current = true;
 
@@ -488,11 +503,12 @@ export default function BidPanel({
     router.refresh();
   }
 
-  // "Ret maksimum": skift til automatisk bud og gå til feltet.
+  // "Ret maksimum" / "Byd automatisk": skift til automatisk bud og gå til feltet.
   function retMaksimum() {
     setAutomatisk(true);
     setError(null);
     setBekraeftMaks(null);
+    setBekraeftHaev(null);
     gaaTilBud();
   }
 
@@ -623,6 +639,7 @@ export default function BidPanel({
             {jegFoerer && maksAktivt && mitMaksimum !== null && (
               <p className="mt-0.5">{AUTOBUD.statusFoererMedMaks(`${mitMaksimum.toLocaleString("da-DK")} kr`)}</p>
             )}
+            {jegFoerer && !maksAktivt && <p className="mt-0.5">{AUTOBUD.statusFoererUdenMaks}</p>}
             {!jegFoerer && mitMaksimum !== null && mitMaksimumNaaet && (
               <p className="mt-0.5">{AUTOBUD.statusMaksNaaet(`${mitMaksimum.toLocaleString("da-DK")} kr`)}</p>
             )}
@@ -633,7 +650,7 @@ export default function BidPanel({
               onClick={retMaksimum}
               className="-my-2 ml-auto inline-flex min-h-11 shrink-0 items-center rounded-lg px-2 text-sm font-semibold text-succes-tekst underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
             >
-              {AUTOBUD.knapRetMaks}
+              {maksAktivt ? AUTOBUD.knapRetMaks : AUTOBUD.knapNy}
             </button>
           )}
         </div>
@@ -721,6 +738,7 @@ export default function BidPanel({
                     setAutomatisk(vaerdi);
                     setError(null);
                     setBekraeftMaks(null);
+                    setBekraeftHaev(null);
                   }}
                   className={`min-h-11 rounded-lg px-2 text-sm font-semibold transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen ${
                     valgt ? "bg-white text-groen-mork shadow-sm" : "text-tekst-daempet hover:text-tekst"
@@ -748,6 +766,7 @@ export default function BidPanel({
                 onChange={(e) => {
                   setBeløb(e.target.value);
                   setBekraeftMaks(null);
+                  setBekraeftHaev(null);
                 }}
                 placeholder={
                   automatisk && maksAktivt && mitMaksimum !== null
@@ -785,13 +804,13 @@ export default function BidPanel({
 
           {!automatisk && jegFoerer && (
             <div role="note" className="flex flex-wrap items-center justify-between gap-x-3 rounded-xl border border-advarsel-kant bg-advarsel-bg px-3.5 py-1 text-sm text-advarsel-tekst">
-              <span className="py-2">{AUTOBUD.advarselFoererEnkelt}</span>
+              <span className="py-2">{maksAktivt ? AUTOBUD.advarselFoererEnkelt : AUTOBUD.advarselFoererEnkeltUdenMaks}</span>
               <button
                 type="button"
                 onClick={retMaksimum}
                 className="inline-flex min-h-11 items-center rounded-lg font-semibold underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
               >
-                {AUTOBUD.knapSkiftTilMaks}
+                {maksAktivt ? AUTOBUD.knapSkiftTilMaks : AUTOBUD.knapSkiftTilAutomatisk}
               </button>
             </div>
           )}
@@ -872,7 +891,7 @@ export default function BidPanel({
                   type="button"
                   onClick={() => sendMaksimum(bekraeftMaks)}
                   disabled={loading}
-                  className="btn btn-primaer flex-1"
+                  className="btn btn-primaer w-full sm:w-auto sm:flex-1"
                 >
                   {AUTOBUD.bekraeftHoejtJa}
                 </button>
@@ -882,9 +901,41 @@ export default function BidPanel({
                     setBekraeftMaks(null);
                     budFeltRef.current?.focus();
                   }}
-                  className="btn btn-sekundaer flex-1"
+                  className="btn btn-sekundaer w-full sm:w-auto sm:flex-1"
                 >
                   {AUTOBUD.bekraeftHoejtNej}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {bekraeftHaev !== null && (
+            <div role="alertdialog" aria-labelledby={`haev-${auktionId}`} className="rounded-xl border border-advarsel-kant bg-advarsel-bg px-3.5 py-3 text-sm text-advarsel-tekst">
+              <p id={`haev-${auktionId}`} className="font-semibold">{AUTOBUD.bekraeftHaevTitel}</p>
+              <p className="mt-1">
+                {AUTOBUD.bekraeftHaevTekst(
+                  `${nuværendeBud.toLocaleString("da-DK")} kr`,
+                  `${bekraeftHaev.toLocaleString("da-DK")} kr`,
+                )}
+              </p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => sendBud(bekraeftHaev)}
+                  disabled={loading}
+                  className="btn btn-primaer w-full sm:w-auto sm:flex-1"
+                >
+                  {AUTOBUD.bekraeftHaevJa}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBekraeftHaev(null);
+                    budFeltRef.current?.focus();
+                  }}
+                  className="btn btn-sekundaer w-full sm:w-auto sm:flex-1"
+                >
+                  {AUTOBUD.bekraeftHaevNej}
                 </button>
               </div>
             </div>
@@ -893,7 +944,7 @@ export default function BidPanel({
           <div ref={handlingRef} className="flex flex-col gap-2">
             <button
               type="submit"
-              disabled={loading || !hydreret || !gyldigtBud || bekraeftMaks !== null}
+              disabled={loading || !hydreret || !gyldigtBud || bekraeftMaks !== null || bekraeftHaev !== null}
               aria-busy={loading || undefined}
               className="btn btn-primaer btn-stor w-full"
             >
@@ -1108,7 +1159,7 @@ export default function BidPanel({
                   tabIndex={panelSynligt ? -1 : undefined}
                   className="btn btn-primaer shrink-0"
                 >
-                  {jegFoerer ? AUTOBUD.knapRetMaks : "Afgiv bud"}
+                  {jegFoerer ? (maksAktivt ? AUTOBUD.knapRetMaks : AUTOBUD.knapNy) : "Afgiv bud"}
                 </button>
               ) : (
                 <Link

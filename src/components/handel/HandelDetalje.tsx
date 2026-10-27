@@ -58,6 +58,7 @@ import { hentMineEkstraFragtRegninger, type MinEkstraFragt } from "@/app/actions
 import { synkEkstraFragtRetur } from "@/lib/betaling/ekstraFragt";
 import EkstraFragtKort from "@/components/ekstraFragt/EkstraFragtKort";
 import EkstraFragtMaerke from "@/components/ekstraFragt/EkstraFragtMaerke";
+import { FRAGT_UDEN_LABELS, INDSIGELSE_SAELGER } from "@/lib/tekster/handel";
 
 // Handelssiden - fælles for /mine-handler/[trade_id] (private) og
 // /firma/salg/[trade_id] (firma-dashboardet, sted="firma"), så handlens
@@ -221,6 +222,17 @@ export default async function HandelDetalje({
           if (ekstraFragtParam === "retur" && ekstraFragtPi) await synkEkstraFragtRetur(user.id, ekstraFragtPi);
           return hentMineEkstraFragtRegninger(handel.id);
         })()
+      : Promise.resolve(null);
+  // Bankindsigelse (chargeback) på betalingen: sælgeren må ikke sende eller
+  // udlevere varen (handel_indsigelse_status - kun til sælgeren). Databasen
+  // afviser også "Marker som sendt", en ny fragtlabel og afhentningskoden.
+  // Fejl (fx før migrationen 20261102080000) = ingen advarsel.
+  const indsigelseLoefte: Promise<"aaben" | "tabt" | null> =
+    erSaelger && handel.status === "betaling_modtaget"
+      ? Promise.resolve(supabase.rpc("handel_indsigelse_status", { p_trade: handel.id })).then(
+          (r) => (r.data === "aaben" || r.data === "tabt" ? r.data : null),
+          () => null,
+        )
       : Promise.resolve(null);
   const sagLoefte = SAG_STATUSSER_HANDEL.includes(handel.status)
     ? hentSagForHandel(handel.id)
@@ -505,6 +517,10 @@ export default async function HandelDetalje({
     ekstraFragt.find((r) => r.status === "behandles" || r.status === "indsigelse") ??
     null;
   const reklamation = (reklamationSvar?.data?.[0] ?? null) as SaelgerReklamation | null;
+  const indsigelse = await indsigelseLoefte;
+  // Uden FRAGT_LABELS_AKTIV kan sælgeren hverken se købers adresse eller lave
+  // en label: forklar det i stedet for at vise ingenting.
+  const visFragtUdenLabels = !fragtLabelsAktiv() && erSaelger && venterPaaAfsendelse && !indsigelse;
 
   return (
     <Ramme className={erFirmaSted ? "" : "flex-1 px-4 pt-4 pb-8 sm:px-6 lg:px-8 lg:pt-6 lg:pb-10"}>
@@ -578,6 +594,25 @@ export default async function HandelDetalje({
               <SporingTidslinje f={returForsendelse} />
             </div>
           </section>
+        )}
+
+        {/* Bankindsigelse: sælgeren må ikke sende/udlevere varen. */}
+        {indsigelse && (
+          <div
+            role="alert"
+            id="indsigelse"
+            className="rounded-none border border-fejl-kant bg-fejl-bg p-5 text-fejl-tekst sm:p-6"
+          >
+            <p className="text-[17px] font-semibold">
+              {indsigelse === "tabt" ? INDSIGELSE_SAELGER.tabtTitel : INDSIGELSE_SAELGER.aabenTitel}
+            </p>
+            <p className="mt-1 text-base">
+              {indsigelse === "tabt" ? INDSIGELSE_SAELGER.tabtTekst(afhentning) : INDSIGELSE_SAELGER.aabenTekst(afhentning)}
+            </p>
+            {visFragtlabel && !(erFirmaSted && lukket) && forsendelse && (
+              <p className="mt-2 text-sm">{INDSIGELSE_SAELGER.labelFindes}</p>
+            )}
+          </div>
         )}
 
         {/* Overblik */}
@@ -889,10 +924,20 @@ export default async function HandelDetalje({
                 Køberen har ikke hentet sin kode frem endnu.
               </p>
             )}
-            {afhentningInfo?.laast ? (
+            {indsigelse ? null : afhentningInfo?.laastPermanent ? (
               <p className="mt-4 rounded-lg border border-fejl-kant bg-fejl-bg px-4 py-3 text-sm text-fejl-tekst">
                 Koden er låst efter for mange forkerte forsøg. BidHamr kigger på handlen – kontakt
                 support@bidhamr.dk.
+              </p>
+            ) : afhentningInfo?.laast ? (
+              <p className="mt-4 rounded-lg border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
+                {afhentningInfo.laastTil
+                  ? `For mange forkerte forsøg. Prøv igen efter kl. ${new Date(afhentningInfo.laastTil).toLocaleTimeString("da-DK", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      timeZone: "Europe/Copenhagen",
+                    })}.`
+                  : "For mange forkerte forsøg. Prøv igen om en time."}
               </p>
             ) : (
               <div className="mt-4">
@@ -1041,7 +1086,27 @@ export default async function HandelDetalje({
         )}
 
         {/* Handlinger */}
-        {visFragtlabel && !(erFirmaSted && lukket) && (
+        {visFragtUdenLabels && (
+          <section aria-labelledby="fragt-uden-labels" className="rounded-none border border-info-kant bg-info-bg p-5 text-info-tekst sm:p-6">
+            <h2 id="fragt-uden-labels" className="text-[17px] leading-snug lg:text-lg">
+              {FRAGT_UDEN_LABELS.titel}
+            </h2>
+            <p className="mt-1 text-base">
+              {FRAGT_UDEN_LABELS.tekst(
+                !lev
+                  ? null
+                  : lev.maade === "doer"
+                    ? `levering hjem${levFirma ? ` med ${levFirma}` : ""}`
+                    : (leveringTekst?.replace(/^Pakkeshop/, "pakkeshop") ?? null),
+                lev?.maade === "doer",
+              )}
+            </p>
+          </section>
+        )}
+
+        {/* Bankindsigelse: ingen ny label - en eksisterende vises stadig, så
+            den kan annulleres. */}
+        {visFragtlabel && !(erFirmaSted && lukket) && (!indsigelse || forsendelse) && (
           <FragtlabelBoks
             tradeId={handel.id}
             forsendelse={forsendelse}
@@ -1051,13 +1116,14 @@ export default async function HandelDetalje({
             brugteLabels={udgaaende.length}
             labelGraense={labelGraense(lev?.fragtfirma ?? forsendelse?.fragtfirma)}
             transportoer={lev?.transportoer ?? null}
+            spaerret={indsigelse !== null}
             kraeverDaoAccept={
               !fragtInfo?.daoBetingelserAccepteret && kraeverDaoBetingelser(lev?.fragtfirma, lev?.transportoer ?? null)
             }
           />
         )}
 
-        {erSaelger && !afhentning && handel.status === "betaling_modtaget" && (
+        {erSaelger && !afhentning && handel.status === "betaling_modtaget" && !indsigelse && (
           <div className="rounded-none border border-kant bg-white p-5 sm:p-6">
             <h2 className="text-[17px] leading-snug lg:text-lg">Send pakken</h2>
             <p className="mt-1 mb-4 text-sm text-tekst-svag">

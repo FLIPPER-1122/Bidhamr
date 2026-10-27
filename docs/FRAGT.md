@@ -467,6 +467,11 @@ Direkte fra Supabase i appen (med brugerens session):
    så vægt altid kræves ved forsendelse.
 4. Kør migrationen og deploy hjemmesiden lige efter hinanden.
 5. Opret Shipmondo-webhooks (se nedenfor) og sæt `SHIPMONDO_*` + `FRAGTFIRMA=shipmondo` i Vercel (Filip).
+6. **`FRAGT_LABELS_AKTIV=true` SKAL være sat i Vercel ved lancering** (Filip). Uden flaget kan sælgeren
+   hverken lave en fragtlabel eller se køberens adresse ved "Levering hjem" - handelssiden viser kun boksen
+   "Fragtlabelen kommer her" og beder sælgeren skrive til support (`FRAGT_UDEN_LABELS` i
+   `src/lib/tekster/handel.ts`). Tjek efter deploy på en betalt handel, at sælgeren ser boksen til
+   fragtlabelen (ikke "Fragtlabelen kommer her"), og lav én label.
 
 ## Shipmondo (verificeret mod sandboxen 9. og 15. okt. 2026)
 

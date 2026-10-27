@@ -85,6 +85,38 @@ function signatur(maade: Maade, transportoer: string | null, shopId: string | nu
   );
 }
 
+// Den gemte pakkeshop ("Husk ... min pakkeshop") - serveren har tjekket, at
+// den findes hos sit eget fragtfirma (pakkeshopTransportoer).
+function gemtPakkeshop(forslag: Checkout["forslag"]): ValgtPakkeshop | null {
+  if (!forslag?.pakkeshopId || !forslag.pakkeshopPostnummer) return null;
+  return {
+    transportoer: forslag.pakkeshopTransportoer ?? null,
+    id: forslag.pakkeshopId,
+    navn: forslag.pakkeshopNavn ?? "Pakkeshop",
+    adresse: forslag.pakkeshopAdresse ?? "",
+    postnummer: forslag.pakkeshopPostnummer,
+    by: forslag.pakkeshopBy ?? "",
+    soegPostnummer: forslag.pakkeshopPostnummer,
+    soegAdresse: forslag.pakkeshopAdresse ?? null,
+  };
+}
+
+// Den gemte pakkeshop bruges kun hos netop sit eget fragtfirma.
+function gemtPakkeshopHos(gemt: ValgtPakkeshop | null, harFirmavalg: boolean, t: string | null): ValgtPakkeshop | null {
+  return gemt && (!harFirmavalg || (gemt.transportoer ?? null) === t) ? gemt : null;
+}
+
+// Hører den gemte pakkeshop til et andet (valgbart) fragtfirma end det valgte?
+function gemtHosAndetFirma(
+  gemt: ValgtPakkeshop | null,
+  valgt: string | null,
+  firmaKoder: string[],
+): { firma: string; firmaNavn: string; navn: string } | null {
+  const firma = gemt?.transportoer ?? null;
+  if (!gemt || !firma || firma === valgt || !firmaKoder.includes(firma)) return null;
+  return { firma, firmaNavn: transportoerNavn(firma) ?? firma, navn: gemt.navn };
+}
+
 function valider(maade: Maade, shop: ValgtPakkeshop | null, m: Modtager): FeltFejl {
   const f: FeltFejl = {};
   if (maade === "afhentning") return f;
@@ -162,6 +194,12 @@ export default function CheckoutSide({
     firmaer[0]?.kode ??
     null;
 
+  // Den gemte pakkeshop ("Husk ... min pakkeshop") - serveren har tjekket, at
+  // den findes hos sit eget fragtfirma (pakkeshopTransportoer). Den bruges
+  // kun hos netop det fragtfirma.
+  const gemtShop = gemtPakkeshop(forslag);
+  const harFirmavalg = firmaer.length > 0;
+
   // ---------------------------------------------------------------- startværdier
   const startMaade: Maade =
     valgt?.maade === "afhentning" && !afhentningMulig
@@ -181,18 +219,7 @@ export default function CheckoutSide({
           soegPostnummer: valgt.pakkeshopPostnummer ?? "",
           soegAdresse: valgt.pakkeshopAdresse ?? null,
         }
-      : forslag?.pakkeshopId && forslag.pakkeshopPostnummer && (forslag.transportoer ?? null) === startTransportoer
-        ? {
-            transportoer: forslag.transportoer ?? null,
-            id: forslag.pakkeshopId,
-            navn: forslag.pakkeshopNavn ?? "Pakkeshop",
-            adresse: forslag.pakkeshopAdresse ?? "",
-            postnummer: forslag.pakkeshopPostnummer,
-            by: forslag.pakkeshopBy ?? "",
-            soegPostnummer: forslag.pakkeshopPostnummer,
-            soegAdresse: forslag.pakkeshopAdresse ?? null,
-          }
-        : null;
+      : gemtPakkeshopHos(gemtShop, harFirmavalg, startTransportoer);
   // Ved afhentning er der ingen modtager på valget - forslaget forudfylder.
   const kilde = (valgt && valgt.maade !== "afhentning" ? valgt.modtager : null) ?? forslag?.modtager ?? null;
   const startModtager: Modtager = {
@@ -242,12 +269,17 @@ export default function CheckoutSide({
 
   const aktuelSignatur = signatur(maade, transportoer, maade === "pakkeshop" ? (shop?.id ?? null) : null, modtager);
   const valgtFirma = firmaer.find((f) => f.kode === transportoer) ?? null;
+  // Den gemte pakkeshop hører til et andet fragtfirma end det valgte.
+  const gemtHosAndet = kanSkifteShop
+    ? gemtHosAndetFirma(gemtPakkeshop(forslag), transportoer, firmaer.map((f) => f.kode))
+    : null;
   const firmaNavn = valgtFirma?.navn ?? transportoerNavn(transportoer) ?? "DAO";
 
-  // Nyt fragtfirma: pakkeshoppen skal vælges hos det nye firma.
+  // Nyt fragtfirma: pakkeshoppen skal vælges hos det nye firma - har køberen
+  // en gemt pakkeshop hos netop det firma, forudfyldes den.
   function vaelgFirma(t: string) {
     setTransportoer(t);
-    if (shop && (shop.transportoer ?? null) !== t) setShop(null);
+    if (!shop || (shop.transportoer ?? null) !== t) setShop(gemtPakkeshopHos(gemtPakkeshop(forslag), harFirmavalg, t));
     setFeltFejl((f) => ({ ...f, shop: undefined }));
   }
   const leveringGemt = kunAfhentning || gemt === aktuelSignatur;
@@ -676,6 +708,22 @@ export default function CheckoutSide({
                                 {shop.adresse}
                                 {shop.postnummer && `, ${shop.postnummer} ${shop.by}`}
                               </p>
+                            </>
+                          ) : gemtHosAndet ? (
+                            // Den gemte pakkeshop hører til et andet fragtfirma.
+                            <>
+                              <p className="text-sm text-tekst-daempet">
+                                Din gemte pakkeshop er hos {gemtHosAndet.firmaNavn}:{" "}
+                                <span className="font-medium text-tekst">{gemtHosAndet.navn}</span>.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => vaelgFirma(gemtHosAndet.firma)}
+                                disabled={travl}
+                                className="mt-1 inline-flex min-h-11 items-center rounded-md text-sm font-semibold text-groen underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
+                              >
+                                Brug den ({gemtHosAndet.firmaNavn})
+                              </button>
                             </>
                           ) : (
                             <p className="text-sm text-tekst-daempet">Du har ikke valgt en pakkeshop endnu.</p>

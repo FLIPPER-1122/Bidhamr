@@ -20,6 +20,8 @@ export const AUTOBUD = {
   ],
   statusFoererMedMaks: (maks: string) => `Dit maksimum: ${maks}. Det vises kun for dig.`,
   statusFoerer: "Du fører",
+  // Fører man uden et maksimum (kun almindelige bud).
+  statusFoererUdenMaks: "Du har det højeste bud.",
   statusOverbudt: "Du er overbudt",
   statusMaksNaaet: (maks: string) => `Dit maksimum på ${maks} er nået. Hæv det, hvis du stadig vil have varen.`,
   svarFoerer: (bud: string, maks: string) => `Du fører med ${bud}. Dit maksimum: ${maks}.`,
@@ -28,11 +30,20 @@ export const AUTOBUD = {
   // Efter "Byd én gang", hvis et maksimum straks bød over.
   svarOverbudtEfterEnkelt: (bud: string) =>
     `En anden byder havde et automatisk bud og fører nu med ${bud}.`,
-  // Fører man, og vælger "Byd én gang".
+  // Fører man MED et maksimum, og vælger "Byd én gang".
   advarselFoererEnkelt: "Du fører allerede – vil du hæve dit maksimum i stedet?",
   knapSkiftTilMaks: "Hæv mit maksimum",
-  // Fører man: knap ved "Du fører" og i budbjælken på mobil.
+  // Fører man UDEN et maksimum, og vælger "Byd én gang".
+  advarselFoererEnkeltUdenMaks: "Du har allerede det højeste bud.",
+  knapSkiftTilAutomatisk: "Byd automatisk i stedet",
+  // Fører man med et maksimum: knap ved "Du fører" og i budbjælken på mobil.
   knapRetMaks: "Ret maksimum",
+  // Fører man og byder én gang til: bekræft, før buddet hæves.
+  bekraeftHaevTitel: "Du fører allerede. Vil du hæve dit bud?",
+  bekraeftHaevTekst: (nu: string, nyt: string) =>
+    `Dit bud på ${nu} er det højeste. Hæver du det til ${nyt}, er det nye bud også bindende.`,
+  bekraeftHaevJa: "Ja, hæv mit bud",
+  bekraeftHaevNej: "Annuller",
   // Meget højt maksimum (> 10 × nuværende bud eller > 10.000 kr).
   bekraeftHoejtTitel: "Er du sikker? Dit maksimum er bindende.",
   bekraeftHoejtTekst: (maks: string) =>
