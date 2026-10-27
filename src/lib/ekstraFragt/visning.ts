@@ -11,6 +11,20 @@ export function erAabenEkstraFragt(status: string): boolean {
   return (EKSTRA_FRAGT_AABNE as readonly string[]).includes(status);
 }
 
+// Returfragt i en sag (ekstra_fragt_regninger.slags 'returfragt_sag',
+// 20261102210000): sælgeren betaler returfragten ved en transportskade med
+// dårlig indpakning. Den har aldrig en måling (en regning for for lille
+// pakkestørrelse har altid målt størrelse eller vægt) - så den kan kendes
+// uden ekstra felter fra databasen.
+export function erReturfragtRegning(r: {
+  slags?: string | null;
+  maalt_stoerrelse: string | null;
+  maalt_vaegt_gram: number | null;
+}): boolean {
+  if (r.slags) return r.slags === "returfragt_sag";
+  return !r.maalt_stoerrelse && r.maalt_vaegt_gram == null;
+}
+
 // Sælgerens valgte størrelse ("lille", "mellem", "stor").
 export function valgtStoerrelseNavn(v: string | null | undefined): string {
   if (!v) return "–";

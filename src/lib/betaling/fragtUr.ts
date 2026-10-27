@@ -1,32 +1,32 @@
 import "server-only";
 
-// Server-only: fragtfirmaets leveringsmelding starter 48-timers uret
-// (ROADMAP fase 2 "Auto-frigivelse 48 timer efter afhentning, hvis ingen
-// sag"; ROADMAP-BESLUTNINGER afsnit 1: "Uret starter, når sporingen viser, at
-// køberen har hentet pakken").
+// Server-only: fragtfirmaets leveringsmelding starter uret for at melde et
+// problem (ROADMAP-BESLUTNINGER afsnit 1 og 4 - 72 timer efter levering, Filip
+// 27. okt. 2026; før 48).
 //
 // Når fragtfirmaet melder pakken leveret/afhentet (forsendelser.leveret_kl,
 // og meldingen må frigive penge - leveret_frigiver), flytter databasen
 // handlen til 'modtaget' præcis som købers "Jeg har modtaget pakken"
-// (handel_fragt_leveret_start, 20261030010000). Køberen har derefter 48 timer
-// til at oprette en sag; ellers frigiver handel_auto_frigiv pengene (ingen
+// (handel_fragt_leveret_start, 20261030010000). Køberen har derefter til
+// trades.problem_frist_kl (72 t; 48 t for handler modtaget før 20261102210000)
+// til at melde et problem; ellers frigiver handel_auto_frigiv pengene (ingen
 // bedømmelse). Ingen penge flyttes her.
 //
 // Uret regnes fra REGISTRERINGEN hos BidHamr (received_at = now() i
 // databasen), ikke fra fragtfirmaets hændelsestidspunkt: DAO's sporing kan
-// være op til 24 timer forsinket, og køberen skal altid have fulde 48 timer
+// være op til 24 timer forsinket, og køberen skal altid have hele fristen
 // efter beskeden.
 //
-// Beskeder: køberen ("Du har 48 timer til at melde en fejl") og sælgeren
+// Beskeder: køberen ("Pakken er leveret - gem pakken og labelen", tid tilbage
+// og et link direkte til trin 1 i "Meld et problem") og sælgeren
 // (hvornår pengene frigives). Idempotent: faste nøgler, og
 // trades.fragt_ur_besked_kl sættes bagefter, så cron sender beskeden igen,
 // hvis serveren døde imellem. Kaster aldrig.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logDriftFejl } from "@/lib/drift";
 import { send } from "@/lib/notifikationer/send";
-import { SAG_FRIST_TIMER_EFTER_MODTAGET } from "@/lib/sager";
-
-const TIME_MS = 60 * 60 * 1000;
+import { sagProblemFristKl } from "@/lib/sager";
+import { meldProblemLink, tidTilbageTekst } from "@/lib/sagerServer";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -43,16 +43,20 @@ export function fragtUrFristTekst(iso: string): string {
   return `${dag} kl. ${tid}`;
 }
 
-// Fristen for at oprette en sag (og tidspunktet for den automatiske
-// frigivelse): received_at + 48 timer.
-export function fragtUrFrist(receivedAt: string): string | null {
-  const ms = Date.parse(receivedAt);
-  if (Number.isNaN(ms)) return null;
-  return new Date(ms + SAG_FRIST_TIMER_EFTER_MODTAGET * TIME_MS).toISOString();
+// Fristen for at melde et problem (og tidspunktet for den automatiske
+// frigivelse): trades.problem_frist_kl - ellers received_at + 48 timer.
+export function fragtUrFrist(receivedAt: string, problemFristKl?: string | null): string | null {
+  return sagProblemFristKl(receivedAt, problemFristKl);
 }
 
-export function fragtUrKoeberTekst(titel: string, fristIso: string): string {
-  return `Fragtfirmaet melder, at "${titel}" er leveret. Tjek varen. Er der noget galt, har du 48 timer – til ${fragtUrFristTekst(fristIso)} – til at melde en fejl på handelssiden. Ellers frigives pengene automatisk til sælgeren. Er alt i orden, kan du godkende varen med det samme.`;
+// Regel 5 (Filip, 27. okt. 2026): fristen som tid tilbage, "Gem pakken og
+// labelen" og et link direkte til trin 1 (se fragtUrKoeberLink).
+export function fragtUrKoeberTekst(titel: string, fristIso: string, nu: number = Date.now()): string {
+  return `Tjek "${titel}". Du har ${tidTilbageTekst(fristIso, nu)} til at melde et problem – senest ${fragtUrFristTekst(fristIso)}. Gem pakken og labelen indtil da. Er alt i orden, så godkend varen. Så får sælgeren sine penge.`;
+}
+
+export function fragtUrKoeberLink(tradeId: string): string {
+  return meldProblemLink(tradeId);
 }
 
 export function fragtUrSaelgerTekst(titel: string, fristIso: string): string {
@@ -68,6 +72,7 @@ type HandelRaekke = {
   received_at: string | null;
   modtaget_kilde: string | null;
   fragt_ur_besked_kl: string | null;
+  problem_frist_kl?: string | null;
 };
 
 // Beskeden til køber og sælger om, at uret er startet. Sendes kun, mens
@@ -76,7 +81,7 @@ type HandelRaekke = {
 async function sendBesked(admin: Admin, t: HandelRaekke, titler?: Map<string, string>): Promise<boolean> {
   if (t.modtaget_kilde !== "fragt" || t.fragt_ur_besked_kl) return false;
   let sendt = false;
-  const frist = t.received_at ? fragtUrFrist(t.received_at) : null;
+  const frist = t.received_at ? fragtUrFrist(t.received_at, t.problem_frist_kl) : null;
   if (t.status === "modtaget" && frist) {
     let titel = titler?.get(t.auction_id);
     if (!titel) {
@@ -85,9 +90,10 @@ async function sendBesked(admin: Admin, t: HandelRaekke, titler?: Map<string, st
     }
     const link = `/mine-handler/${t.id}`;
     await send(t.buyer_id, "pakke_leveret", {
-      titel: "Pakken er kommet frem",
+      titel: "Pakken er leveret – tjek varen",
       tekst: fragtUrKoeberTekst(titel, frist),
-      link,
+      // Direkte til trin 1 i "Meld et problem" (handelssiden åbner den).
+      link: fragtUrKoeberLink(t.id),
       data: { trade_id: t.id },
       noegle: `fragt_ur:${t.id}`,
     });
@@ -108,6 +114,8 @@ async function sendBesked(admin: Admin, t: HandelRaekke, titler?: Map<string, st
 }
 
 const KOLONNER = "id, auction_id, buyer_id, seller_id, status, received_at, modtaget_kilde, fragt_ur_besked_kl";
+// problem_frist_kl findes efter 20261102210000.
+const KOLONNER_MED_FRIST = `${KOLONNER}, problem_frist_kl`;
 
 // Starter uret for én handel (efter en ny leveringsmelding) eller - uden
 // tradeId - for alle handler, hvor det mangler (cron-reserven, fx når
@@ -131,20 +139,25 @@ export async function startUrFraFragt(tradeId?: string): Promise<UrStart> {
     const startet = (Array.isArray(data) ? data : []) as { trade_id: string }[];
 
     // Beskeder: de netop startede + dem, der mangler fra tidligere.
-    let q = admin
-      .from("trades")
-      .select(KOLONNER)
-      .eq("modtaget_kilde", "fragt")
-      .is("fragt_ur_besked_kl", null)
-      .order("received_at", { ascending: true })
-      .limit(100);
-    if (tradeId) q = q.eq("id", tradeId);
-    const { data: mangler, error: mFejl } = await q;
+    const hent = (k: string) => {
+      let q = admin
+        .from("trades")
+        .select(k)
+        .eq("modtaget_kilde", "fragt")
+        .is("fragt_ur_besked_kl", null)
+        .order("received_at", { ascending: true })
+        .limit(100);
+      if (tradeId) q = q.eq("id", tradeId);
+      return q;
+    };
+    let svar = await hent(KOLONNER_MED_FRIST);
+    if (svar.error?.code === "42703") svar = await hent(KOLONNER);
+    const { data: mangler, error: mFejl } = svar;
     if (mFejl) {
       await logDriftFejl({ kilde: "cron", hvor: "Fragt: beskeder om 48-timers uret", fejl: mFejl });
       return { ok: true, startet: startet.length };
     }
-    const liste = (mangler ?? []) as HandelRaekke[];
+    const liste = (mangler ?? []) as unknown as HandelRaekke[];
     if (liste.length > 0) {
       const { data: auktioner } = await admin
         .from("auctions")

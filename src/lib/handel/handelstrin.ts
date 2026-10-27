@@ -172,7 +172,7 @@ export async function markerModtagetFor(
   const titel = (await auktionTitel(supabase, handel.auction_id)) ?? "din vare";
   await send(handel.seller_id, "pakke_leveret", {
     titel: "Pakken er kommet frem",
-    tekst: `Køberen har modtaget "${titel}" og tjekker nu varen. Du får pengene, når køberen har godkendt varen, eller efter 48 timer, hvis der ikke er oprettet en sag.`,
+    tekst: `Køberen har modtaget "${titel}" og tjekker nu varen. Du får pengene, når køberen har godkendt varen, eller efter 72 timer, hvis køberen ikke har meldt et problem.`,
     link: `/mine-handler/${handel.id}`,
     data: { trade_id: handel.id },
     noegle: `pakke_leveret:${handel.id}`,

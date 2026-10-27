@@ -20,6 +20,7 @@ import SporingTidslinje from "@/components/fragt/SporingTidslinje";
 import {
   gemReturAfsenderAction,
   hentFragtlabelLink,
+  lavDaekketReturlabelAction,
   lavReturlabelAction,
   soegPakkeshopsAction,
   startReturfragtAction,
@@ -48,6 +49,9 @@ export type ReturfragtVisning = {
   refusionAarsag: string | null;
   // Sagen tillader, at varen sendes nu (ankefristen er udløbet osv.).
   kanSende: boolean;
+  // Hvem betaler returfragten (sager.returfragt_betaler, 20261102210000).
+  // 'saelger'/'bidhamr': køberen betaler intet - kun adresse.
+  betaler?: "koeber" | "saelger" | "bidhamr";
 };
 
 const feltKlasse = (fejl: boolean) =>
@@ -204,11 +208,15 @@ export default function ReturlabelBoks({
     );
   }
 
+  const daekket = info.betaler === "saelger" || info.betaler === "bidhamr";
+
   if (betalt) {
     return (
       <Boks id={id} titel="Send varen retur">
         <p className="mt-1 text-sm text-groen-mork">
-          Tak – returfragten {info.beloebOere ? `(${kroner(info.beloebOere)}) ` : ""}er betalt. Du skal ikke betale igen.
+          {daekket
+            ? "Du betaler ikke returfragten."
+            : `Tak – returfragten ${info.beloebOere ? `(${kroner(info.beloebOere)}) ` : ""}er betalt. Du skal ikke betale igen.`}
         </p>
         {info.labelAnnulleret ? (
           <p className="mt-3 rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
@@ -238,7 +246,9 @@ export default function ReturlabelBoks({
     );
   }
 
-  if (!info.kanSende || !info.beloebOere) return null;
+  if (!info.kanSende) return null;
+  if (daekket) return <DaekketRetur id={id} tradeId={tradeId} start={afsender} firmaInfo={firmaInfo(t)} />;
+  if (!info.beloebOere) return null;
   return (
     <BetalReturfragt
       id={id}
@@ -314,7 +324,7 @@ function BetalReturfragt({
     const r = await startReturfragtAction(tradeId).catch(() => ({ fejl: "Betalingen kunne ikke startes. Prøv igen om lidt." }));
     if ("fejl" in r) {
       if ("betalt" in r && r.betalt) router.refresh();
-      else setFejl(r.fejl);
+      else setFejl(r.fejl ?? null);
       setBetaling(null);
     } else {
       setFejl(null);
@@ -399,6 +409,83 @@ function BetalReturfragt({
           Prøv igen
         </button>
       )}
+    </Boks>
+  );
+}
+
+// Transportskade med medhold: sælgeren eller BidHamr betaler returfragten.
+// Køberen skriver kun adresse og mobil, og returkoden laves med det samme.
+function DaekketRetur({
+  id,
+  tradeId,
+  start,
+  firmaInfo: f,
+}: {
+  id: string;
+  tradeId: string;
+  start: Afsender;
+  firmaInfo: TransportoerInfo;
+}) {
+  const router = useRouter();
+  const hydreret = useHydreret();
+  const { a, saet, feltFejl, setFeltFejl } = useAfsender(start);
+  const [fejl, setFejl] = useState<string | null>(null);
+  const [arbejder, setArbejder] = useState(false);
+  const laas = useRef(false);
+
+  async function send() {
+    const fe = valider(a);
+    setFeltFejl(fe);
+    const foerste = (Object.keys(fe) as (keyof Afsender)[])[0];
+    if (foerste) {
+      document.getElementById(`${id}-${foerste}`)?.focus();
+      return;
+    }
+    if (laas.current) return;
+    laas.current = true;
+    setArbejder(true);
+    setFejl(null);
+    try {
+      const r = await lavDaekketReturlabelAction(tradeId, a);
+      if ("fejl" in r) setFejl(r.fejl ?? null);
+      router.refresh();
+    } catch {
+      setFejl("Noget gik galt. Prøv igen om lidt.");
+    } finally {
+      laas.current = false;
+      setArbejder(false);
+    }
+  }
+
+  const aflever =
+    f.returLabelfri === "qr" ? "en QR-kode" : f.returLabelfri === "kode" ? "en kode" : "en label, som du printer";
+  return (
+    <Boks id={id} titel="Send varen retur">
+      <p className="mt-1 text-sm text-tekst-svag">
+        Du betaler ikke returfragten. Skriv din adresse og dit mobilnummer, så får du {aflever} til at aflevere pakken i
+        en {f.shopNavn}.
+      </p>
+      <form
+        method="post"
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send();
+        }}
+        className="mt-4"
+      >
+        <AdresseFelter id={id} a={a} saet={saet} feltFejl={feltFejl} laast={arbejder} />
+        <FejlBoks fejl={fejl} />
+        <button
+          type="submit"
+          disabled={arbejder || !hydreret}
+          aria-busy={arbejder || undefined}
+          className="btn btn-primaer mt-5 w-full sm:w-auto"
+        >
+          {arbejder && <span className="btn-spinner" aria-hidden="true" />}
+          Lav returkode
+        </button>
+      </form>
     </Boks>
   );
 }
