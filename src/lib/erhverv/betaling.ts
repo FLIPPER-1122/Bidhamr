@@ -34,7 +34,7 @@ import {
 } from "@/lib/erhverv/abonnementRegler";
 import { ADMIN_FIRMA_ABONNEMENT, FIRMA_ABONNEMENT, FIRMA_OVERSIGT } from "@/lib/tekster/erhverv";
 import { krFraOere, langDato } from "@/lib/erhverv/visning";
-import { erStoerrePakke } from "@/lib/erhverv/regler";
+import { dbRangStoerre } from "@/lib/erhverv/regler";
 
 // Betaling af erhvervsabonnementer med Stripe Billing (bygget 8. okt. 2026 i
 // Stripes TESTMILJØ efter Filips ønske; Niels gennemgår - se
@@ -845,11 +845,28 @@ export async function velkomstSkiftVisning(
 
 // Firmaet er i Starts gratis velkomstmåned: hvad et skift op gør
 // (velkomstUdfald). null: ikke i velkomstmåneden. Kaster ved Stripe-fejl.
+// ret_rabat: drift-alarmen logges allerede her, når udfaldet beregnes til
+// visning (siden og appen skjuler knappen, så serveren ser sjældent et klik).
+// Samme digest som ved klikket - databasen dedupper, så der kommer én alarm.
 async function velkomstStatus(f: FirmaRaekke): Promise<VelkomstSkiftUdfald | null> {
   if (!stripeTilgaengelig() || !f.stripe_subscription_id) return null;
   const sub = await hentAbonnement(f.stripe_subscription_id);
   if (sub.status !== "trialing" || !erKunVelkomstGratis(sub.metadata)) return null;
-  return velkomstUdfald(f, sub);
+  const udfald = velkomstUdfald(f, sub);
+  if (udfald.udfald === "ret_rabat") await meldRetRabat(f, sub.id, udfald.aarsag);
+  return udfald;
+}
+
+// Drift-alarmen "rabatten skal rettes": én pr. firma og aftale (digest -
+// databasen dedupper), ikke én pr. visning eller klik. Teksten er uden
+// skift-id, så den er ens hver gang. Kaster ikke (logDriftFejl kaster ikke).
+async function meldRetRabat(f: FirmaRaekke, subId: string, aarsag: string): Promise<void> {
+  await logDriftFejl({
+    kilde: "server",
+    hvor: "erhverv/velkomst-rabat-uenig",
+    digest: retRabatAlarmNoegle(f.id, f.intro_noegle),
+    fejl: `Firma ${f.id} (${subId}): ${aarsag}. Skift op fra den gratis måned afvises, og intet trækkes, indtil det er rettet - ret introrabatten i admin, eller tjek abonnementet i Stripe.`,
+  });
 }
 
 // Appen (GET /api/firma/skift-pakke?til=<pakke>): hvad et skift til pakken
@@ -870,10 +887,18 @@ type PakkeTilSkift = {
   id: string;
   navn: string;
   maanedspris: number | string | null;
-  auktioner_pr_maaned: number | null;
-  fremhaevninger_pr_maaned: number | null;
+  aktiv?: boolean | null;
+  arkiveret_kl?: string | null;
   maaned1?: string | null;
 };
+
+// databasens erhverv_pakke_rang (numeric[]) for en pakke - den samme rang,
+// som firma_skift_pakke_server bruger til at afgøre, om et skift er op.
+async function dbPakkeRang(pakkeId: string): Promise<unknown[] | null> {
+  const { data, error } = await createAdminClient().rpc("erhverv_pakke_rang", { p_pakke: pakkeId });
+  if (error) throw new Error(`erhverv_pakke_rang: ${error.message}`);
+  return Array.isArray(data) ? (data as unknown[]) : null;
+}
 
 export async function velkomstSkiftForPakke(brugerId: string, pakkeId: string): Promise<VelkomstSkiftForPakke> {
   const f = await hentFirma("bruger_id", brugerId);
@@ -886,25 +911,35 @@ export async function velkomstSkiftForPakke(brugerId: string, pakkeId: string): 
   if (error) throw new Error(`erhverv_pakker: ${error.message}`);
   const pakker = (data ?? []) as PakkeTilSkift[];
   const til = pakker.find((p) => p.id === pakkeId);
-  if (!til) return { status: "ugyldig_pakke" };
+  // Som databasen (firma_skift_pakke_server): kun en aktiv, ikke-arkiveret
+  // pakke kan vælges - ellers svarer POST'en ugyldig_pakke.
+  if (!til || til.aktiv === false || til.arkiveret_kl != null) return { status: "ugyldig_pakke" };
   const pakke = { id: til.id, navn: til.navn };
   const nu = pakker.find((p) => p.id === f.pakke_id);
   if (!nu || til.id === nu.id) return { status: "ok", pakke, tilbud: null };
-  const rang = (p: PakkeTilSkift) => ({
-    auktioner_pr_maaned: p.auktioner_pr_maaned,
-    fremhaevninger_pr_maaned: p.fremhaevninger_pr_maaned ?? 0,
-    maanedspris: p.maanedspris == null ? null : Number(p.maanedspris),
-  });
   const maanedspris = til.maanedspris == null ? null : Number(til.maanedspris);
+  // Samme regel som skiftIGratisPeriode (pakkensMaaned1: alt andet end
+  // 'gratis' er 'halv').
   const maaned1 = til.maaned1 === undefined ? (til.id === START_PAKKE_ID ? "gratis" : "halv") : til.maaned1;
-  const stoerre = erStoerrePakke(rang(til), rang(nu));
+  if (maaned1 === "gratis") return { status: "ok", pakke, tilbud: null };
+  // Op eller ned: SAMME afgørelse som databasen (firma_skift_pakke_server) -
+  // en arkiveret nuværende pakke er mindst, ellers databasens egen rang.
+  let stoerre = nu.arkiveret_kl != null;
+  if (!stoerre) {
+    const [rangTil, rangNu] = await Promise.all([dbPakkeRang(til.id), dbPakkeRang(nu.id)]);
+    stoerre = dbRangStoerre(rangTil, rangNu);
+  }
   // Stripe kun, når pakken kan være et skift op fra velkomstmåneden.
-  if (!erVelkomstSkiftTil({ iVelkomstMaaned: true, stoerre, maaned1, maanedsprisKr: maanedspris })) {
+  if (!erVelkomstSkiftTil({ iVelkomstMaaned: true, stoerre, maaned1 })) {
     return { status: "ok", pakke, tilbud: null };
   }
   const udfald = await velkomstStatus(f);
-  if (!udfald || maanedspris == null) return { status: "ok", pakke, tilbud: null };
+  if (!udfald) return { status: "ok", pakke, tilbud: null };
   const t = velkomstSkiftTilbud(udfald, maanedspris);
+  // Uden pris (kanSkifte false): ingen knap, og teksten siger hvorfor.
+  if (maanedspris == null) {
+    return { status: "ok", pakke, tilbud: { ...t, tekst: FIRMA_ABONNEMENT.bekraeftOpgraderPrisIkkeSat, knap: "" } };
+  }
   const tekst =
     udfald.udfald === "skift" && t.beloeb
       ? FIRMA_ABONNEMENT.bekraeftOpgraderFraGratisMaaned(
@@ -1436,12 +1471,7 @@ async function opgraderFraVelkomst(
     if (udfald.udfald === "ret_rabat") {
       // Én alarm pr. firma og aftale (digest - databasen dedupper), ikke én
       // pr. klik. Teksten er uden skift-id, så den er ens for hvert klik.
-      await logDriftFejl({
-        kilde: "server",
-        hvor: "erhverv/velkomst-rabat-uenig",
-        digest: retRabatAlarmNoegle(f.id, f.intro_noegle),
-        fejl: `Firma ${f.id} (${sub.id}): ${udfald.aarsag}. Skift op fra den gratis måned afvises, og intet trækkes, indtil det er rettet - ret introrabatten i admin, eller tjek abonnementet i Stripe.`,
-      });
+      await meldRetRabat(f, sub.id, udfald.aarsag);
       throw new SkiftAfvist(
         FIRMA_ABONNEMENT.skiftRetRabat,
         `Firma ${f.id}: rabatten på ${sub.id} passer ikke med databasen (${udfald.aarsag})`,

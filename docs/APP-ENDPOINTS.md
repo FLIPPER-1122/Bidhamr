@@ -210,9 +210,14 @@ Det viste beløb er det trukne (måned 1-reglen, rettelser 4, 27. okt. 2026):
    (almindeligt skift - vis de almindelige tekster) eller `velkomstSkift: true` med `udfald` (`skift` / `venter` /
    `ret_rabat`), `beloeb` (`eksklOere`/`inklOere` - det, der trækkes i dag), `rabat` (slags, procent og `til` =
    rabattens slutdato som dansk dato), `visning`, `kanSkifte`, `tekst` (bekræftelsen) og `knap`. Ved
-   `kanSkifte: false` (ret_rabat) vises ingen knap.
+   `kanSkifte: false` (ret_rabat, eller pakken har ingen pris endnu) vises ingen knap - kun `tekst`.
+   GET'en afgør "skift op" med databasens egen rang (`erhverv_pakke_rang`, og en arkiveret nuværende pakke er
+   mindst) - præcis som POST'en, så `velkomstSkift: false` aldrig efterfølges af `409 visning_mangler`. En
+   inaktiv eller arkiveret pakke giver `400 ugyldig_pakke` (som POST'en).
 2. Ved tryk: `POST { pakkeId, visning }` med `visning` fra GET'en. Ved et skift op fra Starts gratis måned er
-   `visning` krævet: uden den `409 visning_mangler`, før noget ændres.
+   `visning` krævet: uden den `409 visning_mangler`, før noget ændres. Send kun `visning`, når GET'en gav
+   `velkomstSkift: true`: feltet tjekkes ved ALLE skift (også når det ikke bruges), så en ugyldig værdi altid
+   giver `400 ugyldig_visning`, før noget ændres. Hjemmesiden gør det samme.
 3. Afvist før noget er trukket (`409`): `pris_aendret` (hent GET igen og vis den nye pris), `rabat_venter`
    (introrabatten er sat op eller sættes op - hent GET igen), `ret_rabat` (BidHamr skal rette rabatten - vis
    `fejl`), `visning_mangler`. En sendt, men ugyldig `visning`: `400 ugyldig_visning`.

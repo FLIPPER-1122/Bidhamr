@@ -32,6 +32,7 @@ const t = vi.hoisted(() => ({
   drift: [] as Record<string, unknown>[],
   opdateringer: [] as Record<string, unknown>[],
   pakker: [] as Record<string, unknown>[],
+  rangFejl: false,
 }));
 
 const stripeFalsk = vi.hoisted(() => ({
@@ -89,6 +90,16 @@ vi.mock("@/lib/supabase/admin", () => ({
       },
       (navn, args): Svar => {
         t.rpcLog.push({ navn, args: args as Record<string, unknown> });
+        if (navn === "erhverv_pakke_rang") {
+          if (t.rangFejl) return { data: null, error: { message: "timeout", code: "57014" } };
+          // Som databasens funktion: [coalesce(auktioner, 1e9), fremhævninger, coalesce(pris, 0)].
+          const p = t.pakker.find((x) => x.id === (args as { p_pakke: string }).p_pakke);
+          if (!p) return { data: null, error: null };
+          return {
+            data: [p.auktioner_pr_maaned ?? 1_000_000_000, p.fremhaevninger_pr_maaned, p.maanedspris ?? 0],
+            error: null,
+          };
+        }
         const v = t.rpc[navn];
         return { data: v === undefined ? { kode: "ok" } : v, error: null };
       },
@@ -97,7 +108,9 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 process.env.STRIPE_SECRET_KEY = "sk_test_enhed";
 
-const { startOpgradering, udloebetOpgradering, introTilStripe, velkomstSkiftForPakke } = await import("@/lib/erhverv/betaling");
+const { startOpgradering, udloebetOpgradering, introTilStripe, velkomstSkiftForPakke, velkomstSkiftVisning } = await import(
+  "@/lib/erhverv/betaling"
+);
 const { skiftPakkeForBruger } = await import("@/lib/erhverv/pakkeskift");
 const { retRabatAlarmNoegle } = await import("@/lib/erhverv/abonnementRegler");
 const { FIRMA_ABONNEMENT, FIRMA_OVERSIGT_EKSTRA } = await import("@/lib/tekster/erhverv");
@@ -171,9 +184,10 @@ beforeEach(() => {
   t.rpcLog = [];
   t.drift = [];
   t.opdateringer = [];
+  t.rangFejl = false;
   t.pakker = [
-    { id: START, navn: "Start", maanedspris: 499, auktioner_pr_maaned: 10, fremhaevninger_pr_maaned: 0, maaned1: "gratis" },
-    { id: PRO, navn: "Pro", maanedspris: 1999, auktioner_pr_maaned: 100, fremhaevninger_pr_maaned: 4, maaned1: "halv" },
+    { id: START, navn: "Start", maanedspris: 499, auktioner_pr_maaned: 10, fremhaevninger_pr_maaned: 0, maaned1: "gratis", aktiv: true, arkiveret_kl: null },
+    { id: PRO, navn: "Pro", maanedspris: 1999, auktioner_pr_maaned: 100, fremhaevninger_pr_maaned: 4, maaned1: "halv", aktiv: true, arkiveret_kl: null },
   ];
 });
 
@@ -217,6 +231,45 @@ describe("velkomstSkiftForPakke (appens GET): samme udfald som serveren ved skif
     expect(await velkomstSkiftForPakke(BRUGER, "7e57a000-0000-4000-8000-000000000009")).toEqual({ status: "ugyldig_pakke" });
     t.firmaer = [null as never];
     expect(await velkomstSkiftForPakke(BRUGER, PRO)).toEqual({ status: "ikke_firma" });
+  });
+
+  it("op/ned afgøres med databasens rang (erhverv_pakke_rang), ikke en kopi i koden", async () => {
+    await velkomstSkiftForPakke(BRUGER, PRO);
+    const rang = t.rpcLog.filter((k) => k.navn === "erhverv_pakke_rang").map((k) => k.args.p_pakke);
+    expect(rang.sort()).toEqual([START, PRO].sort());
+  });
+
+  it("arkiveret nuværende pakke: et skift op som i databasen - GET kræver visning, og POST'en uden giver visning_mangler", async () => {
+    // Den nuværende pakke er arkiveret og har en højere rang end målet: en
+    // kopi af rangen ville sige "ned" (ingen visning), men databasen siger op.
+    t.pakker = [
+      { id: START, navn: "Gammel", maanedspris: 4999, auktioner_pr_maaned: null, fremhaevninger_pr_maaned: 9, maaned1: "gratis", aktiv: false, arkiveret_kl: "2026-10-01T00:00:00Z" },
+      { id: PRO, navn: "Pro", maanedspris: 1999, auktioner_pr_maaned: 100, fremhaevninger_pr_maaned: 4, maaned1: "halv", aktiv: true, arkiveret_kl: null },
+    ];
+    const r = await velkomstSkiftForPakke(BRUGER, PRO);
+    expect(r).toMatchObject({ status: "ok", tilbud: { udfald: "skift", visning: "velkomst:50", kanSkifte: true } });
+    const uden = await startOpgradering(SKIFT, TILBAGERUL, "laas-1", null);
+    expect(uden).toMatchObject({ afvistKode: "visning_mangler" });
+  });
+
+  it("pakken har ingen pris: stadig velkomstSkift (POST'en kræver visning), men ingen knap og en forklaring", async () => {
+    t.pakker = [t.pakker[0], { ...t.pakker[1], maanedspris: null }];
+    expect(await velkomstSkiftForPakke(BRUGER, PRO)).toMatchObject({
+      status: "ok",
+      tilbud: { udfald: "skift", visning: "velkomst:50", kanSkifte: false, beloeb: null, knap: "", tekst: FIRMA_ABONNEMENT.bekraeftOpgraderPrisIkkeSat },
+    });
+  });
+
+  it("inaktiv eller arkiveret målpakke: ugyldig_pakke (som databasen ved POST'en)", async () => {
+    t.pakker = [t.pakker[0], { ...t.pakker[1], aktiv: false }];
+    expect(await velkomstSkiftForPakke(BRUGER, PRO)).toEqual({ status: "ugyldig_pakke" });
+    t.pakker = [t.pakker[0], { ...t.pakker[1], aktiv: true, arkiveret_kl: "2026-10-01T00:00:00Z" }];
+    expect(await velkomstSkiftForPakke(BRUGER, PRO)).toEqual({ status: "ugyldig_pakke" });
+  });
+
+  it("databasens rang kan ikke hentes: kaster (vis ikke et forkert udfald)", async () => {
+    t.rangFejl = true;
+    await expect(velkomstSkiftForPakke(BRUGER, PRO)).rejects.toThrow("erhverv_pakke_rang");
   });
 
   it("Stripe nede: kaster (appen må ikke tro, at intet skal vises)", async () => {
@@ -318,6 +371,29 @@ describe("ret_rabat: én alarm pr. firma og aftale (småt 4) og egen kode (småt
     expect(new Set(alarmer.map((d) => d.fejl)).size).toBe(1);
     expect(t.drift.filter((d) => d.hvor === "skiftPakke/startOpgradering")).toEqual([]);
     expect(prisOpdateringer()).toEqual([]);
+  });
+
+  it("alarmen kommer allerede, når ret_rabat vises (siden og appen skjuler knappen) - samme digest som klikket", async () => {
+    t.firmaer = [
+      firma({ intro_status: "aktiv", intro_procent: 30, intro_maaneder: 3, intro_coupon_id: "bidhamr_intro_30_3", intro_noegle: NOEGLE }),
+    ];
+    // Hjemmesiden (Firma oversigt -> Abonnement).
+    expect(await velkomstSkiftVisning(BRUGER)).toMatchObject({ velkomstGratis: true, udfald: { udfald: "ret_rabat" } });
+    // Appen (GET /api/firma/skift-pakke).
+    expect(await velkomstSkiftForPakke(BRUGER, PRO)).toMatchObject({ status: "ok", tilbud: { udfald: "ret_rabat", kanSkifte: false } });
+    // Et klik alligevel (fx en gammel app).
+    await skiftPakkeForBruger(BRUGER, PRO, "ret_rabat");
+    const alarmer = t.drift.filter((d) => d.hvor === "erhverv/velkomst-rabat-uenig");
+    expect(alarmer).toHaveLength(3);
+    // Én nøgle og én tekst: databasen dedupper til én alarm.
+    expect(new Set(alarmer.map((d) => d.digest))).toEqual(new Set([retRabatAlarmNoegle(FIRMA, NOEGLE)]));
+    expect(new Set(alarmer.map((d) => d.fejl)).size).toBe(1);
+  });
+
+  it("ingen alarm, når udfaldet ikke er ret_rabat", async () => {
+    await velkomstSkiftVisning(BRUGER);
+    await velkomstSkiftForPakke(BRUGER, PRO);
+    expect(t.drift.filter((d) => d.hvor === "erhverv/velkomst-rabat-uenig")).toEqual([]);
   });
 
   it("introrabatten venter: rabat_venter (rabatten sættes op, intet trukket)", async () => {
