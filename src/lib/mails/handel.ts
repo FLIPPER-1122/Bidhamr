@@ -293,7 +293,7 @@ export function pakkeSendtMail(titel: string, tracking: string, tradeId: string)
     overskriftHtml: "Pakken er på vej",
     afsnitHtml: [
       `Sælgeren har sendt <strong>${escapeHtml(titel)}</strong>. Du kan følge pakken med sporingsnummeret nedenfor.`,
-      "Når pakken er kommet frem, kvitterer du for den på handelssiden. Tjek varen, og godkend den. Sælgeren får pengene, når du har godkendt varen, eller automatisk efter 48 timer, hvis du ikke har oprettet en sag.",
+      "Når pakken er kommet frem, kvitterer du for den på handelssiden. Tjek varen, og godkend den. Gem pakken og labelen, til du har godkendt varen. Sælgeren får pengene, når du har godkendt varen, eller automatisk 72 timer efter, at pakken er leveret, hvis du ikke har meldt et problem.",
     ],
     info: [vare(titel), { noegle: "Sporingsnummer", vaerdiHtml: escapeHtml(tracking) }],
     knap: { tekst: "Se handlen", url: sideUrl(`/mine-handler/${tradeId}`) },

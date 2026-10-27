@@ -26,6 +26,11 @@ export const KATEGORI_FELTER: Record<SagBilledeKategori, Omit<KategoriFelt, "paa
     overskrift: "Labelen",
     hjaelp: "Fragtlabelen på pakken, tæt nok på til at sporingsnummeret kan læses.",
   },
+  pakke_label: {
+    kategori: "pakke_label",
+    overskrift: "Pakken med labelen",
+    hjaelp: "Hele pakken, så man kan se, om den er mast, og så labelen kan læses.",
+  },
   indhold: {
     kategori: "indhold",
     overskrift: "Indholdet",

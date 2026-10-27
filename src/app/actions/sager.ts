@@ -16,7 +16,10 @@
 //
 // Appen (Expo) kan bruge det samme direkte med supabase-js:
 //   supabase.storage.from("sag-billeder").upload(sti, fil, { upsert: false, contentType })
-//   supabase.rpc("sag_opret", { p_trade, p_type, p_beskrivelse, p_billeder: [{ sti, kategori }] })
+//   supabase.rpc("sag_opret", { p_trade, p_type, p_beskrivelse, p_billeder: [{ sti, kategori }],
+//       p_pakke_smidt_ud?, p_smidt_ud_begrundelse? })   (20261102210000)
+//   ELLER (anbefalet - beskeden til sælgeren sendes straks):
+//   POST /api/sag/app/opret og /api/sag/app/svar (docs/APP-ENDPOINTS.md)
 //       -> { kode: "ok", sag_id } | { kode: <fejlkode> } (se SAG_OPRET_FEJL)
 //   supabase.rpc("sag_tilfoej_billeder", { p_sag, p_billeder })
 //   supabase.from("sager").select("id, trade_id, type, beskrivelse, status,
@@ -54,15 +57,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { erNyPrivatPrismodel } from "@/lib/betaling/beregn";
 import { logDriftFejl } from "@/lib/drift";
-import { notificerAnkeIndgivet, notificerSagOprettet } from "@/lib/sagerServer";
+import { notificerAnkeIndgivet } from "@/lib/sagerServer";
+import { opretSagFor, svarPaaSagFor } from "@/lib/sagHandlinger";
 import { hentPakkeBilleder, type VistPakkeBillede } from "@/lib/pakkebillederServer";
+import { hentSagMulighederFor, type SagMuligheder } from "@/lib/sagMuligheder";
 import {
-  SAG_AUTO_FRIGIV_EFTER_DAGE,
-  SAG_BESKRIVELSE_MAKS,
-  SAG_BESKRIVELSE_MIN,
-  SAG_BORTKOMMET_EFTER_DAGE,
   SAG_BUCKET,
-  SAG_FRIST_TIMER_EFTER_MODTAGET,
+  SAG_SVAR_FEJL,
   SAG_MAKS_BILLEDER,
   SAG_OPRET_FEJL,
   SAG_ANKE_BEGRUNDELSE_MAKS,
@@ -76,18 +77,16 @@ import {
   type SagStatus,
   type SagType,
   erSagBilledeKategori,
-  erSagType,
-  sagKraeverBeskyttelse,
+  sagSvarFristKl,
   sagReturFristKl,
   sagSti,
 } from "@/lib/sager";
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const TIME = 60 * 60 * 1000;
-const DAG = 24 * TIME;
 
-export type SagBilledeInput = { sti: string; kategori: SagBilledeKategori };
+export type { SagBilledeInput } from "@/lib/sagHandlinger";
+import type { SagBilledeInput } from "@/lib/sagHandlinger";
 
 export type MinSag = {
   id: string;
@@ -105,8 +104,18 @@ export type MinSag = {
   // Begrundelsen fra BidHamr til køber og sælger.
   begrundelse: string | null;
   returKraeves: boolean;
-  returfragtBetaler: "koeber" | "bidhamr" | null;
+  // Hvem betaler returfragten (20261102210000: 'saelger' ved transportskade
+  // med dårlig indpakning, 'bidhamr' ved god indpakning).
+  returfragtBetaler: "koeber" | "saelger" | "bidhamr" | null;
   returAfleveretKl: string | null;
+  // Køberen har smidt pakken ud (sagen oprettet uden pakkebillede).
+  pakkeSmidtUd: boolean;
+  // Sælgerens svar (regel 3) - vises for køber og sælger (og staff).
+  svar: MitSagSvar | null;
+  // Sælgerens svarfrist (oprettet + 48 timer), og om DENNE bruger (sælgeren)
+  // kan svare nu.
+  svarFristKl: string | null;
+  kanSvare: boolean;
   genaabnetKl: string | null;
   // Ankefrist: hvad der sker med pengene, tidligst hvornår, og om det er sket.
   pengeHandling: SagPengeHandling | null;
@@ -130,6 +139,12 @@ export type MinSag = {
   ankeMulighed: AnkeMulighed;
 };
 
+export type MitSagSvar = {
+  tekst: string;
+  oprettetKl: string;
+  billeder: { id: string; kategori: SagBilledeKategori; url: string | null; oprettetKl: string }[];
+};
+
 export type MinAnke = {
   id: string;
   // Hvem ankede.
@@ -151,30 +166,8 @@ export type AnkeMulighed = {
   tilKl: string | null;
 };
 
-export type SagMuligheder = {
-  // Typer, køberen kan vælge lige nu (tom = ingen sag mulig).
-  typer: SagType[];
-  // Typer, der kræver BidHamr Beskyttelse, som køberen ikke har.
-  kraeverBeskyttelse: SagType[];
-  beskyttelse: boolean;
-  // Billeder af pakke, label og indhold kræves (pakken er modtaget).
-  billederKraeves: boolean;
-  // Typer, der ikke kræver billederne, selvom billederKraeves er sat
-  // ("Pakken er ikke kommet frem", når fragtfirmaet har meldt den leveret).
-  billederFriTyper: SagType[];
-  // Fragtfirmaets leveringsmelding startede 48-timers uret (køberen har ikke
-  // selv kvitteret) - trades.modtaget_kilde = 'fragt'.
-  fragtLeveret: boolean;
-  // Sidste frist for at oprette en sag: 48 timer efter "modtaget" (købers
-  // eget tryk eller fragtfirmaets leveringsmelding), eller -
-  // når pakken er sendt - 14 dage efter afsendelse (så frigives pengene
-  // automatisk).
-  fristKl: string | null;
-  // Hvornår "Pakken er ikke kommet frem" kan vælges (pakke sendt).
-  bortkommetFraKl: string | null;
-  // Der findes allerede en sag (så vises den i stedet).
-  harSag: boolean;
-};
+// Mulighederne for at oprette en sag (fælles med appen - src/lib/sagMuligheder.ts).
+export type { SagMuligheder } from "@/lib/sagMuligheder";
 
 function erUuid(v: unknown): v is string {
   return typeof v === "string" && UUID.test(v);
@@ -193,52 +186,35 @@ function rensBilleder(billeder: unknown): SagBilledeInput[] | null {
 }
 
 // Køberen opretter en sag. billeder: stier fra upload til 'sag-billeder'.
+// Samme kode som appen (src/lib/sagHandlinger.ts opretSagFor).
 export async function opretSag(
   tradeId: string,
   type: string,
   beskrivelse: string,
   billeder: SagBilledeInput[],
+  // Regel 2 (20261102210000): køberen har ikke pakken længere - forklaring
+  // på mindst 20 tegn; sagen markeres til staffs vurdering.
+  smidtUd: { pakkeSmidtUd: boolean; begrundelse: string } | null = null,
 ): Promise<{ ok: true; sagId: string } | { fejl: string }> {
   try {
-    if (!erUuid(tradeId)) return { fejl: SAG_OPRET_FEJL.ikke_fundet };
-    if (!erSagType(type)) return { fejl: SAG_OPRET_FEJL.ugyldig_type };
-    const tekst = typeof beskrivelse === "string" ? beskrivelse.trim() : "";
-    if (tekst.length < SAG_BESKRIVELSE_MIN || tekst.length > SAG_BESKRIVELSE_MAKS) {
-      return { fejl: SAG_OPRET_FEJL.ugyldig_beskrivelse };
-    }
-    const rene = rensBilleder(billeder ?? []);
-    if (!rene) return { fejl: SAG_OPRET_FEJL.ugyldige_billeder };
-
     const supabase = await createClient();
     const {
       data: { user },
     } = await hentLoggetIndBruger(supabase);
     if (!user) return { fejl: SAG_OPRET_FEJL.ikke_logget_ind };
-
-    const { data, error } = await supabase.rpc("sag_opret", {
-      p_trade: tradeId,
-      p_type: type,
-      p_beskrivelse: tekst,
-      p_billeder: rene,
+    const r = await opretSagFor(supabase, user.id, {
+      tradeId,
+      type,
+      beskrivelse,
+      billeder,
+      pakkeSmidtUd: !!smidtUd?.pakkeSmidtUd,
+      smidtUdBegrundelse: smidtUd?.begrundelse ?? null,
     });
-    if (error) {
-      console.error("sag_opret fejlede:", error);
-      await logDriftFejl({ kilde: "action", sti: "sager", hvor: "sag_opret", fejl: error, brugerId: user.id });
-      return { fejl: GENERISK };
-    }
-    const svar = data as { kode: string; sag_id?: string } | null;
-    if (!svar || svar.kode !== "ok" || !svar.sag_id) {
-      return { fejl: SAG_OPRET_FEJL[svar?.kode ?? ""] ?? GENERISK };
-    }
-    const sagId = svar.sag_id;
-
-    // Notifikationer til køber og sælger (påkrævet type 'sag'). Kaster aldrig.
-    after(() => notificerSagOprettet(sagId));
-
+    if ("fejl" in r) return { fejl: r.fejl };
     revalidatePath(sagSti(tradeId));
     revalidatePath("/mine-handler");
     revalidatePath("/admin", "layout");
-    return { ok: true, sagId };
+    return { ok: true, sagId: r.sagId };
   } catch (err) {
     unstable_rethrow(err);
     console.error("opretSag fejlede:", err);
@@ -282,6 +258,35 @@ export async function tilfoejSagBilleder(
     unstable_rethrow(err);
     console.error("tilfoejSagBilleder fejlede:", err);
     await logDriftFejl({ kilde: "action", sti: "sager", hvor: "tilfoejSagBilleder", fejl: err });
+    return { fejl: GENERISK };
+  }
+}
+
+// Sælgeren svarer på en sag (regel 3, 20261102210000): tekst og billeder,
+// én gang, inden for 48 timer fra oprettelsen. billeder: stier fra upload til
+// 'sag-billeder' i sælgerens egen mappe (<sælger-id>/<handel-id>/...).
+// Databasen (sag_svar_send) tjekker part, frist, kontaktinfo og billeder.
+// Appen: POST /api/sag/app/svar (samme kode - svarPaaSagFor).
+export async function svarPaaSag(
+  sagId: string,
+  tekst: string,
+  billeder: SagBilledeInput[],
+): Promise<{ ok: true } | { fejl: string }> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await hentLoggetIndBruger(supabase);
+    if (!user) return { fejl: SAG_SVAR_FEJL.ikke_logget_ind };
+    const r = await svarPaaSagFor(supabase, user.id, { sagId, tekst, billeder });
+    if ("fejl" in r) return { fejl: r.fejl };
+    revalidatePath("/mine-handler", "layout");
+    revalidatePath("/admin", "layout");
+    return { ok: true };
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error("svarPaaSag fejlede:", err);
+    await logDriftFejl({ kilde: "action", sti: "sager", hvor: "svarPaaSag", fejl: err });
     return { fejl: GENERISK };
   }
 }
@@ -356,10 +361,33 @@ type SagRaekke = {
   afgjort_kl: string | null;
   begrundelse: string | null;
   retur_kraeves: boolean;
-  returfragt_betaler: "koeber" | "bidhamr" | null;
+  returfragt_betaler: "koeber" | "saelger" | "bidhamr" | null;
   retur_afleveret_kl: string | null;
   genaabnet_kl: string | null;
 };
+
+type SvarRaekke = { id: string; tekst: string; oprettet_kl: string };
+type SvarBilledeRaekke = { id: string; sti: string; kategori: SagBilledeKategori; oprettet_kl: string };
+
+// Sælgerens svar og "smidt ud" (20261102210000). Tåler en database uden
+// migrationen (så findes der intet svar).
+async function hentSvar(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  sagId: string,
+): Promise<{ svar: SvarRaekke | null; billeder: SvarBilledeRaekke[]; smidtUd: boolean }> {
+  const [{ data: svar, error }, { data: smidt }] = await Promise.all([
+    supabase.from("sag_svar").select("id, tekst, oprettet_kl").eq("sag_id", sagId).maybeSingle<SvarRaekke>(),
+    supabase.from("sager").select("pakke_smidt_ud").eq("id", sagId).maybeSingle<{ pakke_smidt_ud: boolean }>(),
+  ]);
+  if (error || !svar) return { svar: null, billeder: [], smidtUd: !!smidt?.pakke_smidt_ud };
+  const { data: billeder } = await supabase
+    .from("sag_svar_billeder")
+    .select("id, sti, kategori, oprettet_kl")
+    .eq("svar_id", svar.id)
+    .order("oprettet_kl", { ascending: true })
+    .overrideTypes<SvarBilledeRaekke[], { merge: false }>();
+  return { svar, billeder: billeder ?? [], smidtUd: !!smidt?.pakke_smidt_ud };
+}
 
 // Sagen på en handel for køber eller sælger (null = ingen sag). Billederne
 // får signerede links (1 time). Alt hentes med brugerens egen session, så RLS
@@ -442,8 +470,10 @@ export async function hentSagForHandel(
           .overrideTypes<{ id: string; sti: string; kategori: SagBilledeKategori; oprettet_kl: string }[], { merge: false }>()
       : { data: [] as { id: string; sti: string; kategori: SagBilledeKategori; oprettet_kl: string }[] };
     const m = (mulighed ?? null) as { kode?: string; fra_kl?: string | null; til_kl?: string | null } | null;
+    const svarInfo = await hentSvar(supabase, sag.id);
+    const svarFristKl = sagSvarFristKl(sag.oprettet_kl);
 
-    const stier = [...(billeder ?? []), ...(ankeBilleder ?? [])].map((b) => b.sti);
+    const stier = [...(billeder ?? []), ...(ankeBilleder ?? []), ...svarInfo.billeder].map((b) => b.sti);
     const urls = new Map<string, string>();
     const [signeret, pakkebilleder] = await Promise.all([
       stier.length > 0
@@ -472,6 +502,26 @@ export async function hentSagForHandel(
         returKraeves: sag.retur_kraeves,
         returfragtBetaler: sag.returfragt_betaler,
         returAfleveretKl: sag.retur_afleveret_kl,
+        pakkeSmidtUd: svarInfo.smidtUd,
+        svar: svarInfo.svar
+          ? {
+              tekst: svarInfo.svar.tekst,
+              oprettetKl: svarInfo.svar.oprettet_kl,
+              billeder: svarInfo.billeder.map((b) => ({
+                id: b.id,
+                kategori: b.kategori,
+                url: urls.get(b.sti) ?? null,
+                oprettetKl: b.oprettet_kl,
+              })),
+            }
+          : null,
+        svarFristKl,
+        kanSvare:
+          !erKoeber &&
+          !svarInfo.svar &&
+          sag.status === "aaben" &&
+          !!svarFristKl &&
+          Date.parse(svarFristKl) > Date.now(),
         genaabnetKl: sag.genaabnet_kl,
         pengeHandling: sag.penge_handling,
         pengeFlyttesEfterKl: sag.penge_flyttes_efter_kl,
@@ -535,8 +585,9 @@ export async function hentSagForHandel(
   }
 }
 
-// Hvilke sager kan køberen oprette lige nu? Til knappen "Opret sag" på
-// handelssiden. Databasen (sag_opret) er stadig den endelige dommer.
+// Hvilke sager kan køberen oprette lige nu? Til "Meld et problem" på
+// handelssiden. Samme kode som appens endpoint (src/lib/sagMuligheder.ts).
+// Databasen (sag_opret) er stadig den endelige dommer.
 export async function hentSagMuligheder(
   tradeId: string,
 ): Promise<SagMuligheder | { fejl: string }> {
@@ -547,95 +598,8 @@ export async function hentSagMuligheder(
       data: { user },
     } = await hentLoggetIndBruger(supabase);
     if (!user) return { fejl: SAG_OPRET_FEJL.ikke_logget_ind };
-
-    // Kun køberen. Hentes med brugerens session (RLS), derefter detaljer med
-    // service-role (sendt_kl/betalingen er ikke læsbare for brugeren).
-    const { data: rls } = await supabase
-      .from("trades")
-      .select("id")
-      .eq("id", tradeId)
-      .eq("buyer_id", user.id)
-      .maybeSingle();
-    if (!rls) return { fejl: "Handlen findes ikke." };
-
-    const admin = createAdminClient();
-    const [{ data: t }, { data: b }, { count }] = await Promise.all([
-      (async () => {
-        type T = { status: string; received_at: string | null; sendt_kl: string | null; modtaget_kilde?: string | null };
-        const hent = (k: string) => admin.from("trades").select(k).eq("id", tradeId).single<T>();
-        // Før migrationen 20261030010000 findes modtaget_kilde ikke.
-        const r = await hent("status, received_at, sendt_kl, modtaget_kilde");
-        return r.error?.code === "42703" ? await hent("status, received_at, sendt_kl") : r;
-      })(),
-      admin
-        .from("betalinger")
-        .select(
-          "status, beskyttelse, betalt_kl, frigivet_kl, refusion_anmodet_kl, overfoersel_paabegyndt_kl, stripe_transfer_id",
-        )
-        .eq("trade_id", tradeId)
-        .maybeSingle<{
-          status: string;
-          beskyttelse: boolean;
-          betalt_kl: string | null;
-          frigivet_kl: string | null;
-          refusion_anmodet_kl: string | null;
-          overfoersel_paabegyndt_kl: string | null;
-          stripe_transfer_id: string | null;
-        }>(),
-      admin.from("sager").select("id", { count: "exact", head: true }).eq("trade_id", tradeId),
-    ]);
-
-    const tom: SagMuligheder = {
-      typer: [],
-      kraeverBeskyttelse: [],
-      beskyttelse: !!b?.beskyttelse,
-      billederKraeves: false,
-      billederFriTyper: [],
-      fragtLeveret: false,
-      fristKl: null,
-      bortkommetFraKl: null,
-      harSag: (count ?? 0) > 0,
-    };
-    if (!t || !b || tom.harSag) return tom;
-    if (
-      b.status !== "betalt" ||
-      b.frigivet_kl ||
-      b.refusion_anmodet_kl ||
-      b.overfoersel_paabegyndt_kl ||
-      b.stripe_transfer_id
-    ) {
-      return tom;
-    }
-
-    const nu = Date.now();
-    let kandidater: SagType[] = [];
-    if (t.status === "modtaget" && t.received_at) {
-      const frist = new Date(t.received_at).getTime() + SAG_FRIST_TIMER_EFTER_MODTAGET * TIME;
-      tom.fristKl = new Date(frist).toISOString();
-      tom.billederKraeves = true;
-      if (frist > nu) kandidater = ["skadet", "ikke_som_beskrevet", "svindel"];
-      // Fragtfirmaet meldte pakken leveret (20261030010000): køberen kan også
-      // melde, at han ikke har fået den - uden billeder (sag_opret).
-      if (t.modtaget_kilde === "fragt") {
-        tom.fragtLeveret = true;
-        tom.billederFriTyper = ["bortkommet"];
-        if (frist > nu) kandidater = ["bortkommet", ...kandidater];
-      }
-    } else if (t.status === "pakke_sendt") {
-      const sendt = t.sendt_kl ?? b.betalt_kl;
-      if (sendt) {
-        const fra = new Date(sendt).getTime() + SAG_BORTKOMMET_EFTER_DAGE * DAG;
-        // Efter 14 dage frigives pengene automatisk (handel_auto_frigiv).
-        const til = new Date(sendt).getTime() + SAG_AUTO_FRIGIV_EFTER_DAGE * DAG;
-        tom.bortkommetFraKl = new Date(fra).toISOString();
-        tom.fristKl = new Date(til).toISOString();
-        if (fra <= nu && nu < til) kandidater = ["bortkommet", "svindel"];
-      }
-    }
-
-    tom.typer = kandidater.filter((k) => !sagKraeverBeskyttelse(k) || b.beskyttelse);
-    tom.kraeverBeskyttelse = kandidater.filter((k) => sagKraeverBeskyttelse(k) && !b.beskyttelse);
-    return tom;
+    const r = await hentSagMulighederFor(user.id, tradeId);
+    return "fejl" in r ? { fejl: r.fejl } : r;
   } catch (err) {
     unstable_rethrow(err);
     console.error("hentSagMuligheder fejlede:", err);

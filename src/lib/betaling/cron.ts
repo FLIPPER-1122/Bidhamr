@@ -62,6 +62,8 @@ import {
   notificerNyeAnker,
   notificerNyeSager,
   notificerReturKanSendes,
+  paamindKoebereOmProblemFrist,
+  paamindSaelgereOmSvar,
 } from "@/lib/sagerServer";
 import { frigivAutomatisk, paamindKoeberOmModtagelse } from "@/lib/betaling/autoFrigiv";
 import { startUrFraFragt } from "@/lib/betaling/fragtUr";
@@ -150,6 +152,8 @@ export async function koerBetalingsCron() {
     sagsbeskeder: 0,
     ankebeskeder: 0,
     returbeskeder: 0,
+    problemFristPaamindelser: 0,
+    svarPaamindelser: 0,
     sagsafviklinger: 0,
     fragtUrStartet: 0,
     autoFrigivet: 0,
@@ -410,6 +414,11 @@ export async function koerBetalingsCron() {
   } catch (err) {
     await trinFejl("Beskeder om retur efter ankefristen", err);
   }
+  // 5f) Påmindelser (20261102210000): køberen 6 timer før fristen for at melde
+  //     et problem, og sælgeren 12 timer før fristen for at svare på en sag.
+  //     Faste nøgler - sendes højst én gang. Kaster aldrig.
+  resultat.problemFristPaamindelser = await paamindKoebereOmProblemFrist();
+  resultat.svarPaamindelser = await paamindSaelgereOmSvar();
 
   // 6) Fristen overskredet: annullér handel + Stripe, opret sag, send mails.
   try {

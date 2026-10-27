@@ -1,5 +1,5 @@
 // Scenarie: retur i en sag (Filip, 13. okt. 2026). Køberen har fået medhold
-// (skadet, BidHamr Beskyttelse), ankefristen er udløbet, og varen skal sendes
+// (ikke som beskrevet, BidHamr Beskyttelse), ankefristen er udløbet, og varen skal sendes
 // retur. Køberen betaler selv returfragten (= fragten ud, 42 kr.) til
 // BidHamrs PLATFORMSKONTO - ingen destination charge, intet gebyr - med
 // testkortet pm_card_bypassPending. Returkoden må først laves, når webhooken
@@ -104,8 +104,10 @@ async function sagMedRetur(navn: string): Promise<TestHandel> {
     .insert({
       trade_id: h.tradeId,
       oprettet_af: h.koeber.id,
-      type: "skadet",
-      beskrivelse: "TEST pengetest: varen kom frem i stykker (retur).",
+      // 20261102210000: ved transportskade betaler køberen ikke returfragten -
+      // "ikke som beskrevet" er den sag, hvor køberen stadig betaler.
+      type: "ikke_som_beskrevet",
+      beskrivelse: "TEST pengetest: varen er ikke som beskrevet (retur).",
       status: "afventer_retur",
       beskyttelse: true,
       handel_status_ved_oprettelse: "modtaget",

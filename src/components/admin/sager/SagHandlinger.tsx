@@ -12,9 +12,10 @@ import {
   genaabnSag,
   lukKontoPermanent,
   registrerReturAfleveret,
+  retSagType,
   vurderIndpakning,
 } from "@/app/actions/adminSager";
-import { SAG_BEGRUNDELSE_MAKS, type SagStatus, type SagType } from "@/lib/sager";
+import { SAG_BEGRUNDELSE_MAKS, SAG_TYPER, SAG_TYPE_NAVN, type SagStatus, type SagType } from "@/lib/sager";
 import { STAFF_CHAT_MAKS_TEKST } from "@/lib/staffChat";
 import { indgrebFelter } from "@/components/admin/indgrebFelter";
 import Skabeloner from "@/components/admin/Skabeloner";
@@ -201,8 +202,77 @@ function refusionHvadTekst(prismodel: string | null | undefined): string {
   return "nye handler: kun buddet, erhverv: alle pengene, gamle handler: alt undtagen BidHamr Beskyttelse";
 }
 
+// 20261102210000: bortkommet pakke og transportskade = hele beløbet.
+function refusionHvadForType(type: SagType, refusionHvad: string): string {
+  return type === "bortkommet" || type === "skadet" ? "hele beløbet – bud, gebyr og fragt" : refusionHvad;
+}
+
+type ReturfragtBetaler = "saelger" | "bidhamr";
+
+// Transportskade med medhold: hvem betaler returfragten (sag_afgoer /
+// sag_anke_afgoer p_returfragt_betaler).
+function ReturfragtBetalerValg({
+  vaerdi,
+  onChange,
+  laast,
+}: {
+  vaerdi: ReturfragtBetaler | "";
+  onChange: (v: ReturfragtBetaler) => void;
+  laast: boolean;
+}) {
+  const valg: [ReturfragtBetaler, string, string][] = [
+    [
+      "saelger",
+      "Sælgeren (dårlig indpakning)",
+      "Sælgeren får en regning på returfragten (som ekstra fragt), når returpakken er afleveret. Husk at give påmindelse/advarsel for dårlig indpakning.",
+    ],
+    [
+      "bidhamr",
+      "BidHamr (god indpakning)",
+      "BidHamr betaler returfragten. Indpakningen registreres som ordentlig, og der oprettes en reklamation hos fragtfirmaet, når køberen er refunderet.",
+    ],
+  ];
+  return (
+    <fieldset>
+      <legend className="text-sm font-medium text-neutral-800">Hvem betaler returfragten?</legend>
+      <p className="mt-0.5 text-xs text-neutral-500">Køberen betaler aldrig returfragten ved en transportskade.</p>
+      <div className="mt-2 space-y-2">
+        {valg.map(([v, navn, hjaelp]) => (
+          <label
+            key={v}
+            className={`flex cursor-pointer gap-3 rounded-xl border p-3 text-sm ${
+              vaerdi === v ? "border-groen bg-groen-lys" : "border-neutral-200 hover:bg-neutral-50"
+            }`}
+          >
+            <input
+              type="radio"
+              name="returfragt_betaler_valg"
+              value={v}
+              checked={vaerdi === v}
+              onChange={() => onChange(v)}
+              disabled={laast}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-groen"
+            />
+            <span>
+              <span className="block font-semibold text-neutral-900">{navn}</span>
+              <span className="block text-neutral-600">{hjaelp}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function konsekvens(udfald: Udfald, type: SagType, refusionHvad: string): string {
+  if (udfald === "koeber" && type === "andet") {
+    return 'Sagen er af typen "Andet". Ret sagstypen først – refusion og retur afhænger af typen.';
+  }
+  if (udfald === "koeber" && type === "skadet") {
+    return `Køberen sender varen retur uden at betale returfragten – vælg nedenfor, hvem der betaler. Sagen står som "Afventer retur", indtil du registrerer, at returpakken er afleveret. Køberen refunderes (${refusionHvadForType(type, refusionHvad)}), når returpakken er afleveret og ankefristen på 4 dage er udløbet.`;
+  }
   if (udfald === "koeber") {
+    refusionHvad = refusionHvadForType(type, refusionHvad);
     return type === "svindel" || type === "bortkommet"
       ? `Køberen refunderes (${refusionHvad}), når ankefristen på 4 dage er udløbet. Indtil da kan en admin genåbne sagen.`
       : `Køberen skal sende varen retur for egen regning før refusion. Sagen står som "Afventer retur", indtil du registrerer, at returpakken er afleveret. Køberen refunderes (${refusionHvad}), når returpakken er afleveret og ankefristen på 4 dage er udløbet.`;
@@ -249,8 +319,13 @@ function AfgoerKnap({
   const [aaben, setAaben] = useState(false);
   const [udfald, setUdfald] = useState<Udfald | "">("");
   const [returTjekket, setReturTjekket] = useState(false);
+  const [rfBetaler, setRfBetaler] = useState<ReturfragtBetaler | "">("");
   const luk = () => setAaben(false);
   const { sender, fejl, setFejl, send } = useSend(onResultat, luk);
+  // Transportskade med medhold: staff vælger, hvem der betaler returfragten.
+  const kraeverBetaler = udfald === "koeber" && type === "skadet";
+  // "Andet" kan ikke få medhold, før typen er rettet (databasen: vaelg_type).
+  const andetMedhold = udfald === "koeber" && type === "andet";
 
   // Sagen venter på retur, og pengene frigives til sælgeren / frysningen
   // fjernes: staff skal have tjekket, at køberen ikke har sendt varen retur
@@ -267,12 +342,22 @@ function AfgoerKnap({
       setFejl("Bekræft, at du har tjekket, at køberen ikke har sendt varen retur (heller ikke undervejs).");
       return;
     }
+    if (andetMedhold) {
+      setFejl('Ret sagstypen, før køberen får medhold i en sag af typen "Andet".');
+      return;
+    }
+    if (kraeverBetaler && !rfBetaler) {
+      setFejl("Vælg, hvem der betaler returfragten.");
+      return;
+    }
     const fd = new FormData(e.currentTarget);
     const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const videre = naesteHref && submitter?.name === "__naeste" ? naesteHref : null;
     fd.delete("__naeste");
+    fd.delete("returfragt_betaler_valg");
     fd.set("sagId", sagId);
     fd.set("udfald", udfald);
+    if (kraeverBetaler && rfBetaler) fd.set("returfragt_betaler", rfBetaler);
     fd.set("retur_ikke_sendt", kraeverReturTjek && returTjekket ? "ja" : "nej");
     void send(() => afgoerSag(fd), videre);
   }
@@ -285,6 +370,7 @@ function AfgoerKnap({
           setFejl(null);
           setUdfald("");
           setReturTjekket(false);
+          setRfBetaler("");
           setAaben(true);
         }}
         className="btn btn-primaer"
@@ -342,7 +428,9 @@ function AfgoerKnap({
               {udfald === "koeber" && koeberBeloebOere != null && (
                 <>
                   <dt className="text-tekst-daempet">Beløb</dt>
-                  <dd className="font-semibold text-tekst">{kroner(koeberBeloebOere)} ({refusionHvad})</dd>
+                  <dd className="font-semibold text-tekst">
+                    {kroner(koeberBeloebOere)} ({refusionHvadForType(type, refusionHvad)})
+                  </dd>
                 </>
               )}
               <dt className="text-tekst-daempet">Hvornår</dt>
@@ -362,6 +450,7 @@ function AfgoerKnap({
               <span>Jeg har tjekket, at køberen ikke har sendt varen retur (heller ikke undervejs)</span>
             </label>
           )}
+          {kraeverBetaler && <ReturfragtBetalerValg vaerdi={rfBetaler} onChange={setRfBetaler} laast={sender} />}
           <div>
             <label htmlFor={`${id}-begr`} className="block text-sm font-medium text-neutral-800">
               Begrundelse til køber og sælger
@@ -403,7 +492,9 @@ function AfgoerKnap({
             sender={sender}
             onLuk={luk}
             bekraeft={udfald ? `Bekræft: ${UDFALD_NAVN[udfald].toLowerCase()}` : "Bekræft"}
-            deaktiveret={!udfald || (kraeverReturTjek && !returTjekket)}
+            deaktiveret={
+              !udfald || (kraeverReturTjek && !returTjekket) || andetMedhold || (kraeverBetaler && !rfBetaler)
+            }
             naeste={!!naesteHref}
           />
         </form>
@@ -433,8 +524,12 @@ function AnkeKnap({
   const [aaben, setAaben] = useState(false);
   const [udfald, setUdfald] = useState<AnkeUdfald | "">("");
   const [returTjekket, setReturTjekket] = useState(false);
+  const [rfBetaler, setRfBetaler] = useState<ReturfragtBetaler | "">("");
   const luk = () => setAaben(false);
   const { sender, fejl, setFejl, send } = useSend(onResultat, luk);
+  // Omgørelse til køberen ved transportskade: hvem betaler returfragten.
+  const kraeverBetaler = udfald === "omgoer" && anke.part === "koeber" && anke.type === "skadet";
+  const andetMedhold = udfald === "omgoer" && anke.part === "koeber" && anke.type === "andet";
 
   // Sælgeren har anket et medhold til køberen med retur, og sagen venter på
   // returen: før en omgørelse skal behandleren have tjekket, at køberen ikke
@@ -459,8 +554,12 @@ function AnkeKnap({
       anke.part === "saelger"
         ? "Sælgeren får medhold, og pengene udbetales til sælgeren nu. Køberen skal ikke sende varen retur. Har køberen allerede sendt varen, skal det med i vurderingen."
         : anke.type === "svindel" || anke.type === "bortkommet"
-          ? `Køberen får medhold og refunderes nu (${refusionHvad}).`
-          : "Køberen får medhold og skal sende varen retur for egen regning. Køberen refunderes, så snart returpakken er registreret.",
+          ? `Køberen får medhold og refunderes nu (${refusionHvadForType(anke.type, refusionHvad)}).`
+          : anke.type === "andet"
+            ? 'Sagen er af typen "Andet". Ret sagstypen først – refusion og retur afhænger af typen.'
+            : anke.type === "skadet"
+              ? "Køberen får medhold og sender varen retur uden at betale returfragten (vælg nedenfor, hvem der betaler). Køberen refunderes hele beløbet, så snart returpakken er registreret."
+              : "Køberen får medhold og skal sende varen retur for egen regning. Køberen refunderes, så snart returpakken er registreret.",
   };
 
   function indsend(e: FormEvent<HTMLFormElement>) {
@@ -477,9 +576,19 @@ function AnkeKnap({
     const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const videre = naesteHref && submitter?.name === "__naeste" ? naesteHref : null;
     fd.delete("__naeste");
+    if (andetMedhold) {
+      setFejl('Ret sagstypen, før køberen får medhold i en sag af typen "Andet".');
+      return;
+    }
+    if (kraeverBetaler && !rfBetaler) {
+      setFejl("Vælg, hvem der betaler returfragten.");
+      return;
+    }
+    fd.delete("returfragt_betaler_valg");
     fd.set("ankeId", ankeId);
     fd.set("udfald", udfald);
     fd.set("retur_ikke_sendt", kraeverReturTjek && returTjekket ? "ja" : "nej");
+    if (kraeverBetaler && rfBetaler) fd.set("returfragt_betaler", rfBetaler);
     void send(() => afgoerAnke(fd), videre);
   }
 
@@ -545,6 +654,7 @@ function AnkeKnap({
               <span>Jeg har tjekket, at køberen ikke har sendt varen retur</span>
             </label>
           )}
+          {kraeverBetaler && <ReturfragtBetalerValg vaerdi={rfBetaler} onChange={setRfBetaler} laast={sender} />}
           <div>
             <label htmlFor={`${id}-begr`} className="block text-sm font-medium text-neutral-800">
               Begrundelse til køber og sælger
@@ -573,7 +683,9 @@ function AnkeKnap({
             sender={sender}
             onLuk={luk}
             bekraeft={udfald === "omgoer" ? "Bekræft: ændr afgørelsen" : udfald ? "Bekræft: afgørelsen står" : "Bekræft"}
-            deaktiveret={!udfald || (kraeverReturTjek && !returTjekket)}
+            deaktiveret={
+              !udfald || (kraeverReturTjek && !returTjekket) || andetMedhold || (kraeverBetaler && !rfBetaler)
+            }
             naeste={!!naesteHref}
           />
         </form>
@@ -648,6 +760,92 @@ function ReturKnap({
 }
 
 // ------------------------------------------------------------------ Genåbn
+
+// Ret sagstypen (20261102210000) - fx "Andet" til den rigtige type. Logget.
+function RetTypeKnap({ sagId, type, onResultat }: { sagId: string; type: SagType; onResultat: (b: string) => void }) {
+  const id = useId();
+  const [aaben, setAaben] = useState(false);
+  const [ny, setNy] = useState<SagType | "">("");
+  const luk = () => setAaben(false);
+  const { sender, fejl, setFejl, send } = useSend(onResultat, luk);
+
+  function indsend(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!ny) {
+      setFejl("Vælg den nye type.");
+      return;
+    }
+    const fd = new FormData(e.currentTarget);
+    fd.set("sagId", sagId);
+    fd.set("type", ny);
+    void send(async () => {
+      const r = await retSagType(fd);
+      return "fejl" in r ? r : { ok: true as const, besked: r.tekst };
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setFejl(null);
+          setNy("");
+          setAaben(true);
+        }}
+        className="btn btn-sekundaer"
+      >
+        Ret sagstype
+      </button>
+      <Dialog
+        titel="Ret sagstype"
+        beskrivelse={`Nu: ${SAG_TYPE_NAVN[type]}. Typen styrer, hvad køberen får tilbage, og om varen skal sendes retur.`}
+        aaben={aaben}
+        onLuk={luk}
+        laast={sender}
+      >
+        <form onSubmit={indsend} method="post" className="space-y-4">
+          <div>
+            <label htmlFor={`${id}-type`} className="block text-sm font-medium text-neutral-800">
+              Ny type
+            </label>
+            <select
+              id={`${id}-type`}
+              value={ny}
+              onChange={(e) => setNy(e.target.value as SagType)}
+              disabled={sender}
+              className={FELT}
+            >
+              <option value="">Vælg type</option>
+              {SAG_TYPER.filter((t) => t !== type).map((t) => (
+                <option key={t} value={t}>
+                  {SAG_TYPE_NAVN[t]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={`${id}-begr`} className="block text-sm font-medium text-neutral-800">
+              Begrundelse (intern)
+            </label>
+            <textarea
+              id={`${id}-begr`}
+              name="begrundelse"
+              required
+              rows={3}
+              maxLength={SAG_BEGRUNDELSE_MAKS}
+              disabled={sender}
+              className={FELT}
+            />
+            <p className="mt-1 text-xs text-neutral-500">Kun synlig for BidHamr. Ændringen logges med dit navn.</p>
+          </div>
+          <Fejl fejl={fejl} />
+          <Knapper sender={sender} onLuk={luk} bekraeft="Ret typen" deaktiveret={!ny} />
+        </form>
+      </Dialog>
+    </>
+  );
+}
 
 function GenaabnKnap({ sagId, onResultat }: { sagId: string; onResultat: (b: string) => void }) {
   const id = useId();
@@ -1182,6 +1380,7 @@ export default function SagHandlinger({
             />
           )}
           {kan.registrereRetur && <ReturKnap sagId={sagId} onResultat={setResultat} refusionHvad={refusionHvad} />}
+          {kan.afgoere && !inhabil && !afventerRetur && <RetTypeKnap sagId={sagId} type={type} onResultat={setResultat} />}
           {kan.genaabne && <GenaabnKnap sagId={sagId} onResultat={setResultat} />}
         </div>
       )}

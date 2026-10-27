@@ -1,5 +1,7 @@
 // Scenarie: handlen er sendt (BidHamr Beskyttelse er inkluderet), køberen
-// opretter en sag (varen er gået i stykker), staff giver køberen medhold, og
+// opretter en sag (varen er ikke som beskrevet - 20261102210000: en
+// transportskade og en bortkommet pakke giver nu HELE beløbet tilbage, se
+// 20-sag-hele-beloebet.test.ts), staff giver køberen medhold, og
 // ankefristen udløber. Ny prismodel (Filip, 26. okt. 2026 - som Trendsales):
 // køberen får KUN buddet tilbage (delvis refusion i tre trin hos Stripe),
 // sælgeren står med 0, og BidHamr beholder købergebyr og fragt
@@ -41,8 +43,8 @@ describe("sag med medhold og refusion", () => {
       .insert({
         trade_id: h.tradeId,
         oprettet_af: h.koeber.id,
-        type: "skadet",
-        beskrivelse: "TEST pengetest: varen kom frem i stykker.",
+        type: "ikke_som_beskrevet",
+        beskrivelse: "TEST pengetest: varen er ikke som beskrevet.",
         status: "aaben",
         beskyttelse: true,
         handel_status_ved_oprettelse: "modtaget",

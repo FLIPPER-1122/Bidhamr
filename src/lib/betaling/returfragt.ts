@@ -27,6 +27,15 @@ import "server-only";
 //      fakturakøen (faktura_planlaeg_returfragt).
 //
 // Stripe er sandheden: databasen spejler kun. Alle beløb i øre.
+//
+// Transportskade med medhold (Filip, 27. okt. 2026 - 20261102210000):
+// køberen betaler IKKE returfragten. Staff har valgt sælgeren (dårlig
+// indpakning) eller BidHamr (god indpakning). returfragt_start laver da en
+// DÆKKET række (betaler 'saelger'/'bidhamr', status 'betalt' uden
+// PaymentIntent - kode 'daekket'), og returkoden laves med det samme. Der er
+// ingen Stripe-betaling at refundere: kan koden ikke laves, annulleres rækken
+// (returfragt_daekket_annuller). Sælgeren opkræves som ekstra fragt, når
+// returpakken er afleveret (sag_retur_afleveret).
 
 import Stripe from "stripe";
 import { after } from "next/server";
@@ -54,8 +63,12 @@ const GENERISK = "Betalingen kunne ikke startes. Prøv igen om lidt.";
 // samme tal som returfragt_cron i databasen.
 export const RETURLABEL_MAKS_FEJL = 5;
 
+export type ReturfragtBetaler = "koeber" | "saelger" | "bidhamr";
+
 export type ReturfragtRaekke = {
   id: string;
+  // Hvem der betaler (20261102210000). Mangler kolonnen: 'koeber'.
+  betaler?: ReturfragtBetaler;
   trade_id: string;
   sag_id: string;
   koeber_id: string;
@@ -75,10 +88,16 @@ export type ReturfragtRaekke = {
   stripe_refund_id: string | null;
 };
 
-const KOLONNER =
+const GAMLE_KOLONNER =
   "id, trade_id, sag_id, koeber_id, beloeb_oere, status, stripe_payment_intent_id, pi_forsoeg, stripe_charge_id, " +
   "modtaget_oere, afsender, betalt_kl, forsendelse_id, label_klar_kl, label_fejl_antal, refusion_aarsag, " +
   "refusion_forsoeg, stripe_refund_id";
+const KOLONNER = `${GAMLE_KOLONNER}, betaler`;
+
+// Er rækken dækket af sælgeren/BidHamr (ingen Stripe-betaling)?
+export function erDaekket(rf: Pick<ReturfragtRaekke, "betaler">): boolean {
+  return !!rf.betaler && rf.betaler !== "koeber";
+}
 
 // Tabellen findes ikke (migrationen er ikke kørt endnu).
 export function manglerTabel(err: { code?: string; message?: string } | null | undefined): boolean {
@@ -93,11 +112,19 @@ export function manglerTabel(err: { code?: string; message?: string } | null | u
 }
 
 async function hentRaekke(admin: Admin, id: string): Promise<ReturfragtRaekke | null> {
-  const { data, error } = await admin
+  let { data, error } = await admin
     .from("returfragt_betalinger")
     .select(KOLONNER)
     .eq("id", id)
     .maybeSingle<ReturfragtRaekke>();
+  // Før 20261102210000 findes betaler ikke (alle rækker er købers).
+  if (error?.code === "42703") {
+    ({ data, error } = await admin
+      .from("returfragt_betalinger")
+      .select(GAMLE_KOLONNER)
+      .eq("id", id)
+      .maybeSingle<ReturfragtRaekke>());
+  }
   if (error) throw new Error(`returfragt_betalinger: ${error.message}`);
   return data;
 }
@@ -165,6 +192,7 @@ const START_FEJL: Record<string, string> = {
 export type ReturfragtStart =
   | {
       ok: true;
+      daekket?: false;
       clientSecret: string;
       beloebOere: number;
       // Stripe-kunden på PaymentIntenten (PaymentSheet: customerId sammen med
@@ -172,7 +200,19 @@ export type ReturfragtStart =
       customerId: string | null;
       customerSessionClientSecret: string | null;
     }
-  | { fejl: string; betalt?: true };
+  | { fejl: string; betalt?: true }
+  // Transportskade: sælgeren eller BidHamr betaler - ingen betaling; returkoden
+  // er sat i gang (eller lavet). label: resultatet af første forsøg.
+  | {
+      ok: true;
+      daekket: true;
+      clientSecret: null;
+      beloebOere: number;
+      customerId: null;
+      customerSessionClientSecret: null;
+      betaler: "saelger" | "bidhamr";
+      label: LabelResultat | null;
+    };
 
 // Køberen starter (eller genoptager) betalingen af returfragten. koeberId SKAL
 // være verificeret med auth af kalderen; databasen tjekker igen under lås.
@@ -196,7 +236,27 @@ export async function startReturfragtBetaling(
     const admin = createAdminClient();
     const { data, error } = await admin.rpc("returfragt_start", { p_trade: tradeId, p_koeber: koeberId });
     if (error) throw new Error(`returfragt_start: ${error.message}`);
-    const s = data as { kode?: string; id?: string } | null;
+    const s = data as { kode?: string; id?: string; betaler?: string; beloeb_oere?: number } | null;
+    if (s?.kode === "daekket" && s.id) {
+      // Ingen betaling: adressen gemmes (appen sender den her), og returkoden
+      // laves med det samme. Uden adresse venter rækken på den (som efter en
+      // betaling - lavReturlabelAction / app "returlabel").
+      if (afsender) {
+        const gemt = await gemReturAfsender(s.id, koeberId, afsender);
+        if ("fejl" in gemt) return gemt;
+      }
+      const label = afsender ? await lavReturlabelEfterBetaling(s.id, "koeber") : null;
+      return {
+        ok: true,
+        daekket: true,
+        clientSecret: null,
+        beloebOere: Number(s.beloeb_oere ?? 0),
+        customerId: null,
+        customerSessionClientSecret: null,
+        betaler: s.betaler === "saelger" ? "saelger" : "bidhamr",
+        label,
+      };
+    }
     if (s?.kode === "betalt" || s?.kode === "refunderes") return { fejl: "Returfragten er allerede betalt.", betalt: true };
     if ((s?.kode !== "ok" && s?.kode !== "findes") || !s.id) return { fejl: START_FEJL[s?.kode ?? ""] ?? GENERISK };
     if (afsender) {
@@ -462,6 +522,7 @@ export async function lavReturlabelEfterBetaling(
     const rf = await hentRaekke(admin, rfId);
     if (!rf || rf.status !== "betalt") return { fejl: "Betal returfragten, før returkoden kan laves." };
     if (rf.label_klar_kl && rf.forsendelse_id) return { ok: true, forsendelseId: rf.forsendelse_id };
+    if (!rf.betalt_kl) return { fejl: "Betal returfragten, før returkoden kan laves." };
     // Kræver sagen ikke længere retur (fx genåbnet eller omgjort), laves der
     // ingen kode: returfragten refunderes i stedet.
     const { data: sag, error: sFejl } = await admin.rpc("returfragt_sag", { p_trade: rf.trade_id });
@@ -535,7 +596,9 @@ async function beskedLabelKlar(admin: Admin, rf: ReturfragtRaekke): Promise<void
   const link = `/mine-handler/${rf.trade_id}`;
   await send(rf.koeber_id, "sag", {
     titel: "Din returkode er klar",
-    tekst: `Returfragten for "${titel}" er betalt, og din returkode er klar. Vis koden i en pakkeshop, når du afleverer pakken - se koden på handelssiden.`,
+    tekst: erDaekket(rf)
+      ? `Din returkode til "${titel}" er klar. Du betaler ikke returfragten. Vis koden i en pakkeshop, når du afleverer pakken - se koden på handelssiden.`
+      : `Returfragten for "${titel}" er betalt, og din returkode er klar. Vis koden i en pakkeshop, når du afleverer pakken - se koden på handelssiden.`,
     link,
     data: { trade_id: rf.trade_id },
     noegle: `returlabel_klar:${rf.id}`,
@@ -695,10 +758,37 @@ async function beskedRefunderet(admin: Admin, rfId: string): Promise<void> {
   });
 }
 
-// Claim + refusion (cron). Svar: kode.
+// Claim + refusion (cron). Svar: kode. En dækket række (sælger/BidHamr
+// betaler) har ingen Stripe-betaling - den annulleres i stedet.
 async function claimOgRefunder(admin: Admin, rf: ReturfragtRaekke): Promise<string> {
   const { data: sag } = await admin.rpc("returfragt_sag", { p_trade: rf.trade_id });
   const aarsag = (sag as { kode?: string } | null)?.kode === "ok" ? "label_umulig" : "ikke_noedvendig";
+  if (erDaekket(rf)) {
+    const { data, error } = await admin.rpc("returfragt_daekket_annuller", { p_id: rf.id, p_aarsag: aarsag });
+    if (error) throw new Error(`returfragt_daekket_annuller: ${error.message}`);
+    const kode = String(data);
+    if (kode === "ok") {
+      await alarmPrTilfaelde({
+        noegle: `returfragt-daekket:${rf.id}`,
+        hvor: "betaling/returfragt",
+        fejl:
+          aarsag === "ikke_noedvendig"
+            ? `Dækket returfragt ${rf.id}: sagen kræver ikke længere retur - rækken er annulleret.`
+            : `Dækket returfragt ${rf.id}: returkoden kunne ikke laves - rækken er annulleret. Hjælp køberen med returen i sagen.`,
+      });
+      if (aarsag === "label_umulig") {
+        const titel = await titelForHandel(admin, rf.trade_id);
+        await send(rf.koeber_id, "sag", {
+          titel: "Returkoden kunne ikke laves",
+          tekst: `Vi kunne ikke lave en returkode til "${titel}". Du kan prøve igen på handelssiden, eller skrive til BidHamr i sagen. Du betaler ikke returfragten.`,
+          link: `/mine-handler/${rf.trade_id}`,
+          data: { trade_id: rf.trade_id },
+          noegle: `returfragt_daekket_annulleret:${rf.id}`,
+        });
+      }
+    }
+    return kode === "ok" ? "annulleret" : kode;
+  }
   const { data, error } = await admin.rpc("returfragt_refusion_claim", { p_id: rf.id, p_aarsag: aarsag });
   if (error) throw new Error(`returfragt_refusion_claim: ${error.message}`);
   const kode = String(data);
@@ -860,6 +950,7 @@ const STAFF_REFUSION_FEJL: Record<string, string> = {
   forkert_status: "Returfragten er ikke betalt (eller er allerede refunderet).",
   label_findes: "Køberen har en aktiv returkode. Annullér returkoden først.",
   staff_afgoer: "Den seneste returkode er annulleret. Refundér returfragten manuelt.",
+  daekket: "Returfragten er betalt af sælgeren eller BidHamr, ikke af køberen - der er intet at refundere.",
   i_gang: "En returkode er ved at blive lavet. Prøv igen om 10 minutter.",
 };
 
