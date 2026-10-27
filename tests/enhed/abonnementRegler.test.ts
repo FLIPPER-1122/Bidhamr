@@ -15,6 +15,9 @@ import {
   maaned1Regel,
   oereMedRabat,
   velkomstSkiftRabat,
+  velkomstSkiftUdfald,
+  velkomstVisning,
+  erVelkomstVisning,
   INTRO_MARGIN_SEK,
   introKuponMaaneder,
   introKuponMaanederCheckout,
@@ -24,7 +27,9 @@ import {
   plusMaaneder,
 } from "@/lib/erhverv/abonnementRegler";
 import { ERHVERV_FEJL, erhvervFejlTekst, erStoerrePakke, kvoteBrugt } from "@/lib/erhverv/regler";
-import { FIRMA_ABONNEMENT } from "@/lib/tekster/erhverv";
+import { FIRMA_ABONNEMENT, FIRMA_BETALING } from "@/lib/tekster/erhverv";
+
+const FIRMA_ABONNEMENT_BETALING_INTRO = FIRMA_BETALING.introrabat;
 
 const sek = (iso: string) => Math.floor(new Date(iso).getTime() / 1000);
 const iso = (s: number) => new Date(s * 1000).toISOString();
@@ -366,12 +371,15 @@ describe("regel for måned 1 (Filip, 27. okt. 2026)", () => {
     // Standard-introrabatten (50 % i måned 1-6): IKKE "halv pris"/"fuld pris fra næste måned".
     const intro50 = tekst("Pro", beloeb, velkomstSkiftRabat({ saerprisGaelder: false, intro: { procent: 50, til: "31. marts 2027", maaneder: 6 } }));
     expect(intro50).toBe(
-      "Din gratis måned slutter, når du skifter. I dag betaler du 999,50 kr. + moms (1.249,38 kr.) for din første måned med Pro (50 % rabat til og med 31. marts 2027). Derefter betaler du pakkens almindelige pris.",
+      "Din gratis måned slutter, når du skifter. I dag betaler du 999,50 kr. + moms (1.249,38 kr.) for din første måned med Pro (50 % rabat til 31. marts 2027). Derefter betaler du pakkens almindelige pris.",
     );
     expect(intro50).not.toContain("halv pris");
     expect(intro50).not.toContain("Fra næste måned betaler du");
     const intro30 = tekst("Butik", "699,30 kr. + moms (874,13 kr.)", velkomstSkiftRabat({ saerprisGaelder: false, intro: { procent: 30, til: "1. maj 2027", maaneder: 3 } }));
-    expect(intro30).toContain("(30 % rabat til og med 1. maj 2027)");
+    expect(intro30).toContain("(30 % rabat til 1. maj 2027)");
+    // Én konvention for rabatdatoer: "til <dato>" (aldrig "til og med").
+    expect(intro30).not.toContain("til og med");
+    expect(FIRMA_ABONNEMENT_BETALING_INTRO(30, "1. maj 2027")).toBe("Du har 30 % rabat på dit abonnement til 1. maj 2027. Derefter betaler du den almindelige pris.");
     // Introrabat aftalt, men ikke sat på abonnementet endnu: antal måneder i stedet for dato.
     expect(tekst("Pro", beloeb, velkomstSkiftRabat({ saerprisGaelder: false, intro: { procent: 50, til: null, maaneder: 6 } }))).toContain(
       "(50 % rabat i 6 måneder)",
@@ -385,6 +393,66 @@ describe("regel for måned 1 (Filip, 27. okt. 2026)", () => {
     );
     expect(saerpris).not.toMatch(/rabat|halv pris/);
     for (const t of [velkomst, intro50, intro30, saerpris]) expect(t.toLowerCase()).not.toContain("forsikring");
+  });
+  describe("skift op fra Starts gratis måned: samme regel for siden og serveren (velkomstSkiftUdfald, 20261102200000)", () => {
+    const dato = (s: number) => `dato ${s}`;
+    const ingenAftale = { status: null, procent: null, maaneder: null, kuponId: null, noegle: null, gaelder: false };
+    const planlagt = { status: "planlagt", procent: 30, maaneder: 3, kuponId: null, noegle: "n1", gaelder: true };
+    const aktiv = { status: "aktiv", procent: 30, maaneder: 3, kuponId: "bidhamr_intro_30_4", noegle: "n1", gaelder: true };
+    const kupon30 = { kuponId: "bidhamr_intro_30_4", procent: 30, slutSek: 1_800_000_000 };
+    const tom = { introer: [], andre: 0, introNoegle: null };
+    const u = (aftale: Parameters<typeof velkomstSkiftUdfald>[0]["aftale"], abonnement: Parameters<typeof velkomstSkiftUdfald>[0]["abonnement"], saerprisGaelder = false) =>
+      velkomstSkiftUdfald({ saerprisGaelder, aftale, abonnement, dato });
+
+    it("ingen aftale: 50 %-kuponen; særpris: 0 % uden kupon", () => {
+      expect(u(ingenAftale, tom)).toEqual({ udfald: "skift", rabat: { slags: "velkomst", procent: 50 }, velkomstKupon: true });
+      expect(u(ingenAftale, tom, true)).toEqual({ udfald: "skift", rabat: { slags: "saerpris", procent: 0 }, velkomstKupon: false });
+    });
+    it("fund 1: 'aktiv' uden kupon på abonnementet afvises (ret_rabat) - aldrig fuld pris uden at have vist den", () => {
+      const r = u(aktiv, tom);
+      expect(r.udfald).toBe("ret_rabat");
+      if (r.udfald === "ret_rabat") expect(r.aarsag).toContain("står som aktiv i databasen");
+      // En anden introkupon end aftalens: også afvist.
+      expect(u(aktiv, { ...tom, introer: [{ ...kupon30, kuponId: "bidhamr_intro_20_4", procent: 20 }] }).udfald).toBe("ret_rabat");
+      // Den rigtige kupon: aftalens procent til Stripes slutdato.
+      expect(u(aktiv, { ...tom, introer: [kupon30] })).toEqual({
+        udfald: "skift",
+        rabat: { slags: "intro", procent: 30, til: "dato 1800000000", maaneder: 3 },
+        velkomstKupon: false,
+      });
+    });
+    it("fund 2: 'planlagt' venter, medmindre kuponen hører til netop den aftale (nøgle + procent)", () => {
+      expect(u(planlagt, tom)).toEqual({ udfald: "venter" });
+      // Kupon fra en tidligere aftale (anden nøgle eller ingen) -> venter.
+      expect(u(planlagt, { ...tom, introer: [kupon30] })).toEqual({ udfald: "venter" });
+      expect(u(planlagt, { ...tom, introer: [kupon30], introNoegle: "gammel" })).toEqual({ udfald: "venter" });
+      // Rigtig nøgle, forkert procent -> venter.
+      expect(u(planlagt, { ...tom, introer: [{ ...kupon30, procent: 50 }], introNoegle: "n1" })).toEqual({ udfald: "venter" });
+      // Fra Checkout for netop denne aftale -> skift med introrabatten.
+      expect(u(planlagt, { ...tom, introer: [kupon30], introNoegle: "n1" })).toMatchObject({ udfald: "skift", rabat: { slags: "intro", procent: 30 } });
+    });
+    it("intro_status null (eller udløbet) med en introkupon på abonnementet: ret_rabat med en korrekt årsag", () => {
+      const r = u(ingenAftale, { ...tom, introer: [kupon30] });
+      expect(r.udfald).toBe("ret_rabat");
+      if (r.udfald === "ret_rabat") {
+        expect(r.aarsag).toContain("ingen kørende introrabat i databasen (intro_status null)");
+        expect(r.aarsag).not.toContain("står som aktiv");
+      }
+      expect(u({ ...aktiv, gaelder: false }, { ...tom, introer: [kupon30] }).udfald).toBe("ret_rabat");
+    });
+    it("fremmede eller flere rabatter: ret_rabat", () => {
+      expect(u(ingenAftale, { ...tom, andre: 1 }).udfald).toBe("ret_rabat");
+      expect(u(aktiv, { ...tom, introer: [kupon30, kupon30] }).udfald).toBe("ret_rabat");
+    });
+    it("visning: det viste sendes med og valideres", () => {
+      expect(velkomstVisning(u(ingenAftale, tom))).toBe("velkomst:50");
+      expect(velkomstVisning(u(aktiv, { ...tom, introer: [kupon30] }))).toBe("intro:30");
+      expect(velkomstVisning(u(ingenAftale, tom, true))).toBe("saerpris:0");
+      expect(velkomstVisning(u(planlagt, tom))).toBe("venter");
+      expect(velkomstVisning(u(aktiv, tom))).toBe("ret_rabat");
+      for (const v of ["velkomst:50", "intro:30", "saerpris:0", "venter", "ret_rabat"]) expect(erVelkomstVisning(v)).toBe(true);
+      for (const v of ["", "intro:", "saerpris:10", "velkomst:5000", 50, null, undefined]) expect(erVelkomstVisning(v)).toBe(false);
+    });
   });
   it("Checkout-plan: Start trial, Butik/Pro engangskupon - staff-måneder erstatter 50 %", () => {
     expect(checkoutPlan({ maaned1: "gratis", velkomstMaaneder: 1, ekstra: 0 })).toEqual({ velkomstGratis: 1, ekstra: 0, halvPris: false });
