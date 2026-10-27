@@ -41,7 +41,7 @@ const SPAM_FORKLARING: Record<SpamGrund, string> = {
   mobilepay:
     "Beskeden blev ikke sendt, fordi den indeholder et MobilePay-nummer. Al betaling sker gennem BidHamr, så du er beskyttet.",
   bank:
-    "Beskeden blev ikke sendt, fordi den ser ud til at indeholde bankoplysninger (reg.nr., kontonummer eller IBAN). Al betaling sker gennem BidHamr, så du er beskyttet.",
+    "Beskeden blev ikke sendt, fordi den ser ud til at indeholde bank- eller kortoplysninger (reg.nr., kontonummer, IBAN eller kortnummer). Al betaling sker gennem BidHamr, så du er beskyttet.",
   socialt_medie:
     "Beskeden blev ikke sendt, fordi den ser ud til at flytte jeres snak til et socialt medie eller en anden app. Skriv sammen her i chatten – så er I begge beskyttet af BidHamr.",
   gentaget: "Beskeden blev ikke sendt, fordi du har sendt den samme besked flere gange lige efter hinanden.",
@@ -51,7 +51,10 @@ const SPAM_FORKLARING: Record<SpamGrund, string> = {
 // SPEJL af public.besked_normaliser + public.besked_spam_grund i
 // supabase/migrations/20261007050000_fase4_testrettelser.sql (testdatabasen:
 // rettet igen i 20261007051000_fase4_testrettelser_2.sql; bankoplysninger og
-// besked_mistaenkelig: 20261017030000_vilkaar_efternavn_chat.sql). Databasen
+// besked_mistaenkelig: 20261017030000_vilkaar_efternavn_chat.sql; spredte
+// cifre, kortnumre og reg./kontonr. med skilletegn:
+// 20261102080000_handel_testfund.sql - eksempler i
+// tests/enhed/spamfilterEksempler.ts). Databasen
 // afgør altid (triggeren messages_tryghed); denne kopi kan bruges til at
 // advare, før beskeden sendes. Ændres en regel, SKAL begge steder rettes.
 // Forskel: Postgres' \m/\M regner æøå som bogstaver; her bruges \p{L}.
@@ -70,6 +73,16 @@ const P_GRUPPERET =
 // ("0730 2533 0012" i et sporingsnummer). Bruges på arbejdskopien.
 const P_GRP =
   "(?<![0-9][\\s.,-])(?<![0-9])([2-9][0-9][\\s.-][0-9]{2}[\\s.-][0-9]{2}[\\s.-][0-9]{2}|[2-9][0-9]{3}[\\s.-][0-9]{4})(?![\\s.,-]?[0-9])";
+// (d) 20261102080000: 8 cifre (første 2-9) i en hvilken som helst
+// gruppering - op til 3 mellemrum, punktum, bindestreger eller skråstreger
+// mellem cifrene ("223 344 55", "2 2 3 3 4 4 5 5") - og ikke en del af en
+// længere cifferrække. Som (c) kræver det et kontaktord eller beskedens slut
+// (på arbejdskopien).
+const P_LOES = String.raw`(?<![0-9][\s.,/-]{0,3})[2-9]([\s./-]{0,3}[0-9]){7}(?![\s.,/-]{0,3}[0-9])`;
+// (e) Som (d), men delt i mindst 5 grupper ("2 2 3 3 4 4 5 5", "22 3 3 44
+// 55"). Sådan skrives hverken beløb, datoer eller størrelser - altid stoppet.
+const P_LOES5 =
+  String.raw`(?<![0-9][\s.,/-]{0,3})(?=([0-9]+[\s./-]{1,3}){4}[0-9])[2-9]([\s./-]{0,3}[0-9]){7}(?![\s.,/-]{0,3}[0-9])`;
 // Kontaktord højst 25 tegn FØR nummeret.
 const P_FOER =
   B +
@@ -125,12 +138,25 @@ const NEUTRAL_KL = new RegExp(
   `${B}(kl|klokken)${E}` + String.raw`[\s.:]*([01]?[0-9]|2[0-3])([.:\s][0-5][0-9])?(?![\s.:,-]?[0-9])`,
   "gu",
 );
-// Par/intervaller af klokkeslæt (20.00-22.00, 20.10 21.10) og datoer (24.12-27.12.).
+// Par/intervaller af klokkeslæt (20.00-22.00, 20.10 21.10) og datoer
+// (24.12-27.12., 24/12 25/12 - skråstreg og 1-cifret dag/måned fra 20261102080000).
 const PAR_SEP = String.raw`(\s*[-–]\s*|\s+(og|til)\s+|\s+)`;
 const TID = "([01][0-9]|2[0-3])[.:][0-5][0-9]";
-const DATO = String.raw`(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.?`;
+const DATO = String.raw`(0?[1-9]|[12][0-9]|3[01])[./](0?[1-9]|1[0-2])\.?`;
 const NEUTRAL_TID_DATO = new RegExp(
-  `(?<![0-9][.:])(?<![0-9])(${TID}${PAR_SEP}${TID}|${DATO}${PAR_SEP}${DATO})(?![.:]?[0-9])`,
+  `(?<![0-9][.:/])(?<![0-9])(${TID}${PAR_SEP}${TID}|${DATO}${PAR_SEP}${DATO})(?![.:/]?[0-9])`,
+  "gu",
+);
+// 20261102080000: hel dato med år (24.12.2026, 24/12/26, 24-12-2026, 24/12 2026).
+const NEUTRAL_DATO_FULD = new RegExp(
+  String.raw`(?<![0-9][\s.,/-]?)(0?[1-9]|[12][0-9]|3[01])([./-](0?[1-9]|1[0-2])[./-]|[./](0?[1-9]|1[0-2])\.?\s+)((19|20)[0-9]{2}|[0-9]{2})(?![\s.,/-]?[0-9])`,
+  "gu",
+);
+// 20261102080000: beløb med tusindtalspunktum op til 25.000 (loftet), alene
+// eller i par: "2.500", "2.500-3.000", "2.000 og 3.000", "1.250,50".
+const TUSIND = String.raw`([1-9]|1[0-9]|2[0-5])\.[0-9]{3}(,[0-9]{1,2}|,-)?`;
+const NEUTRAL_TUSINDER = new RegExp(
+  String.raw`(?<![0-9][\s.,/-]?)${TUSIND}((\s*[-–/]\s*|\s+(og|til|eller)\s+|\s+)${TUSIND})?(?![\s.,/-]?[0-9])`,
   "gu",
 );
 const NEUTRAL_AAR = /(?<![0-9])(19|20)[0-9]{2}(\s*[-/]\s*|\s+(og|til)\s+|\s+)(19|20)[0-9]{2}(?![0-9])/gu;
@@ -145,6 +171,7 @@ const STOERRELSER = /(?<![0-9])([0-9]{2})[\s.,/-]+([0-9]{2})[\s.,/-]+([0-9]{2})[
 // telefonnumre. Samme rækkefølge som i SQL.
 function neutraliserTal(v: string): string {
   let g = v
+    .replace(NEUTRAL_DATO_FULD, " # ")
     .replace(NEUTRAL_TID_DATO, " # ")
     .replace(NEUTRAL_ORD, " # ")
     .replace(NEUTRAL_REF, " # ")
@@ -152,6 +179,7 @@ function neutraliserTal(v: string): string {
     .replace(NEUTRAL_KL, " # ")
     .replace(NEUTRAL_AAR, " # ")
     .replace(NEUTRAL_HUNDREDER, " # ")
+    .replace(NEUTRAL_TUSINDER, " # ")
     .replace(NEUTRAL_BELOEB, " # ");
   for (const m of [...g.matchAll(STOERRELSER)]) {
     const [a, b, c, d] = [m[1], m[2], m[3], m[4]].map(Number);
@@ -167,19 +195,47 @@ const RE = (s: string) => new RegExp(s, "u");
 // Reg.nr.: "reg", "regnr", "reg. nr.", "registreringsnummer" + 4 cifre. Et
 // "reg" alene kan også være en bils første registrering ("1. reg. 2015"), så
 // det kræver et bankord andetsteds i beskeden (P_BANK_ORD).
+// 20261102080000: cifrene i reg.nr. og kontonr. må være adskilt af et
+// mellemrum, punktum, bindestreg eller skråstreg ("1 2 3 4", "12-34-56-78").
+const P_REG_CIFRE = String.raw`(?<![0-9])[0-9]([\s./-]?[0-9]){3}(?![0-9])`;
 const P_REG =
-  B + "reg(istrerings(nummer|nr)?|\\.?\\s*(nr|nummer))?" + E + "[^0-9]{0,6}(?<![0-9])[0-9]{4}(?![0-9])";
+  B + "reg(istrerings(nummer|nr)?|\\.?\\s*(nr|nummer))?" + E + "[^0-9]{0,6}" + P_REG_CIFRE;
 // Kun tydelige former: "regnr", "reg.nr.", "reg nummer", "registreringsnr".
 const P_REG_STAERK =
-  B + "reg(istrerings(nummer|nr)|\\.?\\s*(nr|nummer))" + E + "[^0-9]{0,6}(?<![0-9])[0-9]{4}(?![0-9])";
+  B + "reg(istrerings(nummer|nr)|\\.?\\s*(nr|nummer))" + E + "[^0-9]{0,6}" + P_REG_CIFRE;
+// Et kontonummer på 6-10 cifre (ikke del af en længere cifferrække).
+const P_KONTO_TAL = String.raw`(?<![0-9])[0-9]([\s./-]?[0-9]){5,9}(?![0-9])`;
 // Kontonr.: "kontonr", "kontonummer", "konto nr" + 6-10 cifre.
 const P_KONTONR =
-  B + "(kontonr|kontonummer|kontonummeret|konto\\s*nr|konto\\s*nummer)" + E + "[^0-9]{0,6}(?<![0-9])[0-9]{6,10}(?![0-9])";
-const P_KONTO_TAL = "(?<![0-9])[0-9]{6,10}(?![0-9])";
+  B + "(kontonr|kontonummer|kontonummeret|konto\\s*nr|konto\\s*nummer)" + E + "[^0-9]{0,6}" + P_KONTO_TAL;
 // IBAN: DK + 2 kontrolcifre + 14 cifre, evt. i grupper.
 const P_IBAN_DK = B + "dk\\s?[0-9]{2}([\\s.-]?[0-9]){14}(?![0-9])";
 // 4 + 6-10 cifre, ikke ved siden af en anden cifferblok. Kræver et bankord.
 const P_REG_KONTO = "(?<![0-9][\\s.,-])(?<![0-9])[0-9]{4}(\\s?-\\s?|[\\s.]+)[0-9]{6,10}(?![\\s.,-]?[0-9])";
+// 20261102080000: 10-14 cifre i mindst to grupper, i en hvilken som helst
+// gruppering (reg.nr. + kontonr. skrevet spredt). Kræver også et bankord. Et
+// kontonr. alene i én blok ("Kontonr 1234567890") stoppes stadig ikke.
+const P_REG_KONTO_LOES =
+  String.raw`(?<![0-9][\s.,/-]{0,3})(?=[0-9]+[\s./-]{1,3}[0-9])[0-9]([\s./-]{0,3}[0-9]){9,13}(?![\s.,/-]{0,3}[0-9])`;
+// 20261102080000: et betalingskort - 13-19 cifre i en hvilken som helst
+// gruppering. Kun 16 cifre (Visa, Mastercard, Dankort: første ciffer 2-6) og
+// 15 cifre (American Express: 34/37) med gyldigt kontrolciffer (Luhn) tæller.
+const P_KORT = String.raw`(?<![0-9][\s.,/-]{0,3})[0-9]([\s./-]{0,3}[0-9]){12,18}(?![\s.,/-]{0,3}[0-9])`;
+
+function erKortnummer(tekst: string): boolean {
+  const c = tekst.replace(/[^0-9]/g, "");
+  if (!((c.length === 16 && /^[2-6]/.test(c)) || (c.length === 15 && /^3[47]/.test(c)))) return false;
+  let sum = 0;
+  for (let i = 1; i <= c.length; i++) {
+    let d = Number(c[c.length - i]);
+    if (i % 2 === 0) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
 // Bankord: konto, kontonr, bank, overfør, indbetal, IBAN og tydelige
 // reg.nr.-former (IKKE et "reg" alene).
 const P_BANK_ORD =
@@ -217,19 +273,26 @@ const BANK_REGLER = {
     RE(P_IBAN_DK),
     RE(`${B}iban${E}[^a-z0-9]{0,6}[a-z]{2}\\s?[0-9]{2}`),
     RE(`${P_REG_STAERK}[^]{0,40}${P_KONTO_TAL}`),
-    RE(`(?<![0-9])[0-9]{4}[\\s,/-]*${B}konto[a-zæøå]*${E}[^0-9]{0,6}${P_KONTO_TAL}`),
+    RE(`(?<![0-9])[0-9]([\\s./-]?[0-9]){3}[\\s,/-]*${B}konto[a-zæøå]*${E}[^0-9]{0,6}${P_KONTO_TAL}`),
   ],
   // Begge skal findes.
   par: [
     [RE(`${P_REG}[^]{0,40}${P_KONTO_TAL}`), RE(P_BANK_ORD)],
     [RE(P_KONTONR), RE(P_REG)],
     [RE(P_REG_KONTO), RE(P_BANK_ORD)],
+    [RE(P_REG_KONTO_LOES), RE(P_BANK_ORD)],
   ] as [RegExp, RegExp][],
 };
 
 function erBankoplysninger(v: string): boolean {
   const k = v.replace(NEUTRAL_BANK, " # ").replace(NEUTRAL_BANK_ENHED, " # ").replace(NEUTRAL_BANK_REG_AAR, " # ");
-  return BANK_REGLER.altid.some((r) => r.test(k)) || BANK_REGLER.par.some(([a, b]) => a.test(k) && b.test(k));
+  if (BANK_REGLER.altid.some((r) => r.test(k)) || BANK_REGLER.par.some(([a, b]) => a.test(k) && b.test(k))) {
+    return true;
+  }
+  for (const m of k.matchAll(new RegExp(P_KORT, "gu"))) {
+    if (erKortnummer(m[0])) return true;
+  }
+  return false;
 }
 
 const SPAM_REGLER = {
@@ -257,14 +320,17 @@ const SPAM_REGLER = {
         "(\\s*(boks|box))?[\\s:#.]*((nr|nummer|nummeret|på|til)[\\s:#.]*)?" +
         "(?<![0-9])[0-9]{4,5}(?![0-9])(?!\\s*(kr|dkk|,-|\\.-|,[0-9]|\\.[0-9]))",
     ),
-    RE(`${P_MOBILEPAY}[^]{0,25}(${P_LANDEKODE}|${P_OTTE}|${P_GRUPPERET})`),
+    RE(`${P_MOBILEPAY}[^]{0,25}(${P_LANDEKODE}|${P_OTTE}|${P_GRUPPERET}|${P_LOES})`),
   ],
-  telefon: [RE(P_LANDEKODE), RE(P_OTTE)],
+  telefon: [RE(P_LANDEKODE), RE(P_OTTE), RE(P_LOES5)],
   // Køres på arbejdskopien (neutraliserTal).
   telefonGrupperet: [
     RE(`${P_FOER}[^]{0,25}${P_GRP}`),
     RE(`${P_GRP}[^]{0,15}${P_EFTER}`),
     RE(`${P_GRP}[^a-z0-9æøå]*$`),
+    RE(`${P_FOER}[^]{0,25}${P_LOES}`),
+    RE(`${P_LOES}[^]{0,15}${P_EFTER}`),
+    RE(`${P_LOES}[^a-z0-9æøå]*$`),
   ],
   socialt: [
     RE(`${P_SOME}\\s*(:|=)\\s*@?[a-z0-9_.]{3,}`),

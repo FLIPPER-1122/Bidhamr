@@ -509,7 +509,10 @@ WebBrowser.openAuthSessionAsync(url, "bidhamr://mitid")
 1. Handlen oprettes, når auktionen slutter. Vinderen får notifikationen `vundet`.
 2. Overblik: `POST SITE/api/fragt/app/checkout { trade_id }` eller `rpc("handel_checkout", { p_trade })`.
 3. Pakkeshops: `POST SITE/api/fragt/app/pakkeshops { postnummer, adresse?, by? }` → liste med `lat`, `lng`,
-   `afstandM`, åbningstider. Vis dem på kort og som liste. Forslag fra sidst: `from("leveringsforslag").select("*")`.
+   `afstandM`, åbningstider. Vis dem på kort og som liste. Forslag fra sidst: brug `checkout.forslag` fra
+   `api/fragt/app/checkout` - pakkeshoppen dér er tjekket hos fragtfirmaet, og `pakkeshopTransportoer` er
+   shoppens eget fragtfirma (brug den kun hos det firma). `leveringsforslag.transportoer` er det SENESTE valgs
+   fragtfirma og kan være et andet end shoppens (20261102080000).
 4. Leveringsvalg: `POST SITE/api/fragt/app/levering` med
    `{ trade_id, maade: "pakkeshop", pakkeshop_id, modtager: { navn, telefon }, gem_forslag }`,
    `{ maade: "doer", modtager: { navn, telefon, adresse, postnummer, by } }` (kun Lille/Mellem) eller
@@ -557,7 +560,13 @@ Testkort (Stripes testmiljø): `4242 4242 4242 4242` (godkendt), `4000 0027 6000
 - Afhentning: `rpc("afhentning_info", { p_trade })`. Køberen giver stjerner og får koden med
   `rpc("afhentning_vis_kode", { p_trade, p_stjerner, p_kommentar })`, sælgeren bekræfter med
   `rpc("afhentning_bekraeft", { p_trade, p_kode })`, fristen forlænges med `afhentning_forlaeng_frist`.
-  7 dages frist. 5 forkerte koder låser i 1 time.
+  7 dages frist. 5 forkerte koder låser i 1 time. `afhentning_info.laast` er true både ved den midlertidige lås
+  (`laast_til` = hvornår der kan prøves igen) og den permanente (`laast_permanent`, 15 forkerte i alt) -
+  20261102080000. Skjul kodefeltet, når `laast` er true.
+- Bankindsigelse (sælgeren): `rpc("handel_indsigelse_status", { p_trade })` → `"aaben"` | `"tabt"` | `null`. Er den
+  ikke `null`, så vis "Send ikke varen. Køberens bank har åbnet en indsigelse. Vi skriver til dig, når den er afgjort."
+  og skjul "Send pakke"/fragtlabel/afhentningskode. `trade_marker_sendt` og en ny label svarer `kode: "indsigelse"`
+  (20261102080000).
 - Ikke-afhentet pakke: `rpc("mit_ikke_afhentet", { p_trade })`.
 - Udbetaling til sælgeren: se 4.7.
 

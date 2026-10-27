@@ -23,7 +23,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type AfhentningInfo = {
   vist: boolean;
   bekraeftet: boolean;
+  // Koden kan ikke tastes nu: midlertidigt låst (5 forkerte inden for en
+  // time - laastTil) eller låst for altid (laastPermanent, 15 forkerte i alt).
   laast: boolean;
+  laastPermanent: boolean;
   laastTil: string | null;
   // Kun til køberen, og kun når han allerede har bedømt sælgeren.
   kode: string | null;
@@ -50,6 +53,7 @@ export async function hentAfhentningInfo(tradeId: string): Promise<AfhentningInf
     vist?: boolean;
     bekraeftet?: boolean;
     laast?: boolean;
+    laast_permanent?: boolean;
     laast_til?: string | null;
     kode?: string | null;
     frist?: string | null;
@@ -60,11 +64,18 @@ export async function hentAfhentningInfo(tradeId: string): Promise<AfhentningInf
   const maksFrist = d.maks_frist ?? null;
   const nu = Date.now();
   const fristUdloebet = frist !== null && new Date(frist).getTime() <= nu;
+  const laastTil = d.laast_til ?? null;
+  // Før 20261102080000 betød 'laast' kun den permanente lås (og der var
+  // ingen laast_permanent) - den midlertidige ses så af laast_til.
+  const laastPermanent = d.laast_permanent ?? Boolean(d.laast);
+  const laast =
+    Boolean(d.laast) || laastPermanent || (laastTil !== null && new Date(laastTil).getTime() > nu);
   return {
     vist: Boolean(d.vist),
     bekraeftet: Boolean(d.bekraeftet),
-    laast: Boolean(d.laast),
-    laastTil: d.laast_til ?? null,
+    laast,
+    laastPermanent,
+    laastTil,
     kode: d.kode ?? null,
     frist,
     fristUdloebet,
@@ -73,7 +84,8 @@ export async function hentAfhentningInfo(tradeId: string): Promise<AfhentningInf
       frist !== null &&
       maksFrist !== null &&
       !fristUdloebet &&
-      !d.laast &&
+      // En midlertidig lås (forkerte koder) forhindrer ikke en forlængelse.
+      !laastPermanent &&
       !d.bekraeftet &&
       new Date(maksFrist).getTime() > new Date(frist).getTime() &&
       Number(d.forlaengelser ?? 0) < AFHENTNING_MAKS_FORLAENGELSER,

@@ -56,6 +56,7 @@ import { send } from "@/lib/notifikationer/send";
 import { adapterFor, fragtErSatOp, hentFragtfirma, FRAGTFIRMAER } from "@/lib/fragt";
 import { sendSenest, sendSenestTekst } from "@/lib/afsendelsesfrist";
 import { slaaPostnummerOp } from "@/lib/postnumre";
+import { INDSIGELSE_FEJL } from "@/lib/tekster/handel";
 import { annullerPaymentIntentForLevering } from "@/lib/betaling/stripeBetaling";
 import { hentEksisterende } from "@/lib/fragt/shipmondo";
 import {
@@ -106,6 +107,8 @@ const CLAIM_FEJL: Record<string, string> = {
   mangler_levering: "Køberen har ikke valgt levering endnu.",
   for_mange_labels:
     "Du har allerede lavet 2 fragtlabels til denne handel. Skriv til BidHamr, hvis du skal bruge en ny – så godkender vi den.",
+  // Bankindsigelse (20261102080000_handel_testfund.sql).
+  indsigelse: INDSIGELSE_FEJL,
   ugyldig: "Ugyldigt valg.",
 };
 
@@ -536,6 +539,143 @@ export async function gemLeveringsvalg(
   // Databasens værn (20261028010000): transportøren står ikke i listen.
   const lukket = transportoer ? transportoerLukket(transportoer, tilladte) : "Vælg et fragtfirma.";
   return gemValgIDatabasen(admin, tradeId, koeberId, valg, { transportoer_lukket: lukket, gls_lukket: lukket });
+}
+
+// ------------------------------------------------------------ gemt pakkeshop (checkout)
+
+// Køberens gemte pakkeshop ("Husk mine oplysninger og min pakkeshop",
+// leveringsforslag). Testfund 27. okt. 2026: en gemt GLS-pakkeshop blev ikke
+// forudfyldt, fordi leveringsforslag.transportoer er fragtfirmaet fra det
+// SENESTE valg (fx "levering hjem med DAO"), mens pakkeshoppen bliver stående
+// fra et tidligere valg. Fra 20261102080000 gemmes shoppens eget fragtfirma i
+// pakkeshop_transportoer. Ældre rækker (null) slås op hos det seneste
+// fragtfirma én gang og rettes.
+export type GemtPakkeshopInput = {
+  id: string | null;
+  navn: string | null;
+  adresse: string | null;
+  postnummer: string | null;
+  by: string | null;
+  // Shoppens fragtfirma (pakkeshop_transportoer). undefined = kolonnen findes
+  // ikke endnu (før migrationen).
+  shopTransportoer: string | null | undefined;
+  // Fragtfirmaet fra det seneste valg (leveringsforslag.transportoer).
+  senesteTransportoer: string | null;
+};
+
+export type GemtPakkeshop = {
+  transportoer: Transportoer | null;
+  id: string;
+  navn: string;
+  adresse: string;
+  postnummer: string;
+  by: string;
+};
+
+// En pakkeshop, der ikke findes længere eller hører til et fragtfirma, som
+// ikke kan vælges, ryddes stille - køberen vælger bare en ny.
+async function rydGemtPakkeshop(admin: Admin, brugerId: string, id: string): Promise<void> {
+  const tom = { pakkeshop_id: null, pakkeshop_navn: null, pakkeshop_adresse: null, pakkeshop_postnummer: null, pakkeshop_by: null };
+  const { error } = await admin
+    .from("leveringsforslag")
+    .update({ ...tom, pakkeshop_transportoer: null })
+    .eq("user_id", brugerId)
+    .eq("pakkeshop_id", id);
+  // Før migrationen 20261102080000 findes pakkeshop_transportoer ikke.
+  if (error && (error.code === "42703" || error.code === "PGRST204")) {
+    await admin.from("leveringsforslag").update(tom).eq("user_id", brugerId).eq("pakkeshop_id", id);
+  } else if (error) {
+    console.error("Rydning af gemt pakkeshop fejlede:", error.message);
+  }
+}
+
+// Til checkout: den gemte pakkeshop, hvis den stadig kan bruges - ellers null
+// (og den ryddes, når vi ved, at den er ugyldig). Kaster aldrig. Et
+// opslag, der fejler (fx timeout hos fragtfirmaet), rydder intet - så vises
+// den gemte shop, og gemLeveringsvalg tjekker den igen.
+export async function tjekGemtPakkeshop(brugerId: string, g: GemtPakkeshopInput): Promise<GemtPakkeshop | null> {
+  const id = g.id?.trim() ?? "";
+  if (!id || !fragtErSatOp()) return null;
+  const admin = createAdminClient();
+  try {
+    const firma = hentFragtfirma();
+    const muligt = firma.transportoerer ?? [];
+    const verificeret = typeof g.shopTransportoer === "string";
+    // Fragtfirmaer, shoppen kan høre til - i den rækkefølge, de prøves.
+    let kandidater: (Transportoer | null)[];
+    if (muligt.length === 0) {
+      // DAO direkte/testfragt: kun shops gemt uden fragtfirma. En shop fra
+      // Shipmondo (med fragtfirma) vises ikke, men ryddes heller ikke - den
+      // er gyldig, når Shipmondo er slået til igen.
+      if (g.shopTransportoer ?? g.senesteTransportoer) return null;
+      kandidater = [null];
+    } else if (verificeret) {
+      const t = g.shopTransportoer;
+      kandidater = erTransportoer(t) && muligt.includes(t) ? [t] : [];
+    } else {
+      // Ældre række: shoppens fragtfirma er ukendt (det seneste valgs kan
+      // være et andet). Prøv det seneste først, så de andre.
+      const seneste = erTransportoer(g.senesteTransportoer) ? g.senesteTransportoer : null;
+      kandidater = [...muligt].sort((a, b) => Number(b === seneste) - Number(a === seneste));
+    }
+    const postnummer = g.postnummer?.trim() ?? "";
+    if (kandidater.length === 0 || !slaaPostnummerOp(postnummer)) {
+      // Et fragtfirma, der ikke kan vælges længere, eller et ugyldigt postnummer.
+      await rydGemtPakkeshop(admin, brugerId, id);
+      return null;
+    }
+    const gemt: GemtPakkeshop = {
+      transportoer: kandidater[0],
+      id,
+      navn: g.navn ?? "Pakkeshop",
+      adresse: g.adresse ?? "",
+      postnummer,
+      by: g.by ?? "",
+    };
+    if (!(await firmaKlar(firma))) return verificeret || muligt.length === 0 ? gemt : null;
+    let fundet: Pakkeshop | null = null;
+    let transportoer: Transportoer | null = null;
+    for (const t of kandidater) {
+      try {
+        fundet = await medTimeout(
+          firma.hentPakkeshop(id, { postnummer, adresse: g.adresse || null, antal: 20, transportoer: t }),
+          4_000,
+          "hentPakkeshop (gemt)",
+        );
+      } catch {
+        // Ukendt (timeout, netværk): intet ryddes. Den gemte vises kun, hvis
+        // fragtfirmaet er kendt - ellers kunne det være en shop fra et andet firma.
+        return verificeret || muligt.length === 0 ? gemt : null;
+      }
+      if (fundet) {
+        transportoer = t;
+        break;
+      }
+    }
+    if (!fundet) {
+      await rydGemtPakkeshop(admin, brugerId, id);
+      return null;
+    }
+    if (!verificeret && transportoer) {
+      // Ældre række: shoppens fragtfirma er nu kendt.
+      await admin
+        .from("leveringsforslag")
+        .update({ pakkeshop_transportoer: transportoer })
+        .eq("user_id", brugerId)
+        .eq("pakkeshop_id", id);
+    }
+    return {
+      transportoer,
+      id: fundet.id,
+      navn: fundet.navn,
+      adresse: fundet.adresse,
+      postnummer: /^\d{4}$/.test(fundet.postnummer) ? fundet.postnummer : postnummer,
+      by: fundet.by,
+    };
+  } catch (err) {
+    await logDriftFejl({ kilde: "server", hvor: "Fragt: gemt pakkeshop", fejl: err, brugerId });
+    return null;
+  }
 }
 
 type LeveringRaekke = {

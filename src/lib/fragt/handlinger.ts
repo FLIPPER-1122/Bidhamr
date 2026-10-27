@@ -20,6 +20,7 @@ import {
   opretUdgaaendeForsendelse,
   sikrLabelPdf,
   soegPakkeshops,
+  tjekGemtPakkeshop,
 } from "@/lib/fragt/server";
 import {
   SPORINGS_NAVN,
@@ -121,7 +122,12 @@ export type Checkout = {
   // Forudfyldning fra sidste køb (kun køberens egne data).
   forslag: {
     maade: string | null;
+    // Fragtfirmaet fra sidste køb (kan være "levering hjem").
     transportoer: Transportoer | null;
+    // Den gemte pakkeshops eget fragtfirma (null ved adaptere uden valg).
+    // pakkeshop*-felterne er null, hvis shoppen ikke kan bruges længere
+    // (tjekket hos fragtfirmaet - tjekGemtPakkeshop).
+    pakkeshopTransportoer: Transportoer | null;
     pakkeshopId: string | null;
     pakkeshopNavn: string | null;
     pakkeshopAdresse: string | null;
@@ -210,6 +216,21 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
   const fs = forslag.data;
   const afhentning = Boolean(h.afhentning) || Number(bet?.fragt_oere ?? 0) === 0;
   const afhentningMulig = Boolean(a.data?.forsendelse_mulig) && Boolean(a.data?.afhentning_mulig);
+  const labelLavet = (f.data ?? []).length > 0;
+  // Den gemte pakkeshop tjekkes hos fragtfirmaet (en ugyldig ryddes stille) -
+  // kun når den kan komme i brug: forsendelse muligt og labelen ikke lavet.
+  const gemtShop =
+    fs?.pakkeshop_id && Boolean(a.data?.forsendelse_mulig) && !labelLavet
+      ? await tjekGemtPakkeshop(brugerId, {
+          id: fs.pakkeshop_id,
+          navn: fs.pakkeshop_navn,
+          adresse: fs.pakkeshop_adresse,
+          postnummer: fs.pakkeshop_postnummer,
+          by: fs.pakkeshop_by,
+          shopTransportoer: "pakkeshop_transportoer" in fs ? (fs.pakkeshop_transportoer ?? null) : undefined,
+          senesteTransportoer: fs.transportoer ?? null,
+        })
+      : null;
   const transportoerer: TransportoerValg[] = (foerMigration ? [] : (hentFragtfirma().transportoerer ?? [])).map((t) => ({
     kode: t,
     navn: TRANSPORTOER_INFO[t].navn,
@@ -253,11 +274,12 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
         ? {
             maade: fs.maade,
             transportoer: erTransportoer(fs.transportoer) ? fs.transportoer : null,
-            pakkeshopId: fs.pakkeshop_id,
-            pakkeshopNavn: fs.pakkeshop_navn,
-            pakkeshopAdresse: fs.pakkeshop_adresse,
-            pakkeshopPostnummer: fs.pakkeshop_postnummer,
-            pakkeshopBy: fs.pakkeshop_by,
+            pakkeshopTransportoer: gemtShop?.transportoer ?? null,
+            pakkeshopId: gemtShop?.id ?? null,
+            pakkeshopNavn: gemtShop?.navn ?? null,
+            pakkeshopAdresse: gemtShop?.adresse ?? null,
+            pakkeshopPostnummer: gemtShop?.postnummer ?? null,
+            pakkeshopBy: gemtShop?.by ?? null,
             modtager: {
               navn: fs.modtager_navn,
               adresse: fs.modtager_adresse,
@@ -278,7 +300,7 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
             kanAendrePris: bet.status === "afventer" && !bet.stripe_charge_id && h.status === "afventer_betaling",
           }
         : null,
-      labelLavet: (f.data ?? []).length > 0,
+      labelLavet,
     },
   };
 }

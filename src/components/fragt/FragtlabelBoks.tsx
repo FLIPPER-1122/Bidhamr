@@ -61,7 +61,10 @@ export default function FragtlabelBoks({
   labelGraense = 2,
   transportoer = null,
   kraeverDaoAccept = false,
+  spaerret = false,
 }: {
+  // Bankindsigelse: pakken må ikke sendes - ingen opfordring til "Marker som sendt".
+  spaerret?: boolean;
   tradeId: string;
   // Den aktive udgående forsendelse (ikke annulleret), eller null.
   forsendelse: ForsendelseVisning | null;
@@ -325,10 +328,12 @@ export default function FragtlabelBoks({
           <SporingTidslinje f={forsendelse} />
         </div>
 
-        <p className="mt-4 rounded-lg bg-groen-lys px-4 py-3 text-[13px] text-tekst-daempet">
-          Husk at tage de to pakkebilleder og trykke “Marker som sendt” herunder. Det skal du gøre, selvom du har
-          afleveret pakken.
-        </p>
+        {!spaerret && (
+          <p className="mt-4 rounded-lg bg-groen-lys px-4 py-3 text-[13px] text-tekst-daempet">
+            Husk at tage de to pakkebilleder og trykke “Marker som sendt” herunder. Det skal du gøre, selvom du har
+            afleveret pakken.
+          </p>
+        )}
       </section>
     );
   }
