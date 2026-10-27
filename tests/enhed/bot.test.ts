@@ -31,7 +31,16 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }));
 
-import { BOT_MAKS_TEGN, botAktiv, botModel, botPrisUsd, laesBotInput, loftFejl } from "@/lib/bot/konfig";
+import {
+  BOT_MAKS_TEGN,
+  botAktiv,
+  botMaksPrisUsd,
+  botModel,
+  botPrisUsd,
+  laesBotIndstillinger,
+  laesBotInput,
+  loftFejl,
+} from "@/lib/bot/konfig";
 import { botSynligIAppen, botSynligPaaHjemmesiden } from "@/lib/bot/synlig";
 import { ipHash, overdragTilMedarbejder, samtaleSomTekst, skoenOutputTokens, startBotSvar } from "@/lib/bot/motor";
 import { erstatForbudteOrd, lavOrdFilter } from "@/lib/bot/filter";
@@ -148,6 +157,54 @@ describe("model, input og loft", () => {
     expect(loftFejl("samtale_fuld")).toMatchObject({ status: 409 });
     expect(loftFejl("ukendt_samtale")).toMatchObject({ status: 409 });
     expect(loftFejl("noget andet")).toMatchObject({ status: 500, kode: "fejl" });
+  });
+
+  it("USD-loftet pr. bruger og loftet uden login giver pæne danske beskeder med kontakt", () => {
+    const b = loftFejl("loft_bruger_usd");
+    expect(b).toMatchObject({ status: 429, kode: "loft_bruger_usd" });
+    expect(b.fejl).toContain("/kontakt");
+    expect(b.fejl).not.toMatch(/usd|\$|dollar/i);
+    for (const grund of ["anon", "anon_usd"]) {
+      const a = loftFejl("loft_alle", grund);
+      expect(a).toMatchObject({ status: 429, kode: "loft_alle" });
+      expect(a.fejl).toContain("Log ind");
+      expect(a.fejl).toContain("/kontakt");
+    }
+    expect(loftFejl("loft_alle", "usd").fejl).not.toContain("Log ind");
+  });
+
+  it("den højeste pris for ét svar (skønnet for svar i gang) følger modellen", () => {
+    const haiku = botMaksPrisUsd("claude-haiku-5-5");
+    const opus = botMaksPrisUsd("claude-opus-5-5");
+    expect(haiku).toBeGreaterThan(0);
+    expect(opus).toBeGreaterThan(haiku);
+    // Ukendt model: Opus-priser.
+    expect(botMaksPrisUsd("ukendt")).toBe(opus);
+    // Under det absolutte loft i databasen (10 USD pr. svar).
+    expect(opus).toBeLessThan(10);
+  });
+
+  it("chefens lofter på /admin/bot valideres (procent -> andel, komma som decimaltegn)", () => {
+    expect(laesBotIndstillinger({ doegnloft_usd: "5", anon_procent: "50", bruger_loft_usd: "0,25", doegnloft_anon: "2000" })).toEqual({
+      doegnloft_usd: 5,
+      anon_andel: 0.5,
+      bruger_loft_usd: 0.25,
+      doegnloft_anon: 2000,
+    });
+    expect(laesBotIndstillinger({ doegnloft_usd: "7,5", anon_procent: "33,3", bruger_loft_usd: "1", doegnloft_anon: "0" })).toMatchObject({
+      doegnloft_usd: 7.5,
+      anon_andel: 0.333,
+    });
+    for (const forkert of [
+      { doegnloft_usd: "-1", anon_procent: "50", bruger_loft_usd: "1", doegnloft_anon: "1" },
+      { doegnloft_usd: "5", anon_procent: "101", bruger_loft_usd: "1", doegnloft_anon: "1" },
+      { doegnloft_usd: "5", anon_procent: "50", bruger_loft_usd: "abc", doegnloft_anon: "1" },
+      { doegnloft_usd: "5", anon_procent: "50", bruger_loft_usd: "1", doegnloft_anon: "1,5" },
+      { doegnloft_usd: "1e9", anon_procent: "50", bruger_loft_usd: "1", doegnloft_anon: "1" },
+      { doegnloft_usd: null, anon_procent: "50", bruger_loft_usd: "1", doegnloft_anon: "1" },
+    ]) {
+      expect(laesBotIndstillinger(forkert)).toHaveProperty("fejl");
+    }
   });
 
   it("prisen regnes pr. million tokens", () => {
@@ -326,10 +383,26 @@ describe("tekst fra brugere i værktøjsdata", () => {
 });
 
 describe("filteret mod ordet forsikring", () => {
-  it("erstatter ordet, også bøjet og sammensat", () => {
+  it("selve ordet og dets bøjninger bliver til BidHamr Beskyttelse", () => {
     expect(erstatForbudteOrd("Er der forsikring på?")).toBe("Er der BidHamr Beskyttelse på?");
-    expect(erstatForbudteOrd("Forsikringen og købsforsikringer")).toBe("BidHamr Beskyttelse og BidHamr Beskyttelse");
+    for (const ord of ["forsikring", "forsikringen", "forsikringer", "forsikringerne", "Forsikring", "Forsikringen", "Forsikringer", "Forsikringerne", "FORSIKRING"]) {
+      expect(erstatForbudteOrd(`Om ${ord}.`)).toBe("Om BidHamr Beskyttelse.");
+    }
+    expect(erstatForbudteOrd("forsikringens regler")).toBe("BidHamr Beskyttelses regler");
     expect(erstatForbudteOrd("BidHamr Beskyttelse dækker")).toBe("BidHamr Beskyttelse dækker");
+  });
+
+  it("sammensatte ord bliver til det neutrale 'dækning' med samme bøjning", () => {
+    expect(erstatForbudteOrd("Har du en indboforsikring?")).toBe("Har du en dækning?");
+    expect(erstatForbudteOrd("Forsikringen og købsforsikringer")).toBe("BidHamr Beskyttelse og dækninger");
+    expect(erstatForbudteOrd("rejseforsikringen dækker")).toBe("dækningen dækker");
+    expect(erstatForbudteOrd("Indboforsikringerne")).toBe("Dækningerne");
+    expect(erstatForbudteOrd("Kontakt dit forsikringsselskab.")).toBe("Kontakt dit dækning.");
+    expect(erstatForbudteOrd("Ulykkesforsikrings betingelser")).toBe("Dæknings betingelser");
+    // Intet sammensat ord må nævne BidHamr Beskyttelse.
+    expect(erstatForbudteOrd("indboforsikring")).not.toContain("BidHamr");
+    // Andre ord røres ikke.
+    expect(erstatForbudteOrd("Sikring af pakken og forsikre dig")).toBe("Sikring af pakken og forsikre dig");
   });
 
   it("fanger ordet, selv når det er delt over to bidder i strømmen", () => {
@@ -340,6 +413,29 @@ describe("filteret mod ordet forsikring", () => {
     const g = lavOrdFilter();
     expect(g.skub("Hej med dig")).toBe("Hej med ");
     expect(g.toem()).toBe("dig");
+  });
+
+  it("også delte bøjninger og sammensatte ord - og ved svarets slutning", () => {
+    const samlet = (bidder: string[]) => {
+      const f = lavOrdFilter();
+      return [...bidder.map((b) => f.skub(b)), f.toem()].join("");
+    };
+    expect(samlet(["Forsik", "ringerne er ", "gode"])).toBe("BidHamr Beskyttelse er gode");
+    expect(samlet(["din indbo", "forsik", "ring dækker"])).toBe("din dækning dækker");
+    expect(samlet(["Har du en Forsi", "kringen"])).toBe("Har du en BidHamr Beskyttelse");
+    expect(samlet(["rejse", "forsikringen", "?"])).toBe("dækningen?");
+    // Hver bid for sig: ordet kommer aldrig ud, uanset hvor det deles.
+    const tekst = "Har du en forsikring, eller en indboforsikring? Forsikringerne er dyre.";
+    for (let i = 1; i < tekst.length; i++) {
+      const ud = samlet([tekst.slice(0, i), tekst.slice(i)]);
+      expect(ud.toLowerCase()).not.toContain("forsikring");
+      expect(ud).toBe("Har du en BidHamr Beskyttelse, eller en dækning? BidHamr Beskyttelse er dyre.");
+    }
+    // Et meget langt "ord" sendes løbende, men ordet glider stadig ikke igennem.
+    const lang = `${"x".repeat(70)}forsik`;
+    const f = lavOrdFilter();
+    const ud = f.skub(lang) + f.skub("ring") + f.toem();
+    expect(ud.toLowerCase()).not.toContain("forsik");
   });
 });
 

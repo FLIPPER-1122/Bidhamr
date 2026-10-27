@@ -6,7 +6,8 @@ import AdminFejl from "@/components/admin/AdminFejl";
 import AdminTom from "@/components/admin/AdminTom";
 import AdminSideskift, { adminHref, laesSide } from "@/components/admin/AdminSideskift";
 import { HenvendelserFaner } from "@/components/admin/OmraadeFaner";
-import { botAktiv, botModel } from "@/lib/bot/konfig";
+import BotLofterForm from "@/components/admin/BotLofterForm";
+import { botAktiv, botMaksPrisUsd, botModel } from "@/lib/bot/konfig";
 
 // BidHamr-bot i admin: samtalerne (medarbejder og op) og det samlede
 // forbrug og den samlede pris (kun chef). Samtaler, hvor brugeren bad om en
@@ -64,7 +65,10 @@ export default async function AdminBotSide({ searchParams }: { searchParams: Pro
       .range((side - 1) * PR_SIDE, side * PR_SIDE - 1),
     erChef ? admin.rpc("bot_forbrug_oversigt") : Promise.resolve({ data: null, error: null }),
     erChef
-      ? admin.from("bot_indstillinger").select("doegnloft_usd, doegnloft_anon").maybeSingle<{ doegnloft_usd: number; doegnloft_anon: number }>()
+      ? admin
+          .from("bot_indstillinger")
+          .select("doegnloft_usd, doegnloft_anon, anon_andel, bruger_loft_usd")
+          .maybeSingle<{ doegnloft_usd: number; doegnloft_anon: number; anon_andel: number; bruger_loft_usd: number }>()
       : Promise.resolve({ data: null, error: null }),
   ]);
   const indstillinger = indstillingerSvar.data;
@@ -97,11 +101,24 @@ export default async function AdminBotSide({ searchParams }: { searchParams: Pro
       {erChef && (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-tekst">Forbrug og pris (model: {botModel() ?? "ukendt"})</h2>
-          {indstillinger && (
-            <p className="text-xs text-tekst-svag">
-              Døgnloft: {usd(indstillinger.doegnloft_usd)} i alt og {antal(indstillinger.doegnloft_anon)} beskeder uden login. Ændres i
-              tabellen bot_indstillinger.
-            </p>
+          {indstillinger ? (
+            <>
+              <p className="text-xs text-tekst-svag">
+                Døgnloft: {usd(indstillinger.doegnloft_usd)} i alt, heraf højst{" "}
+                {Number(indstillinger.anon_andel * 100).toLocaleString("da-DK", { maximumFractionDigits: 1 })} % (
+                {usd(indstillinger.doegnloft_usd * indstillinger.anon_andel)}) til besøgende uden login, {usd(indstillinger.bruger_loft_usd)} pr.
+                bruger og {antal(indstillinger.doegnloft_anon)} beskeder uden login. Svar, der er i gang, tælles med som højst{" "}
+                {usd(botMaksPrisUsd(botModel() ?? ""))} pr. svar.
+              </p>
+              <BotLofterForm
+                doegnloftUsd={Number(indstillinger.doegnloft_usd)}
+                anonAndel={Number(indstillinger.anon_andel)}
+                brugerLoftUsd={Number(indstillinger.bruger_loft_usd)}
+                doegnloftAnon={Number(indstillinger.doegnloft_anon)}
+              />
+            </>
+          ) : (
+            indstillingerSvar.error && <AdminFejl hvad="Lofterne" />
           )}
           {oversigtSvar.error || !oversigt ? (
             <AdminFejl hvad="Forbruget" />
