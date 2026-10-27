@@ -112,6 +112,8 @@ Brugeren får besked når:
 - Bygges samlet **før** staff-chatten og sagerne, så de kan bruge det.
 
 ## 7. Lancering og jura
+- **Suspension (Filip, 27. okt. 2026):** også en medarbejder må suspendere en konto, inkl. permanent suspension. Alt logges med navn. (Lukning/sletning af konti følger de eksisterende regler.)
+- **Skift af e-mail (Filip, 27. okt. 2026):** brugeren skal selv kunne skifte e-mail under Indstillinger (bygges – med bekræftelse på den nye adresse og besked til den gamle).
 - **Lancering: 1. marts 2027** (Filip, 27. okt. 2026 – rykket frem fra juni 2027; DAO-kontrakten gælder fra samme dato).
 - Cookie-banner skal laves.
 - **Brugerbetingelser (Filip, 10. okt. 2026):** Fluebenet ved oprettelse af konto bliver. Logget-ind brugere, der ikke har accepteret den aktuelle version, får et blokerende vindue lige efter cookie-banneret (kan læse betingelser/privatliv og logge ud). En ny version kræver ny accept. Ikke for besøgende uden konto.
