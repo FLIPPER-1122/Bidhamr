@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { kraevFirma } from "@/lib/erhverv/firmaData";
 import { hentFirmaOversigt } from "@/app/actions/erhverv";
-import { bekraeftCheckout } from "@/lib/erhverv/betaling";
+import { bekraeftCheckout, erVelkomstGratisPeriode } from "@/lib/erhverv/betaling";
 import { logDriftFejl } from "@/lib/drift";
 import PakkeValg, { PakkeInfo } from "@/components/erhverv/PakkeValg";
 import StripeKnap from "@/components/erhverv/StripeKnap";
@@ -14,7 +14,7 @@ import {
   FIRMA_OVERSIGT_EKSTRA as X,
 } from "@/lib/tekster/erhverv";
 import { kr, krFraOere, langDato } from "@/lib/erhverv/visning";
-import { plusMaaneder } from "@/lib/erhverv/abonnementRegler";
+import { plusMaaneder, VELKOMST_RABAT_PROCENT } from "@/lib/erhverv/abonnementRegler";
 import type { FirmaOversigt } from "@/lib/erhverv/regler";
 
 // Abonnement: betaling (Stripe Billing), nuværende pakke og alle andre
@@ -107,10 +107,20 @@ export default async function FirmaAbonnement({
   // samme antal måneder).
   const foersteBetaling = gratisVedStart > 0 ? langDato(new Date(plusMaaneder(Math.floor(nu / 1000), gratisVedStart) * 1000).toISOString()) : null;
   const foerstePris = intro && introPlanlagt && intro.fra === "efter_gratis" && introPris != null ? introPris : pris;
-  // Uden gratis måned (fx et CVR, der har haft abonnement før - Filip, 27.
-  // okt. 2026) trækkes første betaling med det samme - med en aftalt
-  // introrabat, hvis den er planlagt.
-  const prisNu = intro && introPlanlagt && introPris != null ? introPris : pris;
+  // Uden gratis måned trækkes første betaling med det samme (Filip, 27. okt.
+  // 2026): Butik/Pro med halv pris i måned 1 (erhverv_maaned1 'halv'), med en
+  // aftalt introrabat, hvis den er planlagt - eller fuld pris (fx et CVR, der
+  // har haft abonnement før).
+  const halvPris = ab?.maaned1 === "halv" && f.abonnement_status !== "pauset";
+  const prisNu =
+    intro && introPlanlagt && introPris != null
+      ? introPris
+      : halvPris && pris != null
+        ? (pris * (100 - VELKOMST_RABAT_PROCENT)) / 100
+        : pris;
+  // Starts gratis velkomstmåned: et skift op til Butik/Pro koster halv pris
+  // nu (ikke gratis). En gratis periode fra BidHamr (særaftale) er gratis.
+  const velkomstGratis = !!gratisTil && (await erVelkomstGratisPeriode(bruger.id));
   const pauseFra = f.betaling_mislykket_kl
     ? new Date(new Date(f.betaling_mislykket_kl).getTime() + 7 * 24 * 3600 * 1000).toISOString()
     : null;
@@ -165,6 +175,11 @@ export default async function FirmaAbonnement({
           )}
           {intro && introPlanlagt && (
             <p className={`mt-2 ${E_TEKST}`}>{FA.introPlanlagt(intro.procent, intro.maaneder, false)}</p>
+          )}
+          {halvPris && !(intro && introPlanlagt) && pris != null && (
+            <p className={`mt-2 ${E_TEKST}`}>
+              {FA.halvPrisTekst(B.prisMedMoms(krFraOere(oereInklMoms(pris).ekskl), krFraOere(oereInklMoms(pris).inkl)))}
+            </p>
           )}
           <p className={`mt-2 ${E_TEKST_DAEMPET}`}>{B.maanedligTekst}</p>
           <div className="mt-5">
@@ -254,6 +269,7 @@ export default async function FirmaAbonnement({
             kanSkifte={f.abonnement_status === "aktiv" && !f.opsiges_fra}
             afventerId={o.afventende_opgradering?.id ?? null}
             iGratisPeriode={!!gratisTil}
+            velkomstGratis={velkomstGratis}
           />
           {f.abonnement_status !== "aktiv" && <p className={`mt-4 ${E_TEKST_DAEMPET}`}>{T.abonnement.betalingIkkeSatOpSkift}</p>}
         </Kort>

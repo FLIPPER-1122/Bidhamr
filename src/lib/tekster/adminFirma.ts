@@ -106,13 +106,13 @@ export const ADMIN_FIRMA = {
           ? "Ingen"
           : `${pct} % i ${mdr} mdr. (${tilstand === "koerer" ? "kører" : tilstand === "slut" ? "slut" : "planlagt"})`,
       nu: (pct: number, mdr: number, fra: string, til: string | null) =>
-        `Nu: ${pct} % i ${mdr} måneder ${fra === "straks" ? "fra start" : "efter den gratis periode"}${til ? ` – til ${til}` : ""}`,
+        `Nu: ${pct} % i ${mdr} måneder ${fra === "straks" ? "fra nu" : "fra første betaling"}${til ? ` – til ${til}` : ""}`,
       saet: "Sæt eller ret introrabat",
       fjern: "Fjern introrabatten",
       fjernInfo: "Fra næste regning betaler firmaet den almindelige pris.",
       procent: "Rabat i procent (1-100)",
       maaneder: "Antal måneder (1-24)",
-      fraEfterGratis: "Efter den gratis periode (standard)",
+      fraEfterGratis: "Fra første betaling (standard – efter en evt. gratis periode)",
       fraStraks: "Fra nu – måneder i en gratis periode tæller med",
       ugyldig: "Skriv hele tal: 1-100 % og 1-24 måneder.",
       begrundelsePladsholder: "Fx Filip har ringet til firmaet",
@@ -256,7 +256,7 @@ export const ADMIN_FIRMA = {
     saerprisAftale: "Aftale",
     introrabat: "Introrabat",
     introTekst: (pct: number, mdr: number, fra: string) =>
-      `${pct} % i ${mdr} ${mdr === 1 ? "måned" : "måneder"} ${fra === "straks" ? "fra start" : "efter den gratis periode"}`,
+      `${pct} % i ${mdr} ${mdr === 1 ? "måned" : "måneder"} ${fra === "straks" ? "fra nu" : "fra første betaling"}`,
     introStatus: (tilstand: "planlagt" | "koerer" | "slut", til: string | null) =>
       tilstand === "koerer"
         ? `Kører – til ${til}`

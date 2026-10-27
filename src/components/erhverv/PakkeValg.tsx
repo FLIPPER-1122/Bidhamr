@@ -44,6 +44,7 @@ export default function PakkeValg({
   kanSkifte,
   afventerId,
   iGratisPeriode = false,
+  velkomstGratis = false,
 }: {
   nuvaerende: ErhvervPakke;
   andre: ErhvervPakke[];
@@ -55,6 +56,9 @@ export default function PakkeValg({
   afventerId: string | null;
   // I den gratis periode gælder et pakkeskift med det samme uden betaling.
   iGratisPeriode?: boolean;
+  // Den gratis periode er kun Starts velkomstmåned: et skift op til en pakke
+  // med halv pris i måned 1 (Butik/Pro) koster 50 % nu (Filip, 27. okt. 2026).
+  velkomstGratis?: boolean;
 }) {
   const router = useRouter();
   const [aaben, setAaben] = useState<string | null>(null);
@@ -142,7 +146,9 @@ export default function PakkeValg({
                   <p className={`mt-2 ${E_TEKST}`}>
                     {iGratisPeriode
                       ? op
-                        ? FA.bekraeftOpgraderGratis
+                        ? velkomstGratis && p.maaned1 !== "gratis"
+                          ? FA.bekraeftOpgraderFraGratisMaaned(p.navn)
+                          : FA.bekraeftOpgraderGratis
                         : FA.bekraeftNedgraderGratis
                       : op
                         ? X.bekraeftOpgraderTekstAfventer

@@ -33,6 +33,8 @@ import {
   givGratisPeriodeStripe,
   introTilStripe,
   lukAabneCheckout,
+  medFirmaLaas,
+  PAKKESKIFT_I_GANG,
   refunderRegningStripe,
   saetSaerprisStripe,
   saetSaerprisTilbage,
@@ -309,21 +311,27 @@ export async function saetFirmaIntrorabat(input: {
     // Aftalen gemmes ('planlagt'), og Stripe-delen sætter kuponen på. Fejler
     // Stripe, prøver betalings-cron'en igen (koerAbonnementSynk) - aftalen
     // går ikke tabt. Et brugt klik-id afvises af databasen, FØR Stripe kaldes.
-    await rpc(
-      admin,
-      "erhverv_firma_intro_gem",
-      medKlik(
-        {
-          p_staff: userId,
-          p_firma: firmaId,
-          p_procent: procent,
-          p_maaneder: maaneder,
-          p_fra: fra,
-          p_begrundelse: begrundelse,
-        },
-        klik,
+    // Under firmaets pakkeskift-lås: en særpris, der sættes samtidig
+    // (saetSaerprisStripe holder låsen fra Stripe til databasen), kan ikke
+    // smutte forbi tjekket - særpris og introrabat kombineres aldrig.
+    const gemt = await medFirmaLaas(firmaId, () =>
+      rpc(
+        admin,
+        "erhverv_firma_intro_gem",
+        medKlik(
+          {
+            p_staff: userId,
+            p_firma: firmaId,
+            p_procent: procent,
+            p_maaneder: maaneder,
+            p_fra: fra,
+            p_begrundelse: begrundelse,
+          },
+          klik,
+        ),
       ),
     );
+    if (!gemt.ok) throw new BrugerFejl(PAKKESKIFT_I_GANG);
     const stripeSvar = await introTilStripe(firmaId);
     // Uden abonnement: en åben Checkout-session med den gamle aftale lukkes.
     if (stripeSvar.status === "ingen_stripe") await lukAabneCheckout(firmaId);

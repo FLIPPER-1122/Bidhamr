@@ -262,7 +262,7 @@ export const FAQ_SIDE: Tekstside = {
         {
           // Ingen priser her - de står kun i Firma oversigt (ROADMAP-BESLUTNINGER "Erhvervskonti").
           spoergsmaal: "Hvad koster det at sælge som firma?",
-          svar: "Dit firma betaler et fast abonnement hver måned. Der er intet gebyr af salget, så I får hele buddet. Den første måned er gratis. Prisen afhænger af, hvor mange auktioner I vil have om måneden, og den aftaler vi med jer.",
+          svar: "Dit firma betaler et fast abonnement hver måned. Der er intet gebyr af salget, så I får hele buddet. Start: første måned gratis. Butik og Pro: første måned til halv pris. Prisen afhænger af, hvor mange auktioner I vil have om måneden, og den aftaler vi med jer.",
         },
         {
           spoergsmaal: "Hvad skal mit firma sørge for over for køberne?",
