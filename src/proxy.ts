@@ -26,7 +26,7 @@ export async function proxy(request: NextRequest) {
 }
 
 // Henvis en ven (?ven=KODE) gemmer intet i browseren (Filip, 27. okt. 2026):
-// koden følger med i URL'en til opret konto (src/lib/henvisning/link.ts).
+// koden følger med i URL'en til opret konto (src/lib/henvisning/kode.ts).
 
 // Kun rigtige statiske filer springes over: Next' egne filer, favicon, filerne
 // i public/ (brand/, forside/ og de løse svg'er) og metadata-filerne i
