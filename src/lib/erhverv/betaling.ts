@@ -15,6 +15,7 @@ import {
   type Maaned1,
   type PakkeMaaned1,
   introGaelder,
+  saerprisGaelder,
   introPasser,
   introResterende,
   nyGratisSlut,
@@ -22,7 +23,7 @@ import {
   TRIAL_MAKS_DAGE,
   type IntroFra,
 } from "@/lib/erhverv/abonnementRegler";
-import { ADMIN_FIRMA_ABONNEMENT } from "@/lib/tekster/erhverv";
+import { ADMIN_FIRMA_ABONNEMENT, FIRMA_ABONNEMENT } from "@/lib/tekster/erhverv";
 
 // Betaling af erhvervsabonnementer med Stripe Billing (bygget 8. okt. 2026 i
 // Stripes TESTMILJØ efter Filips ønske; Niels gennemgår - se
@@ -132,6 +133,8 @@ export const idempotensNoegle = {
   opsigelse: (firmaId: string, klik: string) => `opsigelse:${firmaId}:${klik}`,
   fortrydOpsigelse: (firmaId: string, klik: string) => `fortryd-opsigelse:${firmaId}:${klik}`,
   adminPakke: (firmaId: string, klik: string) => `admin-pakke:${firmaId}:${klik}`,
+  // En faktura annulleres kun én gang (void kan ikke fortrydes).
+  adminVoid: (fakturaId: string) => `admin-void:${fakturaId}`,
   prisRettelse: (subId: string, klik: string) => `pris-rettelse:${subId}:${klik}`,
   dobbeltAbonnement: (subId: string) => `dobbelt-abonnement:${subId}`,
   // Opsigelse ved permanent lukning af kontoen. NB: Stripe ignorerer
@@ -160,7 +163,8 @@ export type BetalingsStatus =
   // før abonnementet blev ændret). betalFoerst: abonnementet er ikke aktivt.
   // laasOvertaget: databasen er IKKE rullet tilbage, fordi et nyere pakkeskift
   // (eller chefen) har taget låsen imens - det nye skift gælder.
-  | { status: "fejl"; fejl: string; rulletTilbage?: boolean; laasOvertaget?: boolean; betalFoerst?: boolean };
+  // besked: dansk tekst til firmaet (ellers en generel fejltekst).
+  | { status: "fejl"; fejl: string; rulletTilbage?: boolean; laasOvertaget?: boolean; betalFoerst?: boolean; besked?: string };
 
 // Udfald af rulTilbage.
 type Tilbagerulning = "ok" | "fejl" | "laas_overtaget";
@@ -516,8 +520,9 @@ async function faarGratisPeriode(f: Pick<FirmaRaekke, "id" | "proeve_givet_kl" |
     .from("firma_regninger")
     .select("id", { count: "exact", head: true })
     .eq("firma_id", f.id)
-    .eq("type", "abonnement")
-    .eq("status", "betalt")
+    // Samme definition som erhverv_har_betalt_abonnement (20261102150000).
+    .in("type", ["abonnement", "opgradering"])
+    .in("status", ["betalt", "krediteret"])
     .gt("beloeb_oere", 0);
   if (error) throw new Error(`firma_regninger: ${error.message}`);
   return !count;
@@ -566,6 +571,7 @@ async function maaned1For(f: FirmaRaekke): Promise<Maaned1> {
     pakke: await pakkensMaaned1(f.pakke_id),
     velkomst: await faarGratisPeriode(f),
     introGaelder: introGaelder(f),
+    saerprisGaelder: saerprisGaelder(f),
   });
 }
 
@@ -744,7 +750,9 @@ export async function startBetaling(brugerId: string, base: string): Promise<Lin
     {
       idempotencyKey: idempotensNoegle.checkout(
         f.id,
-        `${prisId}:${gratisMaaneder}:${ekstra}:${velkomstDel}:${introKupon ?? "-"}:${introMeta.intro_noegle ?? "-"}:${maaned1}:${velkomstKupon ?? "-"}`,
+        // Kunden er med i nøglen: samme parametre til en anden Stripe-kunde
+        // er en anden betaling (ellers idempotency_error).
+        `${prisId}:${gratisMaaneder}:${ekstra}:${velkomstDel}:${introKupon ?? "-"}:${introMeta.intro_noegle ?? "-"}:${maaned1}:${velkomstKupon ?? "-"}:${kunde}`,
         Math.floor(Date.now() / 60_000),
       ),
     },
@@ -1256,8 +1264,17 @@ async function opgraderFraVelkomst(
     if (frisk.status !== "trialing") throw new Error(`Abonnement ${sub.id} er ikke længere i den gratis periode`);
     const item = frisk.items.data[0];
     if (!item) throw new Error(`Abonnement ${sub.id} har ingen linjer`);
+    // Ingen dobbelt rabat: 50 %-kuponen kun, når firmaet hverken har en
+    // introrabat (på abonnementet ELLER aftalt i databasen - planlagt eller
+    // kørende, introGaelder) eller en særpris (særprisen udelukker
+    // velkomstfordelen og bortfalder ved pakkeskiftet; Filip, 27. okt. 2026).
+    // Er introrabatten aftalt, men endnu ikke sat på abonnementet (cron'en gør
+    // det), venter skiftet - ellers fik firmaet 50 % nu OG introrabatten bagefter.
     const harIntro = frisk.discounts.some(erIntroRabat);
-    const kupon = harIntro ? null : await sikrVelkomstKupon();
+    if (introGaelder(f) && !harIntro) {
+      throw new IntroVenter(`Firma ${f.id}: introrabatten er aftalt, men ikke sat på ${sub.id} endnu`);
+    }
+    const kupon = harIntro || introGaelder(f) || saerprisGaelder(f) ? null : await sikrVelkomstKupon();
 
     // Skiftets id på abonnementet (fakturaen får det med i
     // parent.subscription_details.metadata), så webhooken altid finder skiftet.
@@ -1291,11 +1308,21 @@ async function opgraderFraVelkomst(
     if (!aendret && tilbagerul) {
       const r = await rulTilbage(f.id, skift.id, tilbagerul, !planFrigivet, annulleret === 0, `opgradering fra gratis måned: ${fejltekst(err)}`, laas);
       await rydSkiftMetadata(sub.id, skift.id);
-      return { status: "fejl", fejl: fejltekst(err), ...tilbagerulFelter(r) };
+      return {
+        status: "fejl",
+        fejl: fejltekst(err),
+        ...tilbagerulFelter(r),
+        ...(err instanceof IntroVenter ? { besked: INTRO_VENTER_BESKED } : {}),
+      };
     }
     return { status: "fejl", fejl: fejltekst(err) };
   }
 }
+
+// Introrabatten er aftalt, men ikke sat på abonnementet endnu (fx
+// månedsskifte - betalings-cron'en prøver igen hvert 5. minut).
+class IntroVenter extends Error {}
+const INTRO_VENTER_BESKED = FIRMA_ABONNEMENT.skiftVenterRabat;
 
 function stopHvisOpsagt(sub: Stripe.Subscription): void {
   if (sub.cancel_at_period_end || sub.cancel_at) {
@@ -1547,10 +1574,13 @@ export async function skiftPrisAdmin(firmaId: string, pakkeId: string): Promise<
   let planFrigivet = false;
   let annulleredeFakturaer = 0;
   try {
-    // Åbne opgraderingsfakturaer på abonnementet annulleres (chefen afgør pakken).
+    // Åbne opgraderingsfakturaer på abonnementet annulleres (chefen afgør
+    // pakken) - også fakturaen fra et ventende skift op fra Starts gratis
+    // måned (ellers står den ventende ændring stadig, og firmaet kunne betale
+    // den bagefter).
     for await (const faktura of s.invoices.list({ subscription: sub.id, status: "open", limit: 20 })) {
-      if (fakturaType(faktura) !== "opgradering") continue;
-      const annulleret = await s.invoices.voidInvoice(faktura.id);
+      if (!faktura.id || !(await erVentendeSkiftFaktura(faktura, sub))) continue;
+      const annulleret = await s.invoices.voidInvoice(faktura.id, {}, { idempotencyKey: idempotensNoegle.adminVoid(faktura.id) });
       annulleredeFakturaer++;
       await synkFaktura(annulleret, null);
     }
@@ -1799,8 +1829,10 @@ async function lukAabneBetalinger(k: LukKandidat, kunde: string): Promise<void> 
 async function annullerOpgraderingerVedLukning(k: LukKandidat): Promise<void> {
   const s = stripe();
   try {
+    const sub = await s.subscriptions.retrieve(k.subscription_id).catch(() => null);
     for await (const faktura of s.invoices.list({ subscription: k.subscription_id, status: "open", limit: 20 })) {
-      if (!faktura.id || fakturaType(faktura) !== "opgradering") continue;
+      // Også fakturaen fra et ventende skift op fra Starts gratis måned.
+      if (!faktura.id || !(await erVentendeSkiftFaktura(faktura, sub))) continue;
       try {
         const annulleret = await s.invoices.voidInvoice(faktura.id, {}, {
           idempotencyKey: idempotensNoegle.lukFaktura(k.bruger_id, k.subscription_id, k.forsoeg, faktura.id),
@@ -2020,9 +2052,7 @@ export async function synkAbonnement(sub: Stripe.Subscription, slettet = false):
     // på et frisk abonnement (efterStart). Kortet spejles (mærke, sidste 4,
     // udløb). Fejl her må ikke stoppe spejlingen - cron'en prøver igen.
     if (sub.status === "trialing" || sub.status === "active") await efterStart(f, sub.id, "webhook");
-    await laasKunKort(f.id, sub).catch((err) =>
-      logDriftFejl({ kilde: "webhook", hvor: "erhverv/kun-kort", fejl: `Firma ${f.id} (${sub.id}): ${fejltekst(err)}` }),
-    );
+    await laasKunKortMedGraense(f.id, sub, "webhook");
     await synkKort(f.id, sub).catch((err) =>
       logDriftFejl({ kilde: "webhook", hvor: "erhverv/kort", fejl: `Firma ${f.id}: ${fejltekst(err)}` }),
     );
@@ -2071,6 +2101,63 @@ async function laasKunKort(firmaId: string, sub: Stripe.Subscription): Promise<"
   if (error && error.code !== "PGRST202") throw new Error(`firma_kort_laast: ${error.message}`);
   return kunKort ? "allerede" : "laast";
 }
+
+// Permanente Stripe-fejl (forkert anmodning, manglende rettighed eller
+// nøgle): et nyt forsøg giver samme fejl. Netværksfejl, 429 og 5xx er
+// forbigående.
+function erPermanentStripeFejl(err: unknown): boolean {
+  return (
+    err instanceof Stripe.errors.StripeInvalidRequestError ||
+    err instanceof Stripe.errors.StripePermissionError ||
+    err instanceof Stripe.errors.StripeAuthenticationError
+  );
+}
+
+export type KortLaasUdfald = "laast" | "allerede" | "venter" | "afsluttet" | "opgivet" | "fejl";
+
+// laasKunKort med en grænse (20261102150000): en permanent Stripe-fejl tælles
+// pr. abonnement (firma_kort_laas_fejl); efter 3 opgives det med ÉN
+// drift-alarm (lås abonnementet til kun kort manuelt i Stripe), og hverken
+// cron'en (firma_kort_laas_kandidater) eller webhooken prøver igen. En
+// forbigående fejl giver alarm som før og prøves igen. Kaster ikke.
+async function laasKunKortMedGraense(
+  firmaId: string,
+  sub: Stripe.Subscription,
+  kilde: "webhook" | "cron",
+): Promise<KortLaasUdfald> {
+  const admin = createAdminClient();
+  try {
+    const { data: opgivet, error } = await admin.rpc("firma_kort_laas_opgivet", { p_firma: firmaId, p_subscription_id: sub.id });
+    // PGRST202: migrationen 20261102150000 er ikke kørt - ingen grænse.
+    if (error && error.code !== "PGRST202") throw new Error(`firma_kort_laas_opgivet: ${error.message}`);
+    if (opgivet === true) return "opgivet";
+    return await laasKunKort(firmaId, sub);
+  } catch (err) {
+    if (erPermanentStripeFejl(err)) {
+      const { data, error } = await admin.rpc("firma_kort_laas_fejl", { p_firma: firmaId, p_subscription_id: sub.id });
+      if (!error) {
+        const svar = (data ?? {}) as { forsoeg?: number; opgivet?: boolean };
+        if (svar.opgivet && svar.forsoeg === KORT_LAAS_MAKS_FORSOEG) {
+          await logDriftFejl({
+            kilde,
+            hvor: "erhverv/kun-kort",
+            fejl: `Firma ${firmaId} (${sub.id}): abonnementet kunne ikke låses til kun kort efter ${KORT_LAAS_MAKS_FORSOEG} forsøg - der prøves ikke igen. Sæt payment_settings.payment_method_types = [card] på abonnementet i Stripe: ${fejltekst(err)}`,
+          });
+          return "opgivet";
+        }
+        if (svar.opgivet) return "opgivet";
+        // Under grænsen: ingen alarm endnu (prøves igen næste kørsel).
+        if (typeof svar.forsoeg === "number") return "fejl";
+      } else if (error.code !== "PGRST202") {
+        await logDriftFejl({ kilde, hvor: "erhverv/kun-kort", fejl: `Firma ${firmaId}: firma_kort_laas_fejl: ${error.message}` });
+      }
+    }
+    await logDriftFejl({ kilde, hvor: "erhverv/kun-kort", fejl: `Firma ${firmaId} (${sub.id}): ${fejltekst(err)}` });
+    return "fejl";
+  }
+}
+// Samme tal som firma_kort_laas_kandidater/firma_kort_laas_fejl (20261102150000).
+const KORT_LAAS_MAKS_FORSOEG = 3;
 
 // customer.subscription.pending_update_expired: firmaet nåede ikke at betale
 // forskellen (fx 3DS ikke godkendt). Stripe har droppet ændringen: fakturaen
@@ -2234,7 +2321,13 @@ export async function synkFaktura(
   // Et skift op fra den gratis måned, der ikke er betalt: Stripe har ikke
   // anvendt ændringen (pending update) - firmaet har stadig Start gratis, så
   // det er ikke en mislykket abonnementsbetaling.
-  if (haendelse === "payment_failed" && type === "abonnement" && velkomstSkift?.status === "afventer_betaling") {
+  // Testet med test clock (kort 4000000000000341 og 4000002500003155,
+  // 20261102150000): abonnementet er stadig 'trialing' på Start med en
+  // pending_update, og fakturaen er åben. Det gælder også, når skiftet
+  // allerede er annulleret i databasen (fx af staff) - fakturaen hører stadig
+  // til skiftet, aldrig til en fornyelse, så den må aldrig sætte firmaet på
+  // pause.
+  if (haendelse === "payment_failed" && type === "abonnement" && velkomstSkift) {
     return "spejlet";
   }
   if (haendelse === "payment_failed" && type === "abonnement") {
@@ -2336,6 +2429,42 @@ async function findOpgradering(f: FirmaRaekke, faktura: Stripe.Invoice): Promise
     .is("stripe_invoice_id", null);
   if (gemFejl) throw new Error(`firma_pakkeskift.stripe_invoice_id: ${gemFejl.message}`);
   return { ...skift, stripe_invoice_id: faktura.id };
+}
+
+// Er en (åben) faktura den, et skift op fra Starts gratis måned laver
+// (opgraderFraVelkomst)? Den er en almindelig abonnementsfaktura
+// (billing_reason 'subscription_update'), så fakturaType siger 'abonnement'.
+// Den genkendes på: (a) den er abonnementets ventende ændrings faktura
+// (pending_update + latest_invoice - Stripe: "To cancel a pending update, you
+// need to void the invoice the update created", docs.stripe.com/billing/
+// subscriptions/pending-updates), (b) et pakkeskift har gemt faktura-id'et,
+// eller (c) skift_id i abonnementets metadata peger på et skift op, der venter
+// uden faktura (som findVelkomstSkift). En fornyelse fra en fase-overgang i en
+// Subscription Schedule (også 'subscription_update') rammes ikke.
+async function erVelkomstSkiftFaktura(faktura: Stripe.Invoice, sub: Stripe.Subscription | null): Promise<boolean> {
+  if (!faktura.id || fakturaType(faktura) !== "abonnement" || faktura.billing_reason !== "subscription_update") return false;
+  if (sub?.pending_update && id(sub.latest_invoice) === faktura.id) return true;
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("firma_pakkeskift")
+    .select("id")
+    .eq("stripe_invoice_id", faktura.id)
+    .eq("type", "opgradering")
+    .limit(1);
+  if (error) throw new Error(`firma_pakkeskift: ${error.message}`);
+  if (data?.length) return true;
+  const skiftId = faktura.parent?.subscription_details?.metadata?.skift_id;
+  if (!skiftId || !/^[0-9a-f-]{36}$/i.test(skiftId)) return false;
+  const skift = await hentSkift(skiftId);
+  return !!skift && skift.type === "opgradering" && skift.status === "afventer_betaling" && !skift.stripe_invoice_id;
+}
+
+// Fakturaer, der skal annulleres, når en ventende opgradering ikke længere
+// kan/skal gennemføres (chefens pakkeskift, lukning, prissynk): rene
+// opgraderingsfakturaer (kun proration) og fakturaen fra et skift op fra
+// Starts gratis måned.
+async function erVentendeSkiftFaktura(faktura: Stripe.Invoice, sub: Stripe.Subscription | null): Promise<boolean> {
+  return fakturaType(faktura) === "opgradering" || (await erVelkomstSkiftFaktura(faktura, sub));
 }
 
 // Pakkeskiftet, en faktura fra opgraderFraVelkomst hører til: via faktura-id'et
@@ -3372,7 +3501,9 @@ async function synkPrisEfterFlytning(f: FirmaRaekke): Promise<boolean> {
   const ryddet: string[] = [];
   if (await frigivPlan(sub)) ryddet.push("planlagt nedgradering frigivet");
   for await (const faktura of s.invoices.list({ subscription: sub.id, status: "open", limit: 20 })) {
-    if (!faktura.id || fakturaType(faktura) !== "opgradering") continue;
+    // Også fakturaen fra et skift op fra Starts gratis måned (skiftet er
+    // annulleret i databasen - et ventende skift har stoppet os ovenfor).
+    if (!faktura.id || !(await erVentendeSkiftFaktura(faktura, sub))) continue;
     const annulleret = await s.invoices.voidInvoice(faktura.id, {}, { idempotencyKey: idempotensNoegle.prisSynkVoid(faktura.id) });
     await synkFaktura(annulleret, null);
     ryddet.push(`opgraderingsfaktura ${faktura.id} annulleret`);
@@ -3540,12 +3671,13 @@ export async function koerAbonnementSynk(): Promise<{ priser: number; gratis: nu
   for (const k of (kort ?? []) as { firma_id: string; subscription_id: string }[]) {
     try {
       await markerSynkForsoeg(k.firma_id);
-      const r = await laasKunKort(k.firma_id, await stripe().subscriptions.retrieve(k.subscription_id));
+      const r = await laasKunKortMedGraense(k.firma_id, await stripe().subscriptions.retrieve(k.subscription_id), "cron");
       if (r === "afsluttet") {
         const { error: e } = await admin.rpc("firma_kort_laast", { p_firma: k.firma_id, p_subscription_id: k.subscription_id });
         if (e) throw new Error(`firma_kort_laast: ${e.message}`);
       }
       if (r === "laast") ud.kort++;
+      if (r === "fejl") ud.fejl++;
     } catch (err) {
       ud.fejl++;
       await logDriftFejl({ kilde: "cron", hvor: "erhverv/kun-kort", fejl: `Firma ${k.firma_id}: ${fejltekst(err)}` });

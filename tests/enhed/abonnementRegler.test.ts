@@ -13,6 +13,8 @@ import {
   checkoutPlan,
   erKunVelkomstGratis,
   maaned1Regel,
+  oereMedRabat,
+  velkomstSkiftRabat,
   INTRO_MARGIN_SEK,
   introKuponMaaneder,
   introKuponMaanederCheckout,
@@ -327,10 +329,22 @@ describe("pakker og kvote", () => {
 
 describe("regel for måned 1 (Filip, 27. okt. 2026)", () => {
   it("Start gratis, Butik/Pro halv pris; ingen fordel uden ret eller med introrabat", () => {
-    expect(maaned1Regel({ pakke: "gratis", velkomst: true, introGaelder: false })).toBe("gratis");
-    expect(maaned1Regel({ pakke: "halv", velkomst: true, introGaelder: false })).toBe("halv");
-    expect(maaned1Regel({ pakke: "halv", velkomst: false, introGaelder: false })).toBe("ingen");
-    expect(maaned1Regel({ pakke: "gratis", velkomst: true, introGaelder: true })).toBe("ingen");
+    expect(maaned1Regel({ pakke: "gratis", velkomst: true, introGaelder: false, saerprisGaelder: false })).toBe("gratis");
+    expect(maaned1Regel({ pakke: "halv", velkomst: true, introGaelder: false, saerprisGaelder: false })).toBe("halv");
+    expect(maaned1Regel({ pakke: "halv", velkomst: false, introGaelder: false, saerprisGaelder: false })).toBe("ingen");
+    expect(maaned1Regel({ pakke: "gratis", velkomst: true, introGaelder: true, saerprisGaelder: false })).toBe("ingen");
+    // Særpris udelukker også velkomstfordelen (Filip, 27. okt. 2026).
+    expect(maaned1Regel({ pakke: "gratis", velkomst: true, introGaelder: false, saerprisGaelder: true })).toBe("ingen");
+    expect(maaned1Regel({ pakke: "halv", velkomst: true, introGaelder: false, saerprisGaelder: true })).toBe("ingen");
+  });
+  it("skift op fra Starts gratis måned: rabat og beløb (særpris 0 %, introrabattens procent, ellers 50 %)", () => {
+    expect(velkomstSkiftRabat({ saerprisGaelder: false, introProcent: null })).toBe(50);
+    expect(velkomstSkiftRabat({ saerprisGaelder: false, introProcent: 30 })).toBe(30);
+    expect(velkomstSkiftRabat({ saerprisGaelder: true, introProcent: null })).toBe(0);
+    // Pro 1.999 kr. til halv pris: 999,50 kr. + moms (1.249,38 kr.).
+    expect(oereMedRabat(1999, 50)).toEqual({ ekskl: 99_950, inkl: 124_938 });
+    expect(oereMedRabat(999, 50)).toEqual({ ekskl: 49_950, inkl: 62_438 });
+    expect(oereMedRabat(999, 0)).toEqual({ ekskl: 99_900, inkl: 124_875 });
   });
   it("Checkout-plan: Start trial, Butik/Pro engangskupon - staff-måneder erstatter 50 %", () => {
     expect(checkoutPlan({ maaned1: "gratis", velkomstMaaneder: 1, ekstra: 0 })).toEqual({ velkomstGratis: 1, ekstra: 0, halvPris: false });
