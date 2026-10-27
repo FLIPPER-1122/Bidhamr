@@ -78,7 +78,12 @@ Supabase-dashboardet for projektet → **Authentication**:
    standard). Skift af e-mail går ikke via Supabase' eget flow, men via
    serveren (`src/lib/emailSkift.ts`, kode til den nye adresse + admin-API).
    Databasen afviser Supabase' eget e-mail-skift (`updateUser({ email })`)
-   med en trigger (`20261102120000_skift_email.sql`). De to indstillinger er
+   med en trigger (`20261102120000_skift_email.sql`). Når login-adressen
+   skifter (uanset hvordan), nulstiller en anden trigger alle gamle links og
+   koder (recovery, confirmation, reauthentication, email_change_*) og sletter
+   brugerens `auth.one_time_tokens` (`20261102160000_skift_email_rettelser.sql`).
+   Koden til den nye adresse gemmes som HMAC med serverens hemmelige
+   Supabase-nøgle. Firmakonti skifter ikke selv e-mail. De to indstillinger er
    ekstra værn, hvis triggeren en dag mangler: med "Confirm email" slået fra
    ville `updateUser({ email })` skifte adressen med det samme uden kode, og
    med "Secure email change" slået fra skulle kun den nye adresse bekræfte.

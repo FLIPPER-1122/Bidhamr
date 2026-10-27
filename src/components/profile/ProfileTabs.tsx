@@ -68,6 +68,7 @@ export default function ProfileTabs({
   telefon,
   adresse = null,
   email,
+  erFirma = false,
   avatarUrl,
 }: {
   fane: ProfilFane;
@@ -81,6 +82,8 @@ export default function ProfileTabs({
   telefon: string | null;
   adresse?: string | null;
   email: string;
+  // Firmakonti skifter ikke selv e-mail (ROADMAP-BESLUTNINGER.md, "Skift af e-mail").
+  erFirma?: boolean;
   avatarUrl: string | null;
 }) {
   return (
@@ -234,6 +237,7 @@ export default function ProfileTabs({
             telefon={telefon}
             adresse={adresse}
             email={email}
+            erFirma={erFirma}
             avatarUrl={avatarUrl}
           />
         )}

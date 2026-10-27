@@ -126,23 +126,29 @@ forkert_adgangskode`, `403 genlog_ind` (log ud og ind igen), `429 for_mange`.
 
 ## POST /api/konto/email og /api/konto/email/bekraeft (skift af e-mail)
 
-Samme kode som Indstillinger på hjemmesiden (`src/lib/emailSkift.ts`, migration `20261102120000_skift_email.sql`).
+Samme kode som Indstillinger på hjemmesiden (`src/lib/emailSkift.ts`, migrationerne `20261102120000_skift_email.sql`
+og `20261102160000_skift_email_rettelser.sql`).
 Appen må **aldrig** kalde `supabase.auth.updateUser({ email })` - databasen afviser det altid (værn mod overtagelse
 via en stjålet session).
 
 1. `POST /api/konto/email` `{ ny_email, adgangskode }` → `200 { ok, besked }`. Svaret er **det samme**, uanset om
-   adressen er ledig eller i brug (så sendes ingen kode). Vis `besked` og kode-skærmen. Fejl: `400 email` /
-   `samme_email`, `403 forkert_adgangskode`, `403 staff` (medarbejdere skifter ikke selv - de kontakter chefen),
-   `403 suspenderet` / `lukket` / `slettet`, `429 for_mange`, `503 ikke_tilgaengelig`.
+   adressen er ledig eller i brug (så sendes ingen kode), og det kommer tidligst efter ca. 1,5 sek. Mailen sendes i
+   baggrunden. Vis `besked` og kode-skærmen. Fejl: `400 email` / `samme_email`, `403 forkert_adgangskode`,
+   `403 staff` (medarbejdere skifter ikke selv - de kontakter chefen), `403 firma` (firmakonti skifter ikke selv -
+   "Kontakt BidHamr for at skifte e-mail på en firmakonto"; appen viser teksten i stedet for knappen),
+   `403 suspenderet` / `lukket` / `slettet`, `429 for_mange`, `503 ikke_tilgaengelig` (også mens et netop
+   bekræftet skift gennemføres).
 2. `POST /api/konto/email/bekraeft` `{ kode }` (6 cifre, mellemrum fjernes) → `200 { ok, email }`. E-mailen er
    skiftet, andre enheder er logget ud, og den gamle adresse har fået en mail. Kald
    `supabase.auth.refreshSession()`, så tokenet har den nye e-mail. Fejl: `400 kode_forkert` (prøv igen),
    `400 kode_udloebet` (brugt, udløbet efter 15 min. eller 5 forkerte - bed om en ny kode via trin 1),
-   `409 optaget` (adressen blev taget, før koden blev brugt), `403 staff` / `suspenderet` / `lukket` / `slettet`,
-   `429 for_mange`.
+   `409 optaget` (adressen blev taget, før koden blev brugt), `403 staff` / `firma` / `suspenderet` / `lukket` /
+   `slettet`, `429 for_mange`. Ved skiftet holder alle gamle links og koder til den gamle adresse ("Glemt
+   adgangskode", bekræftelse) op med at virke; sessionen og refresh-tokenet virker videre.
 
 Grænser: `konto_app_ip`, `adgangskode_bruger` (deles med skift af adgangskode og sletning), `email_skift_bruger`
-(5/time), `email_skift_ny_email` (3/time pr. ny adresse) og `email_skift_kode_bruger` (10/15 min).
+(5/time), `email_skift_ny_email` (3/time pr. ny adresse - tælles først efter en rigtig adgangskode) og
+`email_skift_kode_bruger` (10/15 min).
 
 ## POST /api/konto/glemt
 

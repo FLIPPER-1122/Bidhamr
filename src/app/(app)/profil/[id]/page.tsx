@@ -336,6 +336,7 @@ async function ProfilIndhold({ params, searchParams }: ProfilProps) {
               telefon={egenEmail?.telefon ?? null}
               adresse={kontakt?.adresse ?? null}
               email={egenEmail?.email ?? ""}
+              erFirma={profil.konto_type === "erhverv"}
               avatarUrl={profil.avatar_url}
             />
           </Suspense>

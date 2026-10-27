@@ -9,6 +9,7 @@ export const EMAIL_SKIFT_STATUS: Record<EmailSkiftKode, number> = {
   optaget: 409,
   forkert_adgangskode: 403,
   staff: 403,
+  firma: 403,
   suspenderet: 403,
   lukket: 403,
   slettet: 403,

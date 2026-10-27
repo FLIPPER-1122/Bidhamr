@@ -53,7 +53,8 @@
 -- (pjiigmzqwlfepxnjdvug). Produktion kræver Filips "ja".
 -- =============================================================================
 
-set local lock_timeout = '5s';
+-- Ingen set local lock_timeout (review 27. okt. 2026): den virker kun i en
+-- transaktion. Filen kører som én transaktion i migrationsværktøjet.
 
 create or replace function pg_temp.krop_md5(p_fn text)
 returns text language sql stable as $f$

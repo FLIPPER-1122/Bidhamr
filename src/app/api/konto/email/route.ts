@@ -16,7 +16,7 @@ import { EMAIL_SKIFT_STATUS } from "./status";
 //                               også når adressen er i brug (så sendes intet)
 //   400 { fejl, kode: "ugyldig" | "email" | "samme_email" }
 //   401 { fejl, kode: "ikke_logget_ind" }
-//   403 { fejl, kode: "forkert_adgangskode" | "staff" | "suspenderet" | "lukket" | "slettet" | "ikke_tilladt" }
+//   403 { fejl, kode: "forkert_adgangskode" | "staff" | "firma" | "suspenderet" | "lukket" | "slettet" | "ikke_tilladt" }
 //   429 { fejl, kode: "for_mange" }   503 { kode: "ikke_tilgaengelig" }   500 { kode: "fejl" }
 //
 // Sikkerhed: kun Bearer-token (ingen cookies, ingen CSRF), en fremmed Origin
