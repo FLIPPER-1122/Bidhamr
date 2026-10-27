@@ -7,11 +7,14 @@
 import type { SamtykkeKategori } from "@/lib/samtykke";
 
 export const SAMTYKKE_TEKST = {
-  bannerOverskrift: "Vi bruger kun nødvendige cookies",
+  // Banneret giver et valg ("Accepter alle" / "Kun nødvendige"), så
+  // overskriften må ikke love "kun nødvendige". Opgave til indhold-agenten:
+  // gennemlæs banner-teksterne samlet (27. okt. 2026).
+  bannerOverskrift: "Vælg, hvilke cookies vi må bruge",
   bannerTekst:
-    "De holder dig logget ind, beskytter din konto og husker dit valg. Når du betaler, bruger vores betalingspartner Stripe cookies for at forhindre svindel. Vi bruger ingen cookies til statistik eller markedsføring – begynder vi på det, spørger vi dig først. Du kan altid ændre dit valg under \"Cookieindstillinger\" nederst på siden.",
+    "I dag bruger vi kun nødvendige cookies: de holder dig logget ind, beskytter din konto og husker dit valg. Når du betaler, bruger vores betalingspartner Stripe cookies for at forhindre svindel. Vælger du \"Accepter alle\", må vi også bruge cookies til statistik og markedsføring, hvis vi tager dem i brug. Du kan altid ændre dit valg under \"Cookieindstillinger\" nederst på siden.",
   // Kort udgave til mobil, så banneret ikke dækker siden (én linje).
-  bannerTekstKort: "De bruges til login og sikkerhed.",
+  bannerTekstKort: "I dag kun til login og sikkerhed.",
   laesMere: "Læs mere om cookies",
   laesMereKort: "Læs mere",
   accepterAlle: "Accepter alle",

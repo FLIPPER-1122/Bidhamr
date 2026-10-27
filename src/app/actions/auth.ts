@@ -326,7 +326,14 @@ export async function gemNyAdgangskode(
   if (!bruger) return { fejl: "Linket er udløbet. Bed om et nyt og prøv igen." };
 
   const ip = await klientIp();
-  const graense = graenseFejl(await tjekGraenserLukket([["adgangskode_bruger", bruger.id], ["nulstil_ip", ip]]));
+  // Egen pulje (ikke nulstil_ip): ellers kunne afsendte nulstillingsmails fra
+  // samme IP blokere selve gemningen.
+  const graense = graenseFejl(
+    await tjekGraenserLukket([
+      ["adgangskode_bruger", bruger.id],
+      ["ny_adgangskode_ip_email", `${ip}|${bruger.email ?? bruger.id}`],
+    ]),
+  );
   if (graense) return { fejl: graense };
 
   const { data: profil } = await createAdminClient()

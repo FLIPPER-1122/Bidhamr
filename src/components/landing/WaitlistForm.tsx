@@ -29,14 +29,14 @@ export default function WaitlistForm() {
       const res = await fetch("/api/waitlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: email.trim() }),
       });
 
       if (!res.ok) {
-        // Kun serverens egne, faste valideringsbeskeder (400) vises. Alt andet
+        // Kun serverens egne, faste beskeder (400 og 429) vises. Alt andet
         // giver en fast besked, så rå fejltekst aldrig når brugeren.
         let besked = GENERISK_FEJL;
-        if (res.status === 400) {
+        if (res.status === 400 || res.status === 429) {
           const data = await res.json().catch(() => null);
           if (data && typeof data.error === "string") besked = data.error;
         }
