@@ -19,6 +19,7 @@ import { AuktionLaastTekst } from "@/components/SaelgerAuktionHandlinger";
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { KUNST_TEKST, tjekKunstTekst } from "@/lib/kunstForbud";
 import KunstAdvarsel from "@/components/opret/KunstAdvarsel";
+import { auktionKontaktGrund, auktionKontaktTekst, type AuktionKontaktFelt } from "@/lib/auktionKontaktinfo";
 import { erStand } from "@/lib/stand";
 import PakkestoerrelseVaelger, {
   fragtFejlTekst,
@@ -125,6 +126,23 @@ export default function RedigerAuktionForm({
   // staff-tjek uanset hvad.
   const kunst = tekstAendret && !forbudtTekst ? tjekKunstTekst(titel, beskrivelse) : null;
   const kunstOrd = kunst?.resultat === "kunst" ? kunst.ord : null;
+  // Kontaktoplysninger (BHA08, src/lib/auktionKontaktinfo.ts): som databasen
+  // kun i det felt, der er ændret - en gammel auktion kan stadig få rettet
+  // pris og billeder. Firmaer må skrive links. Vises, mens brugeren skriver.
+  // serverKontakt: databasen afviste teksten (vises, til den ændres).
+  const [serverKontakt, setServerKontakt] = useState<{ felt: AuktionKontaktFelt; tekst: string; vaerdi: string } | null>(
+    null,
+  );
+  const kontaktFejl = (felt: AuktionKontaktFelt, vaerdi: string, foer: string) =>
+    vaerdi.trim() === foer.trim()
+      ? null
+      : auktionKontaktGrund(vaerdi, erFirma) !== null
+        ? auktionKontaktTekst(felt, erFirma)
+        : serverKontakt?.felt === felt && serverKontakt.vaerdi === vaerdi.trim()
+          ? serverKontakt.tekst
+          : null;
+  const kontaktTitel = forbudtTekst ? null : kontaktFejl("titel", titel, start.titel);
+  const kontaktBeskrivelse = kontaktFejl("beskrivelse", beskrivelse, start.beskrivelse);
   const [kunstBekraeftet, setKunstBekraeftet] = useState(false);
   const [visKunstFejl, setVisKunstFejl] = useState(false);
 
@@ -136,6 +154,10 @@ export default function RedigerAuktionForm({
     if (!billeder.every(billedeKlar)) return setError("Vent, til billederne er klar.");
     if (!titel.trim()) return setError("Skriv en titel.");
     if (forbudtTekst) return setError(forbudtTekst);
+    if (kontaktTitel || kontaktBeskrivelse) {
+      document.getElementById(kontaktTitel ? "titel" : "beskrivelse")?.focus();
+      return setError((kontaktTitel ?? kontaktBeskrivelse)!);
+    }
     if (kunstOrd && !kunstBekraeftet) {
       setVisKunstFejl(true);
       document.getElementById("kunst-bekraeft")?.focus();
@@ -204,6 +226,12 @@ export default function RedigerAuktionForm({
           setLaast(true);
           router.refresh();
           return;
+        }
+        // Kontaktoplysninger (BHA08): fejlen vises også ved feltet.
+        if ("felt" in svar && svar.felt) {
+          const felt = svar.felt;
+          setServerKontakt({ felt, tekst: svar.fejl, vaerdi: (felt === "titel" ? titel : beskrivelse).trim() });
+          document.getElementById(felt)?.focus();
         }
         setError(svar.fejl);
         setStatus(null);
@@ -283,10 +311,11 @@ export default function RedigerAuktionForm({
             maxLength={MAKS_TITEL}
             value={titel}
             onChange={(e) => setTitel(e.target.value)}
-            aria-invalid={forbudtTekst ? true : undefined}
-            aria-describedby={forbudtTekst ? "titel-forbudt" : undefined}
-            className={feltKlasse(!!forbudtTekst)}
+            aria-invalid={forbudtTekst || kontaktTitel ? true : undefined}
+            aria-describedby={forbudtTekst ? "titel-forbudt" : kontaktTitel ? "titel-kontakt" : undefined}
+            className={feltKlasse(!!forbudtTekst || !!kontaktTitel)}
           />
+          {kontaktTitel && <FeltFejl id="titel-kontakt">{kontaktTitel}</FeltFejl>}
           {forbudtTekst && (
             <FeltFejl id="titel-forbudt">
               {forbudtTekst}{" "}
@@ -306,11 +335,14 @@ export default function RedigerAuktionForm({
             maxLength={MAKS_BESKRIVELSE}
             value={beskrivelse}
             onChange={(e) => setBeskrivelse(e.target.value)}
-            className={tekstfeltKlasse()}
+            aria-invalid={kontaktBeskrivelse ? true : undefined}
+            aria-describedby={kontaktBeskrivelse ? "beskrivelse-kontakt" : undefined}
+            className={tekstfeltKlasse(!!kontaktBeskrivelse)}
           />
           <Hjaelp>
             {beskrivelse.length}/{MAKS_BESKRIVELSE}
           </Hjaelp>
+          {kontaktBeskrivelse && <FeltFejl id="beskrivelse-kontakt">{kontaktBeskrivelse}</FeltFejl>}
         </div>
         <div aria-live="polite">
           {kunstOrd && (
