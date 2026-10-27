@@ -97,10 +97,16 @@ const TOM_SIDE: AuktionsSide = { ok: true, auktioner: [], total: 0, totalType: "
 // En søgning, der ligner SQL (fx "' or 1=1 --"), afvises af Supabases
 // Cloudflare foran databasen med en HTML-side (403) - ikke af databasen.
 // Så er der bare ingen resultater (siden viser "Prøv en anden søgning"), i
-// stedet for "Noget gik galt". Kun når der er en søgetekst; andre fejl er
-// stadig fejl.
-function soegningAfvist(soegetekst: string, status: number, besked: string): boolean {
-  return !!soegetekst && (status === 403 || besked.trimStart().startsWith("<"));
+// stedet for "Noget gik galt". Kun når der er en søgetekst, og kun når svaret
+// er HTML: et 403 fra PostgREST (JSON, fx 42501 "permission denied" efter en
+// ændret grant) er en rigtig fejl og må ikke skjules som 0 resultater - det
+// logges og vises som en fejl.
+export function soegningAfvist(soegetekst: string, besked: string): boolean {
+  return !!soegetekst && besked.trimStart().startsWith("<");
+}
+
+function logSoegeFejl(hvad: string, status: number, error: { message: string; code?: string }) {
+  console.error(`${hvad} kunne ikke hentes (HTTP ${status}${error.code ? `, ${error.code}` : ""}):`, error.message);
 }
 
 export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<AuktionsSide> {
@@ -163,9 +169,9 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
       offset,
       offset + AUKTIONER_PR_SIDE - 1,
     );
-    if (error && soegningAfvist(søgetekst, status, error.message)) return TOM_SIDE;
+    if (error && soegningAfvist(søgetekst, error.message)) return TOM_SIDE;
     if (error) {
-      console.error("Auktioner kunne ikke hentes:", error.message);
+      logSoegeFejl("Auktioner", status, error);
       return { ok: false, fejl: FEJL };
     }
     const rækker = (data ?? []) as unknown as KortRaekke[];
@@ -195,9 +201,9 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
     .gte("lng", Number((center.lng - dLng).toFixed(5)))
     .lte("lng", Number((center.lng + dLng).toFixed(5)))
     .limit(MAKS_KANDIDATER);
-  if (kandidatFejl && soegningAfvist(søgetekst, kandidatStatus, kandidatFejl.message)) return TOM_SIDE;
+  if (kandidatFejl && soegningAfvist(søgetekst, kandidatFejl.message)) return TOM_SIDE;
   if (kandidatFejl) {
-    console.error("Auktioner (afstand) kunne ikke hentes:", kandidatFejl.message);
+    logSoegeFejl("Auktioner (afstand)", kandidatStatus, kandidatFejl);
     return { ok: false, fejl: FEJL };
   }
 

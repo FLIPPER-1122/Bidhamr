@@ -7,14 +7,23 @@
 import type { SamtykkeKategori } from "@/lib/samtykke";
 
 export const SAMTYKKE_TEKST = {
-  // Banneret giver et valg ("Accepter alle" / "Kun nødvendige"), så
-  // overskriften må ikke love "kun nødvendige". Opgave til indhold-agenten:
-  // gennemlæs banner-teksterne samlet (27. okt. 2026).
-  bannerOverskrift: "Vælg, hvilke cookies vi må bruge",
+  // Et samtykke gælder kun det, man er blevet oplyst om - man kan ikke sige
+  // ja til fremtidige, ukendte cookies. Så længe ingen kategori er i brug
+  // (iBrug=false i src/lib/samtykke.ts), er banneret kun en oplysning med én
+  // knap (ok). Tages en kategori i brug, vises valget (accepterAlle /
+  // kunNoedvendige og overskriften bannerOverskriftValg) - og
+  // SAMTYKKE_VERSION skal tælles op, så alle bliver spurgt.
+  bannerOverskrift: "Vi bruger kun nødvendige cookies",
   bannerTekst:
-    "I dag bruger vi kun nødvendige cookies: de holder dig logget ind, beskytter din konto og husker dit valg. Når du betaler, bruger vores betalingspartner Stripe cookies for at forhindre svindel. Vælger du \"Accepter alle\", må vi også bruge cookies til statistik og markedsføring, hvis vi tager dem i brug. Du kan altid ændre dit valg under \"Cookieindstillinger\" nederst på siden.",
+    "I dag bruger vi kun nødvendige cookies: de holder dig logget ind, beskytter din konto og husker, at du har set denne besked. Når du betaler, bruger vores betalingspartner Stripe cookies for at forhindre svindel. Begynder vi at bruge cookies til statistik eller markedsføring, spørger vi dig igen.",
   // Kort udgave til mobil, så banneret ikke dækker siden (én linje).
-  bannerTekstKort: "I dag kun til login og sikkerhed.",
+  bannerTekstKort: "Kun til login og sikkerhed.",
+  ok: "OK",
+  // Bruges først, når en kategori er i brug (se ovenfor).
+  bannerOverskriftValg: "Vælg, hvilke cookies vi må bruge",
+  bannerTekstValg:
+    "Nødvendige cookies holder dig logget ind, beskytter din konto og husker dit valg. Når du betaler, bruger vores betalingspartner Stripe cookies for at forhindre svindel. Du vælger selv, om vi også må bruge de andre cookies, der står under \"Indstillinger\". Du kan altid ændre dit valg under \"Cookieindstillinger\" nederst på siden.",
+  bannerTekstKortValg: "Du vælger selv, hvad vi må bruge.",
   laesMere: "Læs mere om cookies",
   laesMereKort: "Læs mere",
   accepterAlle: "Accepter alle",
@@ -23,6 +32,9 @@ export const SAMTYKKE_TEKST = {
   indstillingerOverskrift: "Cookieindstillinger",
   indstillingerTekst:
     "Her vælger du, hvad du vil tillade. Nødvendige cookies er altid slået til, fordi siden ikke virker uden dem. Du kan altid ændre dit valg under \"Cookieindstillinger\" nederst på siden.",
+  // Når ingen kategori er i brug: intet at vælge.
+  indstillingerTekstIntetValg:
+    "Nødvendige cookies er altid slået til, fordi siden ikke virker uden dem. Andre cookies bruger vi ikke i dag. Begynder vi at bruge cookies til statistik eller markedsføring, spørger vi dig først.",
   gemValg: "Gem mit valg",
   luk: "Luk cookieindstillinger",
   altidTil: "Altid slået til",
