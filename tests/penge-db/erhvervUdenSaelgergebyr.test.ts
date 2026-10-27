@@ -16,8 +16,10 @@ import {
   applicationFeeOere,
   erErhvervPrismodel,
   forventetTotalOere,
+  koebergebyrForPrismodel,
   koebergebyrOere,
   koebergebyrTekst,
+  saelgergebyrForPrismodel,
   saelgergebyrOere,
   sagRefusionOere,
   udbetalingOere,
@@ -197,7 +199,8 @@ describe("firmaer betaler intet sælgergebyr", () => {
     );
     for (const x of r.rows) {
       const b = Number(x.b);
-      expect([koebergebyrOere(b, false), saelgergebyrOere(b, false), koebergebyrOere(b, true), saelgergebyrOere(b, true)])
+      // Private: prismodellen 'ny' (databasen her er før 20261102140000).
+      expect([koebergebyrForPrismodel("ny", b), saelgergebyrForPrismodel("ny", b), koebergebyrOere(b, true), saelgergebyrOere(b, true)])
         .toEqual([Number(x.k), Number(x.s), Number(x.ke), Number(x.se)]);
       expect(Number(x.se)).toBe(0);
       expect(udbetalingOere(b, true)).toBe(b);

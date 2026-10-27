@@ -4,7 +4,7 @@ import "server-only";
 // efter ankefristen. Bruges af server actions (src/app/actions/sager.ts,
 // adminSager.ts) og cron.
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Prismodel } from "@/lib/betaling/beregn";
+import { erNyPrivatPrismodel, type Prismodel } from "@/lib/betaling/beregn";
 import { send, type SendResultat } from "@/lib/notifikationer/send";
 import { refunderBetaling } from "@/lib/betaling/stripeBetaling";
 import { pengeTilSaelger } from "@/lib/betaling/udbetaling";
@@ -56,7 +56,7 @@ async function betalingModel(
 // BidHamr Beskyttelse = alt undtagen Beskyttelsen; ellers alle pengene.
 // Kun køberen får sin BidHamr Beskyttelse nævnt - sælgeren får det aldrig at vide.
 function refusionTekster(h: { beskyttelse: boolean; prismodel: Prismodel }): { hvad: string; note: string } {
-  if (h.prismodel === "ny") return { hvad: "prisen for varen (dit bud)", note: " Gebyr og fragt får du ikke tilbage." };
+  if (erNyPrivatPrismodel(h.prismodel)) return { hvad: "prisen for varen (dit bud)", note: " Gebyr og fragt får du ikke tilbage." };
   if (h.prismodel === "gammel" && h.beskyttelse) {
     return { hvad: "pengene for varen, gebyret og fragten", note: " Prisen for BidHamr Beskyttelse får du ikke tilbage." };
   }

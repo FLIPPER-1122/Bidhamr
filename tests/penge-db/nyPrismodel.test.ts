@@ -19,8 +19,10 @@ import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   forventetTotalOere,
+  koebergebyrForPrismodel,
   koebergebyrOere,
   koeberTotalOere,
+  saelgergebyrForPrismodel,
   saelgergebyrOere,
   sagRefusionOere,
   udbetalingOere,
@@ -135,9 +137,11 @@ describe("gebyrfunktionerne", () => {
     );
     expect(Number(r.k)).toBe(koeb);
     expect(Number(r.s)).toBe(saelg);
-    expect(koebergebyrOere(kr * 100, false)).toBe(koeb);
-    expect(saelgergebyrOere(kr * 100, false)).toBe(saelg);
-    expect(udbetalingOere(kr * 100, false)).toBe(kr * 100 - saelg);
+    // TypeScript-spejlet for prismodellen 'ny' (gemte handler - nye private
+    // handler er 'ny2' efter 20261102140000, se glidendeGebyrer.test.ts).
+    expect(koebergebyrForPrismodel("ny", kr * 100)).toBe(koeb);
+    expect(saelgergebyrForPrismodel("ny", kr * 100)).toBe(saelg);
+    if (kr <= 7500) expect(udbetalingOere(kr * 100, false)).toBe(kr * 100 - saelg);
   });
 
   it("erhverv: 5 % / 5 % uden min/maks", async () => {
@@ -165,7 +169,7 @@ describe("gebyrfunktionerne", () => {
       const b = Number(x.b);
       // (Erhvervs sælgergebyr i TS er 0 efter 20261101010000 - testes i
       // erhvervUdenSaelgergebyr.test.ts mod den migrerede database.)
-      expect([koebergebyrOere(b, false), saelgergebyrOere(b, false), koebergebyrOere(b, true)])
+      expect([koebergebyrForPrismodel("ny", b), saelgergebyrForPrismodel("ny", b), koebergebyrOere(b, true)])
         .toEqual([Number(x.k), Number(x.s), Number(x.ke)]);
       expect(Number(x.se)).toBe(Math.round((b * 5) / 100));
     }

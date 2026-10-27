@@ -21,6 +21,7 @@ import Skabeloner from "@/components/admin/Skabeloner";
 import { visKvittering } from "@/components/admin/Kvittering";
 import { SAG_BEGRUNDELSE } from "@/lib/tekster/adminSkabeloner";
 import { kroner } from "@/lib/kroner";
+import { erNyPrivatPrismodel } from "@/lib/betaling/beregn";
 import { useHydreret } from "@/lib/useHydreret";
 
 const GENERISK = "Noget gik galt. Prøv igen, eller kontakt en udvikler.";
@@ -192,7 +193,7 @@ type Udfald = "koeber" | "saelger" | "lukket";
 // prismodel = kun buddet; gamle handler og erhverv = alt undtagen BidHamr
 // Beskyttelse. Ukendt model (fx før migrationen) = begge regler nævnes.
 function refusionHvadTekst(prismodel: string | null | undefined): string {
-  if (prismodel === "ny") return "kun buddet – gebyr og fragt refunderes ikke";
+  if (erNyPrivatPrismodel(prismodel)) return "kun buddet – gebyr og fragt refunderes ikke";
   // Erhverv har ingen BidHamr Beskyttelse: køberen får alle pengene tilbage
   // (samme ord som beskeden til køberen - refusionTekster i sagerServer.ts).
   if (prismodel === "erhverv" || prismodel === "erhverv2") return "alle pengene";

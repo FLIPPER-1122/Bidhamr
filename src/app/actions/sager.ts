@@ -52,6 +52,7 @@ import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { erNyPrivatPrismodel } from "@/lib/betaling/beregn";
 import { logDriftFejl } from "@/lib/drift";
 import { notificerAnkeIndgivet, notificerSagOprettet } from "@/lib/sagerServer";
 import { hentPakkeBilleder, type VistPakkeBillede } from "@/lib/pakkebillederServer";
@@ -412,7 +413,7 @@ export async function hentSagForHandel(
         admin.from("betalinger").select("prismodel").eq("trade_id", tradeId).maybeSingle<{ prismodel: string | null }>(),
       ]);
       beskyttelse = !!b?.beskyttelse;
-      nyPrismodel = !model.error && model.data?.prismodel === "ny";
+      nyPrismodel = !model.error && erNyPrivatPrismodel(model.data?.prismodel);
     }
 
     // Anken (RLS: kun parterne) og om brugeren kan anke lige nu.

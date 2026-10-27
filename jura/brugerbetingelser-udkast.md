@@ -145,8 +145,8 @@ For BidHamrs egne ydelser betaler du gebyrer (se afsnit 5).
 
 | Gebyr | Salgspris op til og med 7.500 kr | Salgspris over 7.500 kr |
 |---|---|---|
-| **Køber** (gebyret indeholder BidHamr Beskyttelse) | 7 % + 5 kr, højst 300 kr | 3 % + 15 kr, højst 650 kr |
-| **Sælger** | 5 % + 5 kr, højst 95 kr | 2 % + 15 kr, højst 450 kr |
+| **Køber** (gebyret indeholder BidHamr Beskyttelse) | 7 % + 5 kr, højst 300 kr | 300 kr + 3 % af den del af salgsprisen, der er over 7.500 kr, højst 650 kr |
+| **Sælger** | 5 % + 5 kr, højst 95 kr | 95 kr + 2 % af den del af salgsprisen, der er over 7.500 kr, højst 450 kr |
 
 - Købers gebyr lægges oven i prisen.
 - Sælgers gebyr trækkes fra, før pengene udbetales til sælgeren. Det beregnes kun af buddet – ikke af fragten.
