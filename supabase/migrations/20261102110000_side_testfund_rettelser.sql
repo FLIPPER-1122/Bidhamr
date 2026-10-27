@@ -19,20 +19,25 @@
 --        flyttet til en alvorligere), giver også 'findes'.
 --      - Kategori og frist opfører sig som i 090000: en alvorligere kategori
 --        flytter sagen, og fristen bliver den korteste.
---      - Noter, som 090000 allerede har skrevet i en begrundelse, flyttes ud
---        i tabellen, og den oprindelige tekst genskabes - kun når det kan
---        gøres sikkert (teksten er ikke beskåret, dvs. under 2000 tegn, og
---        hver note kan læses entydigt). Andre rækker røres ikke, og der gives
---        en NOTICE med sagsnumrene. Testdatabasen havde ingen 27. okt. 2026.
+--      - Ingen flytning af noter, som 090000 kan have skrevet i en
+--        begrundelse: 090000 er aldrig kørt i produktion, og testdatabasen
+--        havde ingen sådanne noter. En flytning ville kun være en risiko
+--        (den skulle omskrive anmelderens egen tekst). Begrundelser røres
+--        derfor slet ikke af denne migration.
 --
 -- 2. Navnereglen "navn = fornavn efternavn" gælder nu altid for private
---    konti: users_forbudt_navn sætter navn til concat_ws(' ', fornavn,
---    efternavn), når fornavn findes - også når kun navn opdateres
---    (authenticated har update på navn alene) og ved INSERT. Firmakonti
---    ('erhverv'), slettede konti og systembrugeren er undtaget. Signup
---    (handle_new_user og kontoOprettelse.gemProfil), hjemmesidens
---    indstillinger og appens navneskift sender allerede navn = "fornavn
---    efternavn", så de virker uændret.
+--    konti: users_forbudt_navn sætter navn til
+--    left(concat_ws(' ', fornavn, efternavn), 100), når fornavn findes -
+--    også når kun navn opdateres (authenticated har update på navn alene) og
+--    ved INSERT. left(..., 100) sikrer, at users_navn_laengde aldrig vælter
+--    signup eller navneskift. Forbudte navne tjekkes EFTER genberegningen,
+--    så "Bid" + "Hamr" også fanges: ved INSERT bliver kontoen stille til
+--    "Bruger" (fornavn/efternavn = null), så signup ikke vælter; ved UPDATE
+--    afvises det med BHN01. Firmakonti ('erhverv'), slettede konti og
+--    systembrugeren er undtaget fra genberegningen. Signup (handle_new_user
+--    og kontoOprettelse.gemProfil), hjemmesidens indstillinger og appens
+--    navneskift sender allerede navn = "fornavn efternavn", så de virker
+--    uændret.
 --
 -- Svaret fra dsa_anmeldelse_opret er uændret ('findes' + 'opdateret'), så
 -- hjemmesiden på den gamle main og appen virker uden ændringer. Ingen grants
@@ -40,8 +45,11 @@
 --
 -- Kan køres flere gange (create ... if not exists, create or replace, drop
 -- trigger if exists, md5-drifttjek). md5 = normaliseret krop som i 090000.
--- "gammel" = efter 20261102090000, "ny" = efter denne migration. Andet
--- afbryder migrationen. Kræver, at 090000 er kørt først.
+-- "gammel" = efter 20261102090000, "ny" = efter denne migration. For
+-- users_forbudt_navn godtages også den første udgave af denne migration
+-- (kun kørt på testdatabasen 27. okt. 2026, før navnetjekket blev flyttet
+-- efter genberegningen). Andet afbryder migrationen. Kræver, at 090000 er
+-- kørt først.
 -- Køres først på testdatabasen (pjiigmzqwlfepxnjdvug). Produktion kræver
 -- Filips "ja".
 -- =============================================================================
@@ -54,7 +62,8 @@ returns text language sql stable as $f$
     from pg_proc p where p.oid = to_regprocedure(p_fn);
 $f$;
 
-create or replace function pg_temp.drift_tjek(p_fn text, p_gammel text, p_ny text)
+-- p_ok: de md5-værdier, der godtages (gammel, evt. mellemudgave, ny).
+create or replace function pg_temp.drift_tjek(p_fn text, variadic p_ok text[])
 returns void language plpgsql as $f$
 declare
   h text := pg_temp.krop_md5(p_fn);
@@ -62,16 +71,19 @@ begin
   if h is null then
     raise exception '%: findes ikke - kontrollér databasen, før migrationen køres', p_fn;
   end if;
-  if h is distinct from p_gammel and h is distinct from p_ny then
-    raise exception '%: md5 % er hverken den forventede gamle (%) eller nye (%) - kontrollér funktionen, før migrationen køres',
-      p_fn, h, p_gammel, p_ny;
+  if not (h = any (p_ok)) then
+    raise exception '%: md5 % er ingen af de forventede (%) - kontrollér funktionen, før migrationen køres',
+      p_fn, h, array_to_string(p_ok, ', ');
   end if;
 end $f$;
 
 select pg_temp.drift_tjek('public.dsa_anmeldelse_opret(uuid,text,uuid,text,text,text,text,text,boolean)',
                           '737ef2430d4685215e45b28e72a88363', '6d1e8d5e87a99f3bfa424150d4faa8d6');
+-- users_forbudt_navn: gammel (090000), første udgave af denne migration
+-- (kun testdatabasen), ny.
 select pg_temp.drift_tjek('public.users_forbudt_navn()',
-                          'b8666ef9d0933755a8da84377e1bf517', 'b05f12e8654ddaae99c85596d9d4066a');
+                          'b8666ef9d0933755a8da84377e1bf517', 'b05f12e8654ddaae99c85596d9d4066a',
+                          'c3c01698004f53b20c5eae92376fdfd4');
 select pg_temp.drift_tjek('public.dsa_oprydning_koer()',
                           '169c1d6a1c4365195a58c0359ae95a3d', '5200972bb089e5384a4c3e737db3ae16');
 
@@ -106,107 +118,8 @@ create trigger dsa_anmeldelse_tillaeg_slettes_aldrig before delete on public.dsa
 comment on table public.dsa_anmeldelse_tillaeg is
   'DSA art. 16: nye kategorier, som anmelderen har føjet til en åben anmeldelse (dsa_anmeldelse_opret). Anmeldelsens egen begrundelse ændres aldrig. Kun service_role. Slettes aldrig - anonymiseres sammen med anmeldelsen (dsa_oprydning_koer). 20261102110000.';
 
--- Noter fra 090000 flyttes ud af begrundelsen (kun når det er sikkert).
-do $do$
-declare
-  c_moenster constant text :=
-    E'\n\nNy kategori fra anmelderen \\((\\d{2}-\\d{2}-\\d{4} \\d{2}:\\d{2})\\): ';
-  r        record;
-  v_dele   text[];
-  v_tider  text[];
-  v_n      integer;
-  v_orig   text;
-  v_rest   text;
-  v_linje  text;
-  v_kat    text[];
-  v_flyt   text[];
-  v_begr   text[];
-  v_foer   text[];
-  v_cur    text;
-  v_ok     boolean;
-  v_kode   text;
-  v_usikre text[] := '{}';
-  v_flyttet integer := 0;
-  i        integer;
-begin
-  for r in
-    select a.id, a.sagsnummer, a.kategori, a.begrundelse
-      from public.dsa_anmeldelser a
-     where a.anonymiseret_kl is null
-       and a.begrundelse ~ c_moenster
-       and not exists (select 1 from public.dsa_anmeldelse_tillaeg t where t.anmeldelse_id = a.id)
-     for update
-  loop
-    v_ok := char_length(r.begrundelse) < 2000;  -- 2000 = måske beskåret
-    v_dele := regexp_split_to_array(r.begrundelse, c_moenster);
-    select array_agg(m[1] order by o) into v_tider
-      from regexp_matches(r.begrundelse, c_moenster, 'g') with ordinality as x(m, o);
-    v_n := coalesce(array_length(v_tider, 1), 0);
-    v_ok := v_ok and v_n >= 1 and array_length(v_dele, 1) = v_n + 1;
-    v_orig := v_dele[1];
-    v_ok := v_ok and char_length(btrim(coalesce(v_orig, ''))) >= 10;
-    v_kat := '{}'; v_flyt := '{}'; v_begr := '{}';
-
-    if v_ok then
-      for i in 1 .. v_n loop
-        v_rest := v_dele[i + 1];
-        -- Første linje: kategoriens navn.
-        v_linje := split_part(v_rest, chr(10), 1);
-        select k into v_kode from unnest(array['forbudt_vare', 'falske_varer', 'svindel', 'ophavsret',
-               'personoplysninger', 'hadefuld_tale', 'misbrug_boern', 'vilkaar', 'kunst', 'andet']) k
-         where public.dsa_kategori_navn(k) = v_linje;
-        if v_kode is null or strpos(v_rest, chr(10)) = 0 then v_ok := false; exit; end if;
-        v_kat := v_kat || v_kode;
-        v_rest := substr(v_rest, strpos(v_rest, chr(10)) + 1);
-        -- Evt. "Sagen er flyttet fra: <navn>".
-        v_kode := null;
-        if v_rest like 'Sagen er flyttet fra: %' then
-          v_linje := substr(split_part(v_rest, chr(10), 1), char_length('Sagen er flyttet fra: ') + 1);
-          select k into v_kode from unnest(array['forbudt_vare', 'falske_varer', 'svindel', 'ophavsret',
-                 'personoplysninger', 'hadefuld_tale', 'misbrug_boern', 'vilkaar', 'kunst', 'andet']) k
-           where public.dsa_kategori_navn(k) = v_linje;
-          if v_kode is null or strpos(v_rest, chr(10)) = 0 then v_ok := false; exit; end if;
-          v_rest := substr(v_rest, strpos(v_rest, chr(10)) + 1);
-        end if;
-        v_flyt := v_flyt || v_kode;
-        if char_length(btrim(v_rest)) < 10 or char_length(v_rest) > 500 then v_ok := false; exit; end if;
-        v_begr := v_begr || v_rest;
-      end loop;
-    end if;
-
-    -- Hver kategori højst én gang.
-    if v_ok and (select count(distinct k) from unnest(v_kat) k) <> v_n then v_ok := false; end if;
-
-    if not v_ok then
-      v_usikre := v_usikre || r.sagsnummer;
-      continue;
-    end if;
-
-    -- Sagens kategori før hver tilføjelse: baglæns fra den nuværende.
-    v_foer := array_fill(null::text, array[v_n]);
-    v_cur := r.kategori;
-    for i in reverse v_n .. 1 loop
-      if v_flyt[i] is not null then v_cur := v_flyt[i]; end if;
-      v_foer[i] := v_cur;
-    end loop;
-
-    for i in 1 .. v_n loop
-      insert into public.dsa_anmeldelse_tillaeg (anmeldelse_id, kategori, sag_kategori_foer, begrundelse, oprettet_kl)
-      values (r.id, v_kat[i], v_foer[i], v_begr[i],
-              to_timestamp(v_tider[i], 'DD-MM-YYYY HH24:MI')::timestamp at time zone 'Europe/Copenhagen');
-    end loop;
-    update public.dsa_anmeldelser a set begrundelse = v_orig where a.id = r.id;
-    v_flyttet := v_flyttet + 1;
-  end loop;
-
-  if v_flyttet > 0 then
-    raise notice 'DSA: noter flyttet ud af begrundelsen på % anmeldelse(r).', v_flyttet;
-  end if;
-  if cardinality(v_usikre) > 0 then
-    raise notice 'DSA: noter i begrundelsen kunne ikke flyttes sikkert og er urørt: %', array_to_string(v_usikre, ', ');
-  end if;
-end;
-$do$;
+-- Ingen noteflytning: 090000 er aldrig kørt i produktion, og testdatabasen
+-- havde ingen noter i begrundelser. Begrundelser røres ikke (se toppen).
 
 create or replace function public.dsa_anmeldelse_opret(
   p_anmelder uuid, p_type text, p_id uuid, p_placering text, p_kategori text,
@@ -444,25 +357,30 @@ begin
     return new;
   end if;
 
-  if tg_op = 'INSERT' then
-    -- Signup (handle_new_user) må ikke vælte: forbudte navne erstattes.
-    if public.bidhamr_navn_forbudt(new.navn) then new.navn := 'Bruger'; end if;
-    if public.bidhamr_navn_forbudt(new.fornavn) then new.fornavn := null; end if;
-    if public.bidhamr_navn_forbudt(new.efternavn) then new.efternavn := null; end if;
-  end if;
-
   -- Privat konto med fornavn: navn er ALTID "fornavn efternavn" - også når
   -- kun navn opdateres (authenticated har update på navn alene). Firmakonti
-  -- (navn = firmanavn) og slettede konti røres ikke.
+  -- (navn = firmanavn) og slettede konti røres ikke. left(..., 100): navnet
+  -- må aldrig vælte users_navn_laengde.
   v_fornavn := nullif(btrim(coalesce(new.fornavn, '')), '');
   v_efternavn := nullif(btrim(coalesce(new.efternavn, '')), '');
   if new.konto_type is distinct from 'erhverv'
      and new.konto_slettet_kl is null
      and v_fornavn is not null then
-    new.navn := concat_ws(' ', v_fornavn, v_efternavn);
+    new.navn := left(concat_ws(' ', v_fornavn, v_efternavn), 100);
   end if;
 
+  -- Forbudte navne tjekkes EFTER genberegningen, så fx "Bid" + "Hamr" også
+  -- fanges.
   if tg_op = 'INSERT' then
+    -- Signup (handle_new_user) må ikke vælte: kontoen hedder stille
+    -- "Bruger", og brugeren bliver bedt om sit navn.
+    if public.bidhamr_navn_forbudt(new.navn)
+       or public.bidhamr_navn_forbudt(new.fornavn)
+       or public.bidhamr_navn_forbudt(new.efternavn) then
+      new.navn := 'Bruger';
+      new.fornavn := null;
+      new.efternavn := null;
+    end if;
     return new;
   end if;
 
@@ -486,9 +404,9 @@ create trigger users_forbudt_navn
 
 -- Efter-tjek: de nye kroppe er dem, migrationen forventer.
 select pg_temp.drift_tjek('public.dsa_anmeldelse_opret(uuid,text,uuid,text,text,text,text,text,boolean)',
-                          '6d1e8d5e87a99f3bfa424150d4faa8d6', '6d1e8d5e87a99f3bfa424150d4faa8d6');
-select pg_temp.drift_tjek('public.users_forbudt_navn()', 'b05f12e8654ddaae99c85596d9d4066a', 'b05f12e8654ddaae99c85596d9d4066a');
-select pg_temp.drift_tjek('public.dsa_oprydning_koer()', '5200972bb089e5384a4c3e737db3ae16', '5200972bb089e5384a4c3e737db3ae16');
+                          '6d1e8d5e87a99f3bfa424150d4faa8d6');
+select pg_temp.drift_tjek('public.users_forbudt_navn()', 'c3c01698004f53b20c5eae92376fdfd4');
+select pg_temp.drift_tjek('public.dsa_oprydning_koer()', '5200972bb089e5384a4c3e737db3ae16');
 
-drop function pg_temp.drift_tjek(text, text, text);
+drop function pg_temp.drift_tjek(text, text[]);
 drop function pg_temp.krop_md5(text);

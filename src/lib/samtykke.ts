@@ -13,7 +13,9 @@ export const SAMTYKKE_COOKIE = "bh_samtykke";
 
 // Tæl op, når cookiepolitikken ændres på en måde, der kræver nyt samtykke.
 // Husk også at opdatere src/lib/tekster/sider/cookies.ts.
-export const SAMTYKKE_VERSION = 1;
+// 2 (27. okt. 2026): ældre "Accepter alle"-samtykker (version 1) gælder ikke
+// længere - alle spørges igen med det nuværende banner.
+export const SAMTYKKE_VERSION = 2;
 
 // 12 måneder (Datatilsynets anbefaling for, hvor længe et samtykke holder).
 export const SAMTYKKE_MAKS_SEKUNDER = 365 * 24 * 60 * 60;
@@ -27,6 +29,14 @@ export const SAMTYKKE_KATEGORIER = [
 ] as const;
 
 export type SamtykkeKategori = (typeof SAMTYKKE_KATEGORIER)[number]["id"];
+
+// Er kategorien i brug? En kategori med iBrug=false giver aldrig samtykke
+// (harSamtykke svarer nej), selvom cookien siger ja: et ja gælder kun det,
+// man er blevet oplyst om. Sættes iBrug til true, skal SAMTYKKE_VERSION
+// tælles op.
+export function kategoriIBrug(kategori: SamtykkeKategori): boolean {
+  return SAMTYKKE_KATEGORIER.some((k) => k.id === kategori && (k.iBrug as boolean));
+}
 
 export type SamtykkeValg = Record<SamtykkeKategori, boolean>;
 

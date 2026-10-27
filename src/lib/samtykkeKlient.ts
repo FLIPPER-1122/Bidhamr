@@ -17,6 +17,7 @@ import {
   SAMTYKKE_MAKS_SEKUNDER,
   fortolkSamtykke,
   gyldigSamtykkeVaerdi,
+  kategoriIBrug,
   lavSamtykkeVaerdi,
   type Samtykke,
   type SamtykkeKategori,
@@ -56,8 +57,10 @@ export function hentSamtykke(): Samtykke | null {
   return fortolkSamtykke(laesGyldigSamtykkeRaa(), Date.now());
 }
 
-// Må et værktøj i kategorien bruges? Altid false på serveren og uden valg.
+// Må et værktøj i kategorien bruges? Altid false på serveren, uden valg og
+// for en kategori, der ikke er i brug (iBrug=false).
 export function harSamtykke(kategori: SamtykkeKategori): boolean {
+  if (!kategoriIBrug(kategori)) return false;
   return hentSamtykke()?.valg[kategori] === true;
 }
 
