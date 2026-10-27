@@ -63,6 +63,7 @@ Princippet:
 - [ ] Fragt via Shipmondo med rigtige nøgler (labels, retur, sporing, ikke-afhentet). Kræver nøglerne.
 - [ ] Appen: CAPTCHA, fejlkoden for indsigelse, visningsnavn, nye gebyrer og blokering. Nyt TestFlight-build + første Android-build.
 - [ ] Admin: staff kan ikke spærres ude via login-loftet.
+- [ ] Skift af e-mail: advarslen til den gamle adresse og log-ud af andre enheder skal sendes, selv hvis serveren dør midt i skiftet (outbox eller cron), og recovery-token ryddes igen efter skiftet (review 27. okt., småt 1-2).
 - [ ] Samlet test af hele siden og appen, med fundene rettet.
 
 ---
