@@ -660,3 +660,7 @@ Erstatter "Firmaet sender selv fakturaen på varen fra sit eget regnskabsprogram
   - **Private** udfylder, når de opretter en konto, det der skal stå om kunden på en faktura: fornavn, efternavn, adresse (vej og nr.), postnummer og by, ud over e-mail. Det gælder både på hjemmesiden og i appen.
   - Eksisterende brugere uden adresse bliver bedt om den, før de byder første gang eller betaler første gang.
   - Adressen kan rettes under Min konto. På fakturaen bruges navnet fra MitID, når brugeren er verificeret.
+- **Sagsregler – afklaringer (Filip, 27. okt. 2026):**
+  - **Svindel** (tom pakke, aldrig sendt): køberen får kun **buddet** tilbage, som i dag.
+  - **Erstatning ved bortkommet pakke:** fragtfirmaets erstatning udbetales til BidHamr (DAO-reglen) og sendes videre til **sælgeren**, ligesom ved transportskade.
+  - **Billedkrav:** ved **tom pakke** kræves kun billede af pakken og labelen, ikke af indholdet. Ved "pakken er smidt ud" kræves billede af varen og en forklaring.
