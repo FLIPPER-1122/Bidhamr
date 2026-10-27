@@ -25,15 +25,18 @@ function https(url: string | null): url is string {
 export default async function FirmaRegninger() {
   const { oversigt: o } = await kraevFirma("/firma/regninger");
   const fakturaer = await hentMineFakturaer(await createClient());
+  // 0 kr.-regninger (fx når BidHamr ændrer abonnementet i den gratis
+  // periode) skjules for firmaet - der er intet at betale eller bogføre.
+  const regninger = o.regninger.filter((r) => r.beloeb_oere !== 0);
 
   return (
     <FirmaSide titel={T.regninger.titel} intro={T.regninger.forklaring}>
       <Kort id="regninger">
-        {o.regninger.length === 0 ? (
+        {regninger.length === 0 ? (
           <p className={E_TEKST}>{T.regninger.tom}</p>
         ) : (
           <ul className="divide-y divide-kant rounded-none border border-kant">
-            {o.regninger.map((r) => {
+            {regninger.map((r) => {
               const ubetalt = r.status === "afventer" || r.status === "mislykket";
               return (
                 <li key={r.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">

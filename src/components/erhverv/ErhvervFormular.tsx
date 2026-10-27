@@ -161,7 +161,9 @@ export default function ErhvervFormular() {
   return (
     <>
     <h1 className="text-[30px] leading-tight sm:text-[36px]">{F.titel}</h1>
-    <p className="mt-3 mb-8 text-[18px] leading-relaxed text-tekst-daempet">{F.intro}</p>
+    <p className="mt-3 mb-8 text-[18px] leading-relaxed text-tekst-daempet">
+      {F.intro} {F.introValgfriFoer} <span className="whitespace-nowrap">&quot;{F.valgfri}&quot;</span> {F.introValgfriEfter}
+    </p>
     <form onSubmit={send} method="post" noValidate className="space-y-7">
       {forsoegt && antalFejl > 0 && !serverFejl && (
         <div role="alert" className="rounded-xl border-2 border-fejl-kant bg-fejl-bg p-4 text-[18px] font-semibold text-fejl-tekst">

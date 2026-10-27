@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ugensButikVisesNu } from "@/lib/erhverv/ugensButikVisning";
 import { kraevErhvervSide } from "@/lib/adminAuth";
 import { hentErhvervPakker, hentFirmaer } from "@/app/actions/adminErhverv";
 import { hentErhvervKlager } from "@/app/actions/adminErhvervKlager";
@@ -103,11 +104,12 @@ export default async function FirmaSide({
   const aabneKlager = "fejl" in klagerSvar ? 0 : klagerSvar.antal.aaben + klagerSvar.antal.under_behandling;
 
   // Kun den aktive fanes ekstra data.
-  const [regninger, salg, log, fremhaevninger] = await Promise.all([
+  const [regninger, salg, log, fremhaevninger, visesNuBruger] = await Promise.all([
     fane === "regninger" ? hentFirmaRegninger(admin, f.id) : Promise.resolve(null),
     fane === "salg" ? hentFirmaAuktionerOgSalg(admin, f.bruger_id) : Promise.resolve(null),
     fane === "log" ? hentFirmaLog(admin, f.id, f.bruger_id) : Promise.resolve(null),
     fane === "kvoter" ? hentFirmaFremhaevninger(admin, f.id) : Promise.resolve(null),
+    fane === "ugens-butik" ? ugensButikVisesNu() : Promise.resolve(null),
   ]);
 
   // --- Tilstand ---------------------------------------------------------------
@@ -143,17 +145,17 @@ export default async function FirmaSide({
   const naestePris = pris != null && introGaelder && intro ? (pris * (100 - intro.procent)) / 100 : pris;
   const kortTekst = f.kort ? T.abonnement.kort(f.kort.maerke, f.kort.sidste4) : null;
 
+  // Alle ledige uger op til 52 uger frem (staff_maks_uger_frem) - ikke kun
+  // de 8 i kalenderen.
   const ledigeUger: LedigUge[] = ugens
-    ? ugens.uger
-        .filter((u) => !u.booking_id)
-        .map((u) => ({
-          uge_start: u.uge_start,
-          uge_nr: u.uge_nr,
-          aar: u.aar,
-          inkl_oere: ugens.priser[u.uge_start]?.inkl_oere ?? null,
-          rabat_procent: ugens.priser[u.uge_start]?.rabat_procent ?? 0,
-          denne_uge: u.uge_start === ugens.denneUge,
-        }))
+    ? ugens.ledige.map((u) => ({
+        uge_start: u.uge_start,
+        uge_nr: u.uge_nr,
+        aar: u.aar,
+        inkl_oere: u.pris?.inkl_oere ?? null,
+        rabat_procent: u.pris?.rabat_procent ?? 0,
+        denne_uge: u.uge_start === ugens.denneUge,
+      }))
     : [];
   // Som ugens_butik_staff_book: uden betaling kan bookes for alle konti, der
   // ikke er lukket (også pause/suspenderet - feltet vises først på forsiden,
@@ -391,7 +393,12 @@ export default async function FirmaSide({
             {f.stripe_subscription_id ? (
               <Raekker
                 raekker={[
-                  [AB.stripeStatus, f.stripe_abonnement_status ?? "–"],
+                  [
+                    AB.stripeStatus,
+                    f.stripe_abonnement_status
+                      ? (AB.stripeStatusNavn[f.stripe_abonnement_status] ?? f.stripe_abonnement_status)
+                      : "–",
+                  ],
                   [AB.betaltTil, f.betalt_til ? dato(f.betalt_til) : "–"],
                   [T.abonnement.periodeSlut, f.periode_slut ? dato(f.periode_slut) : "–"],
                 ]}
@@ -487,6 +494,7 @@ export default async function FirmaSide({
           ledigeUger={ledigeUger}
           kanBooke={!ugeSpaerret}
           medBetalingMulig={medBetalingMulig}
+          visesNu={visesNuBruger === f.bruger_id}
         />
       )}
 

@@ -79,7 +79,8 @@ export const UGENS_FIRMA = {
   starter: "Gør betalingen klar …",
 
   betalTitel: (nr: number) => `Betal for uge ${nr}`,
-  betalTekst: (kl: string) => `Ugen er holdt til dig til kl. ${kl}. Betal inden da, ellers bliver den ledig igen.`,
+  // tidspunkt: "26. oktober kl. 14.32" (indeholder allerede "kl.").
+  betalTekst: (tidspunkt: string) => `Ugen er holdt til dig til ${tidspunkt}. Betal inden da, ellers bliver den ledig igen.`,
   betalKnap: (kr: string) => `Betal ${kr}`,
   betalStripe: "Betalingen håndteres af Stripe. Du får en faktura fra BidHamr, når du har betalt.",
   betalFejl: "Betalingen gik ikke igennem. Prøv igen, eller vælg en anden betalingsmetode.",
@@ -142,6 +143,16 @@ export const UGENS_FIRMA = {
     annulleret: "Annulleret",
   } as Record<string, string>,
   aktivNu: "Vises nu",
+  // Ugen er firmaets, men feltet vises ikke på forsiden (forside_ugens_butik).
+  visesIkkeAuktioner: "Din uge – vises ikke, fordi du ikke har aktive auktioner",
+  visesIkkeAbonnement: "Din uge – vises ikke, fordi dit abonnement ikke er aktivt",
+  visesIkke: "Din uge – vises ikke lige nu",
+  // Advarsel før køb, når firmaet ingen aktive auktioner har.
+  ingenAuktionerTitel: "Du har ingen aktive auktioner lige nu",
+  ingenAuktionerTekst:
+    "Feltet på forsiden vises kun, mens du har aktive auktioner. Opret auktioner, før din uge starter, og hav auktioner i gang hele ugen.",
+  ingenAuktionerKort: "Husk: Feltet vises kun, mens du har aktive auktioner.",
+  ingenAuktionerKnap: "Opret en auktion",
   betaltDen: (d: string) => `Betalt ${d}`,
   refunderetDen: (d: string) => `Refunderet ${d}`,
   udenBetaling: "Uden betaling",
@@ -173,6 +184,9 @@ export const UGENS_ADMIN = {
   prisKunChef: "Kun chefen kan ændre prisen.",
   prisForklaring: "Prisen gælder alle firmaer og nye bookinger. Åbne reservationer beholder deres pris.",
   ugerTitel: "De næste uger",
+  // Den igangværende uge: vises feltet faktisk på forsiden (forside_ugens_butik)?
+  visesNu: "Vises nu",
+  visesIkke: "Vises ikke – ingen aktive auktioner, eller firmaet er ikke aktivt",
   ledig: "Ledig",
   denneUge: "denne uge",
   bookingerTitel: "Bookinger",

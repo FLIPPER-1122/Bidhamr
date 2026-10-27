@@ -150,6 +150,9 @@ export default function BidPanel({
   const [nedtælling, setNedtælling] = useState<string | null>(null);
   // Under en time tilbage: timeren bliver orange (DESIGN.md 1.5).
   const [slutterSnart, setSlutterSnart] = useState(false);
+  // Sluttiden er passeret (auktionen kan stå som aktiv, til cron har lukket
+  // den): teksten skifter fra "Afsluttes" til "Afsluttet".
+  const [tidPasseret, setTidPasseret] = useState(false);
 
   // Sælgere må ikke byde på egen auktion - databasen afviser det også.
   const erSælger = Boolean(brugerId && brugerId === saelgerId);
@@ -179,6 +182,7 @@ export default function BidPanel({
       setNedtælling(formatNedtælling(slutterKl));
       const tilbage = new Date(slutterKl).getTime() - Date.now();
       setSlutterSnart(tilbage > 0 && tilbage < 60 * 60 * 1000);
+      setTidPasseret(tilbage <= 0);
     };
     const foerste = setTimeout(opdater, 0);
     const id = setInterval(() => {
@@ -564,7 +568,7 @@ export default function BidPanel({
       ) : (
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <p className="text-sm text-tekst-daempet">
-          Afsluttes{" "}
+          {auktionStatus === "afsluttet" || tidPasseret ? "Afsluttet" : "Afsluttes"}{" "}
           {new Date(slutterKl).toLocaleString("da-DK", {
             dateStyle: "medium",
             timeStyle: "short",
@@ -1059,7 +1063,7 @@ export default function BidPanel({
         createPortal(
           <div
             className={`border-t border-kant bg-white px-4 py-3 shadow-flyder transition-opacity duration-200 sm:px-6 ${
-              panelSynligt ? "pointer-events-none invisible opacity-0" : "opacity-100"
+              panelSynligt ? "pointer-events-none invisible opacity-0" : "pointer-events-auto opacity-100"
             }`}
             aria-hidden={panelSynligt || undefined}
           >

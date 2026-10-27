@@ -15,6 +15,7 @@ import { krFraOere } from "@/lib/erhverv/visning";
 import { nrITraek } from "@/lib/erhverv/ugensButikStribe";
 import { ADMIN_FIRMA } from "@/lib/tekster/adminFirma";
 import { UGENS_ADMIN as T } from "@/lib/tekster/ugensButik";
+import { ugensButikVisesNu } from "@/lib/erhverv/ugensButikVisning";
 
 export const metadata = { title: "Ugens butik" };
 
@@ -97,7 +98,11 @@ export default async function UgensButikAdmin({
   const filter: Filter = (FILTRE as readonly string[]).includes(sp.vis ?? "") ? (sp.vis as Filter) : "aabne";
   const antal = Math.min(300, Math.max(SIDE, Number.parseInt(sp.antal ?? "", 10) || SIDE));
 
-  const { data, error } = await admin.rpc("ugens_butik_admin", { p_staff: userId });
+  const [{ data, error }, visesNu] = await Promise.all([
+    admin.rpc("ugens_butik_admin", { p_staff: userId }),
+    // Vises feltet faktisk på forsiden lige nu? (samme RPC som forsiden)
+    ugensButikVisesNu(),
+  ]);
   const d = (error ? null : data) as AdminData | null;
   if (error) console.error("ugens_butik_admin:", error.message);
 
@@ -166,6 +171,11 @@ export default async function UgensButikAdmin({
                         <span className="block font-normal">{U.status[u.status ?? ""] ?? u.status}</span>
                       </Link>
                       {/* Kun i en stribe på mindst 2 uger ("1. uge i træk" siger intet). */}
+                      {u.igangvaerende && (u.status === "betalt" || u.status === "manuel") && (
+                        <span className={visesNu ? "font-semibold" : "bg-advarsel-bg px-1 text-advarsel-tekst"}>
+                          {visesNu ? T.visesNu : T.visesIkke}
+                        </span>
+                      )}
                       {Number(u.i_traek) > 1 && nr[i] != null && <span>{T.iTraek(nr[i]!)}</span>}
                       <LoftMaerker brudt={!!u.loft_brudt} omgaaet={!!u.loft_omgaaet} maks={d.loft?.maks_uger_i_traek ?? 4} />
                     </span>

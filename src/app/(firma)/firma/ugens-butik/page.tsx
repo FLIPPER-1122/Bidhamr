@@ -11,6 +11,7 @@ import UgensButikKoeb, { type FirmaUgensButikData } from "@/components/firma/Uge
 import { E_KNAP_SEKUNDAER, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
 import { krFraOere, langDato } from "@/lib/erhverv/visning";
 import { UGENS_FIRMA as T } from "@/lib/tekster/ugensButik";
+import { antalVisbareAuktioner, ugensButikVisesNu } from "@/lib/erhverv/ugensButikVisning";
 
 // Firma oversigt -> Ugens butik (Filip, 26. okt. 2026; showcase
 // dit-firma-showcase.html, fanen "Ugens butik"). Forklaring, pris (med
@@ -51,7 +52,7 @@ export default async function FirmaUgensButik({
 }: {
   searchParams: Promise<{ payment_intent?: string }>;
 }) {
-  const { bruger } = await kraevFirma("/firma/ugens-butik");
+  const { bruger, oversigt } = await kraevFirma("/firma/ugens-butik");
   const sp = await searchParams;
   const lukket = foerLancering();
 
@@ -71,10 +72,21 @@ export default async function FirmaUgensButik({
   }
 
   const supabase = await createClient();
-  const [{ data, error }, fakturaer] = await Promise.all([
+  const [{ data, error }, fakturaer, visbare, visesNu] = await Promise.all([
     supabase.rpc("firma_ugens_butik"),
     hentMineFakturaer(supabase),
+    // Feltet på forsiden vises kun, mens firmaet har aktive auktioner.
+    antalVisbareAuktioner(bruger.id),
+    ugensButikVisesNu(),
   ]);
+  const visesDetNu = visesNu === bruger.id;
+  // Hvorfor vises firmaets igangværende uge ikke? (forside_ugens_butik)
+  const ikkeVistTekst =
+    oversigt.firma.abonnement_status !== "aktiv"
+      ? T.visesIkkeAbonnement
+      : visbare === 0
+        ? T.visesIkkeAuktioner
+        : T.visesIkke;
   if (error || !data) {
     if (error) await logDriftFejl({ kilde: "server", hvor: "firma/ugens-butik", fejl: error, brugerId: bruger.id });
     throw new Error(T.hentFejl);
@@ -128,7 +140,7 @@ export default async function FirmaUgensButik({
         )}
       </Kort>
 
-      <UgensButikKoeb data={d} />
+      <UgensButikKoeb data={d} ingenAuktioner={visbare === 0} />
 
       <Kort id="dine-uger" titel={T.bookingerTitel}>
         {d.bookinger.length === 0 ? (
@@ -140,12 +152,17 @@ export default async function FirmaUgensButik({
                 <div className="min-w-0">
                   <p className="text-[19px] font-semibold text-tekst">
                     {T.uge(b.uge_nr)} <span className="font-normal text-tekst-daempet">({b.aar})</span>
-                    {b.aktiv_nu && (
+                    {b.aktiv_nu && visesDetNu && (
                       <span className="ml-2 inline-block bg-groen px-2 py-0.5 align-middle text-[14px] font-semibold text-white">
                         {T.aktivNu}
                       </span>
                     )}
                   </p>
+                  {b.aktiv_nu && !visesDetNu && (
+                    <p className="mt-1 inline-block border-2 border-advarsel-kant bg-advarsel-bg px-2 py-0.5 text-[15px] font-semibold text-advarsel-tekst">
+                      {ikkeVistTekst}
+                    </p>
+                  )}
                   <p className={E_TEKST_DAEMPET}>
                     {T.fraTil(langDato(b.start_kl), langDato(new Date(new Date(b.slut_kl).getTime() - 1).toISOString()))}
                   </p>

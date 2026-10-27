@@ -222,12 +222,15 @@ export function FaneUgensButik({
   ledigeUger,
   kanBooke,
   medBetalingMulig,
+  visesNu = null,
 }: {
   firmaId: string;
   ugens: FirmaUgensButik | { fejl: "mangler" | "fejl" };
   ledigeUger: LedigUge[];
   kanBooke: boolean;
   medBetalingMulig: boolean;
+  // Vises firmaets felt på forsiden lige nu (forside_ugens_butik)?
+  visesNu?: boolean | null;
 }) {
   const U = T.uger;
   if ("fejl" in ugens) return <AdminFejl>{ugens.fejl === "mangler" ? U.mangler : U.fejl}</AdminFejl>;
@@ -254,6 +257,11 @@ export function FaneUgensButik({
                 <span className="font-semibold">
                   {dette ? `${U.dette} · ${U.status[u.status ?? ""] ?? ""}` : andet ? U.andet : U.ledig}
                 </span>
+                {dette && u.uge_start === ugens.denneUge && (u.status === "betalt" || u.status === "manuel") && visesNu != null && (
+                  <span className={visesNu ? "font-semibold" : "bg-advarsel-bg px-1 text-advarsel-tekst"}>
+                    {visesNu ? UGENS_ADMIN.visesNu : UGENS_ADMIN.visesIkke}
+                  </span>
+                )}
                 {dette && Number(u.i_traek) > 1 && u.nr_i_traek != null && <span>{UGENS_ADMIN.iTraek(u.nr_i_traek)}</span>}
                 {dette && <LoftMaerker brudt={!!u.loft_brudt} omgaaet={!!u.loft_omgaaet} maks={4} />}
                 {ledig && kanBooke && (
@@ -456,30 +464,42 @@ export function FaneRegninger({
       handling: <UgeHandlinger b={b} />,
     })),
   ].sort((a, b) => b.kl.localeCompare(a.kl));
+  // 0 kr.-regninger (fx efter en admin-ændring i den gratis periode) står
+  // nedtonet bag "Vis 0 kr.-regninger" - firmaet ser dem slet ikke.
+  const normale = linjer.filter((l) => l.beloeb !== 0);
+  const nul = linjer.filter((l) => l.beloeb === 0);
+
+  const liste = (ls: Linje[], nedtonet = false) => (
+    <ul className={`divide-y divide-kant ${nedtonet ? "opacity-60" : ""}`}>
+      {ls.map((l) => (
+        <li key={l.id} className="flex flex-col gap-2 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 text-sm">
+            <p className="break-words font-semibold text-tekst">{l.tekst}</p>
+            <p className="flex flex-wrap items-center gap-2 text-tekst-daempet">
+              {dato(l.kl)} · {krFraOere(l.beloeb)} {l.status}
+            </p>
+          </div>
+          {(l.handling || l.link) && (
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {l.link}
+              {l.handling}
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
 
   return (
     <Felt titel={R.titel}>
-      {linjer.length === 0 ? (
-        <Tom>{R.ingen}</Tom>
-      ) : (
-        <ul className="divide-y divide-kant">
-          {linjer.map((l) => (
-            <li key={l.id} className="flex flex-col gap-2 py-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="min-w-0 text-sm">
-                <p className="break-words font-semibold text-tekst">{l.tekst}</p>
-                <p className="flex flex-wrap items-center gap-2 text-tekst-daempet">
-                  {dato(l.kl)} · {krFraOere(l.beloeb)} {l.status}
-                </p>
-              </div>
-              {(l.handling || l.link) && (
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  {l.link}
-                  {l.handling}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+      {normale.length === 0 ? <Tom>{R.ingen}</Tom> : liste(normale)}
+      {nul.length > 0 && (
+        <details className="mt-3 border-t border-kant pt-3">
+          <summary className="inline-flex min-h-11 cursor-pointer items-center text-sm font-medium text-groen underline underline-offset-2">
+            {R.visNul(nul.length)}
+          </summary>
+          {liste(nul, true)}
+        </details>
       )}
       {regninger.length > 0 && <p className="mt-2 text-xs text-tekst-svag">{R.refusionAbonnement}</p>}
     </Felt>

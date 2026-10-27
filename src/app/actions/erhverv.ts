@@ -79,7 +79,7 @@ export async function sendErhvervHenvendelse(
     }
     if (!adresse) return { fejl: "Skriv firmaets adresse.", felt: "adresse" };
     if (adresse.length > G.adresse) return { fejl: "Adressen er for lang.", felt: "adresse" };
-    if (!POSTNUMMER.test(postnummer)) return { fejl: "Postnummeret skal have 4 cifre.", felt: "postnummer" };
+    if (!POSTNUMMER.test(postnummer)) return { fejl: ERHVERV_FORMULAR.fejl.postnummerUgyldigt, felt: "postnummer" };
     if (!by) return { fejl: "Skriv byen.", felt: "by" };
     if (by.length > G.by) return { fejl: "Bynavnet er for langt.", felt: "by" };
     if (hvad.length < 3) return { fejl: "Skriv kort, hvad du sælger.", felt: "hvad_saelger_i" };
@@ -101,7 +101,7 @@ export async function sendErhvervHenvendelse(
     const raa = formData.get("t");
     const start = typeof raa === "string" && /^\d{1,16}$/.test(raa) ? Number(raa) : NaN;
     if (!Number.isFinite(start) || start <= 0 || Date.now() - start < MIN_SEKUNDER * 1000) {
-      return { fejl: "Vent et øjeblik, og prøv igen." };
+      return { fejl: ERHVERV_FORMULAR.fejl.forHurtigt };
     }
 
     const supabase = await createClient();

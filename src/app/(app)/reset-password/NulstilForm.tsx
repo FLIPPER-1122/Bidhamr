@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LOGIN_EMAIL_NOEGLE } from "@/lib/loginEmail";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -94,6 +95,14 @@ export default function NulstilForm({ velkommen = false, signup = false }: { vel
 
     // Serveren har logget ud alle steder; login-siden viser en bekræftelse.
     // En ny firmakonto sendes til Firma oversigt efter login.
+    // E-mailen udfyldes på login-siden (kun i denne fane - aldrig i URL'en).
+    if (email) {
+      try {
+        sessionStorage.setItem(LOGIN_EMAIL_NOEGLE, email);
+      } catch {
+        // Privat tilstand o.l.: så skriver brugeren selv e-mailen.
+      }
+    }
     router.push(velkommen ? "/login?adgangskode=gemt&velkommen=1&redirect=/firma" : "/login?adgangskode=gemt");
     router.refresh();
   }

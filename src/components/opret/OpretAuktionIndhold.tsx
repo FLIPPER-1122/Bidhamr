@@ -73,7 +73,10 @@ export default async function OpretAuktionIndhold({ brugerId, stripe }: { bruger
   const kanSaelge = harKonto && !!profil?.connect_detaljer_indsendt && kortAnmodet && !frakoblet && !afvist && !frosset;
   const aktiv = kanSaelge && !!profil?.connect_overfoersler_aktiv;
 
-  if (firmaSpaerret) {
+  // Retur fra Stripe (bankkonto tilføjet fra Overblik, før abonnementet er
+  // i gang): hent status først (UdbetalingskontoKraeves nedenfor), så
+  // Overblik ikke bliver ved med at bede om bankkontoen.
+  if (firmaSpaerret && stripe !== "retur") {
     return (
       <div className="rounded-none border border-advarsel-kant bg-advarsel-bg p-5 text-advarsel-tekst">
         <p className="text-[18px] font-semibold">

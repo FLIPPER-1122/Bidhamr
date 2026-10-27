@@ -16,13 +16,19 @@ export default function StartChatKnap({
   auktionId,
   tradeId,
   utenChat = false,
+  vinder = false,
+  tradeStatus = null,
 }: {
   auktionId: string;
   tradeId: string | null;
   // Erhvervsauktion: ingen chat med firmaet - knappen hedder "Gå til handlen".
   utenChat?: boolean;
+  // Vinderen (køberen): mangler betalingen, vises "Betal nu" som hovedknap.
+  vinder?: boolean;
+  tradeStatus?: string | null;
 }) {
   const [id, setId] = useState<string | null>(tradeId);
+  const [status, setStatus] = useState<string | null>(tradeStatus);
   const [opgivet, setOpgivet] = useState(false);
 
   useEffect(() => {
@@ -39,7 +45,7 @@ export default function StartChatKnap({
       const supabase = createClient();
       const { data } = await supabase
         .from("trades")
-        .select("id")
+        .select("id, status")
         .eq("auction_id", auktionId)
         // Flere handler pr. auktion er mulige (ubetalt vinder -> næste byder).
         .order("created_at", { ascending: false })
@@ -49,6 +55,7 @@ export default function StartChatKnap({
       if (afbrudt) return;
 
       if (data?.id) {
+        setStatus((data.status as string | null) ?? null);
         setId(data.id as string);
         return;
       }
@@ -76,10 +83,11 @@ export default function StartChatKnap({
   }, [auktionId, id]);
 
   if (id) {
-    return (
+    const betalNu = vinder && status === "afventer_betaling";
+    const handelsLink = (
       <Link
         href={`/mine-handler/${id}`}
-        className="btn btn-primaer mt-3"
+        className={`btn ${betalNu ? "btn-sekundaer" : "btn-primaer"} mt-3`}
       >
         {!utenChat && (
           <svg
@@ -98,6 +106,15 @@ export default function StartChatKnap({
         )}
         {utenChat ? "Gå til handlen" : "Start chat"}
       </Link>
+    );
+    if (!betalNu) return handelsLink;
+    return (
+      <div className="flex flex-wrap gap-x-3">
+        <Link href={`/mine-handler/${id}/betal`} className="btn btn-primaer mt-3">
+          Betal nu
+        </Link>
+        {handelsLink}
+      </div>
     );
   }
 

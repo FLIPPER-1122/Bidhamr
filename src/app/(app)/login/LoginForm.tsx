@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { LOGIN_EMAIL_NOEGLE } from "@/lib/loginEmail";
 import { sikkerSti } from "@/lib/sikkerSti";
 import { logInd } from "@/app/actions/auth";
 import { FELT, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
@@ -43,6 +44,22 @@ export default function LoginForm({
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Lige efter "Vælg din adgangskode"/"Ny adgangskode": e-mailen er kendt og
+  // udfyldes (gemt i sessionStorage af NulstilForm, læses én gang). Efter
+  // mount, så server- og klient-render er ens.
+  useEffect(() => {
+    if (!adgangskodeGemt) return;
+    const t = setTimeout(() => {
+      try {
+        const gemt = sessionStorage.getItem(LOGIN_EMAIL_NOEGLE);
+        sessionStorage.removeItem(LOGIN_EMAIL_NOEGLE);
+        if (gemt) setEmail((nu) => nu || gemt);
+      } catch {
+        // sessionStorage er ikke tilgængelig - brugeren skriver selv e-mailen.
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, [adgangskodeGemt]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forkertLogin, setForkertLogin] = useState(false);
@@ -176,7 +193,7 @@ export default function LoginForm({
           </form>
         </div>
 
-        {tilmeldingAaben ? (
+        {adgangskodeGemt ? null : tilmeldingAaben ? (
           <p className="mt-6 text-center text-sm text-tekst-svag">
             Har du ikke en konto?{" "}
             <Link href="/signup" className={LINK}>

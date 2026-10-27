@@ -110,7 +110,14 @@ const STATUS_KLASSE: Record<UgeStatus, string> = {
   loft: "border-kant bg-[#F1F3F2] text-tekst-svag",
 };
 
-export default function UgensButikKoeb({ data }: { data: FirmaUgensButikData }) {
+export default function UgensButikKoeb({
+  data,
+  ingenAuktioner = false,
+}: {
+  data: FirmaUgensButikData;
+  // Firmaet har ingen aktive auktioner: feltet på forsiden vises ikke.
+  ingenAuktioner?: boolean;
+}) {
   const router = useRouter();
   const aabenReserveret = data.aaben?.status === "reserveret" ? data.aaben : null;
   const foersteLedige = data.uger.find((u) => u.status === "ledig")?.uge_start ?? null;
@@ -191,6 +198,28 @@ export default function UgensButikKoeb({ data }: { data: FirmaUgensButikData }) 
   }
 
   const bookingId = start?.bookingId ?? aabenReserveret?.id ?? null;
+  const valgtPrisOere = valgtUge
+    ? valgtUge.status === "din_reservation" && aabenReserveret
+      ? aabenReserveret.beloeb_oere
+      : valgtUge.pris_inkl_moms_oere
+    : 0;
+  const bookKnap = (klasse: string) =>
+    valgtUge ? (
+      <button
+        type="button"
+        onClick={() => koeb(valgtUge.uge_start)}
+        disabled={henter}
+        aria-busy={henter || undefined}
+        className={`${E_KNAP_PRIMAER} ${klasse}`}
+      >
+        {henter && <span className="btn-spinner" aria-hidden="true" />}
+        {henter ? T.starter : T.bookKnap(valgtUge.uge_nr, krFraOere(valgtPrisOere))}
+      </button>
+    ) : null;
+  // På mobil ligger "Book uge X" fast i bunden, så den kan nås uden at rulle
+  // forbi hele kalenderen. Bjælken er kun i DOM'en, når den kan bruges, og
+  // har synligt indhold - den lægger aldrig et usynligt lag over siden.
+  const visBjaelke = data.kan_koebe && !!valgtUge && !start;
 
   return (
     <>
@@ -233,6 +262,16 @@ export default function UgensButikKoeb({ data }: { data: FirmaUgensButikData }) 
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {data.kan_koebe && ingenAuktioner && (
+        <div role="status" className="rounded-none border-2 border-advarsel-kant bg-advarsel-bg p-5 text-advarsel-tekst">
+          <p className="text-[21px] font-semibold">{T.ingenAuktionerTitel}</p>
+          <p className="mt-1 text-[18px]">{T.ingenAuktionerTekst}</p>
+          <Link href="/firma/auktioner/ny" className={`${E_KNAP_SEKUNDAER} mt-4 w-full sm:w-auto`}>
+            {T.ingenAuktionerKnap}
+          </Link>
         </div>
       )}
 
@@ -281,6 +320,15 @@ export default function UgensButikKoeb({ data }: { data: FirmaUgensButikData }) 
         <p className={`mt-4 ${E_TEKST_DAEMPET}`}>{T.forklaringFarver}</p>
         {harLoft && <p className={`mt-1 ${E_TEKST_DAEMPET}`}>{T.loftForklaring}</p>}
 
+        {visBjaelke && valgtUge && (
+          <div className="sticky bottom-[var(--samtykke-hoejde,0px)] z-20 -mx-5 mt-4 border-t border-kant bg-white px-5 py-3 shadow-flyder sm:hidden">
+            <p className="text-[17px] font-semibold text-tekst">
+              {T.valgtUge(valgtUge.uge_nr, kortDato(valgtUge.uge_start), kortDato(soendag(valgtUge.uge_start)))}
+            </p>
+            {bookKnap("mt-2 w-full")}
+          </div>
+        )}
+
         <div className="mt-6 border-t border-kant pt-5" ref={betalRef}>
           {!data.kan_koebe ? (
             <div>
@@ -308,25 +356,9 @@ export default function UgensButikKoeb({ data }: { data: FirmaUgensButikData }) 
                   </>
                 )}
               </p>
-              <button
-                type="button"
-                onClick={() => koeb(valgtUge.uge_start)}
-                disabled={henter}
-                aria-busy={henter || undefined}
-                className={`${E_KNAP_PRIMAER} mt-4 w-full sm:w-auto`}
-              >
-                {henter && <span className="btn-spinner" aria-hidden="true" />}
-                {henter
-                  ? T.starter
-                  : T.bookKnap(
-                      valgtUge.uge_nr,
-                      krFraOere(
-                        valgtUge.status === "din_reservation" && aabenReserveret
-                          ? aabenReserveret.beloeb_oere
-                          : valgtUge.pris_inkl_moms_oere,
-                      ),
-                    )}
-              </button>
+              {ingenAuktioner && <p className="mt-2 text-[17px] font-semibold text-advarsel-tekst">{T.ingenAuktionerKort}</p>}
+              {/* På mobil er knappen i bjælken i bunden (ovenfor). */}
+              {bookKnap("mt-4 hidden w-full sm:inline-flex sm:w-auto")}
             </div>
           ) : (
             <div>
