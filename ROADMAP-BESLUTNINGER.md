@@ -72,7 +72,15 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
 
 ## 4. BidHamr Beskyttelse (tilkøb for køber)
 - **Appens nye design (7B) er godkendt (Filip, 27. okt. 2026)** – showcase: `showcase/app-design-showcase.html`. Bundmenu: Hjem · Søg · Sælg · Mine handler · Konto. Firmaer kan ikke købe abonnement inde i iOS-appen (Apples regler) – appen henviser til bidhamr.dk.
-- **Oprettelse af en sag skal være så nem som overhovedet muligt – og præcis ens i appen og på hjemmesiden (Filip, 27. okt. 2026).** Det er en af de vigtigste funktioner. Forslag til det nye flow: `showcase/opret-sag-showcase.html` (til godkendelse).
+- **Oprettelse af en sag skal være så nem som overhovedet muligt – og præcis ens i appen og på hjemmesiden (Filip, 27. okt. 2026).** Det er en af de vigtigste funktioner. Flowet i `showcase/opret-sag-showcase.html` er **godkendt (Filip, 27. okt. 2026)**: "Hvordan er varen?" øverst på handelssiden med tid tilbage, 4 trin (hvad er galt → billeder → beskriv → tjek og send), kvittering og sagsside med tidslinje. Samtidig godkendte Filip disse regelændringer:
+  1. **Billeder:** ét billede af pakken med labelen tæller som både pakke og label – der kræves 2 billeder (pakke med label + indhold) i stedet for 3.
+  2. **Pakken er smidt ud:** sagen kan stadig oprettes med en forklaring; BidHamr vurderer den.
+  3. **Sælgeren kan svare** på en sag med tekst og billeder inden for **48 timer**.
+  4. **"Andet" er en rigtig sagstype**, og BidHamr (staff) kan rette sagstypen bagefter.
+  5. **Påmindelse 6 timer før fristen** for at melde et problem, og beskeden om levering siger "Gem pakken og labelen".
+  6. **Bortkommet pakke:** køberen får **hele beløbet** tilbage (bud + gebyr + fragt).
+  7. **Transportskade med medhold:** køberen betaler ikke returfragten og mister ikke gebyr og fragt. Returfragten betales af **sælgeren**, hvis billederne viser dårlig indpakning, ellers af **BidHamr** (som reklamerer hos fragtfirmaet). Staff vælger det i afgørelsen.
+  8. **Fristen for at melde et problem er 72 timer** efter levering (før 48). Den automatiske frigivelse til sælgeren følger med (72 timer efter levering uden sag).
 - **Ændret (Filip, 26. okt. 2026): BidHamr Beskyttelse er inkluderet i ALLE handler og betales via købergebyret (se afsnit 3). Den kan ikke længere til- eller fravælges.** Reglerne nedenfor om, hvad der dækkes, gælder nu for alle købere. (Historik: før var det et frivilligt tilkøb på **5%** oveni købergebyret, **minimum 25 kr og maksimum 250 kr** (Filip, 1. oktober 2026).) Vælges af køber på auktionssiden, når han byder (ikke forvalgt). Er den valgt, indgår den i betalingen på checkout-siden. Valget låses ved buddet og kan ikke ændres bagefter.
 - Dækker, hvis varen er **gået i stykker under forsendelsen**: køberen kan oprette en sag og sende varen retur.
 - Uden BidHamr Beskyttelse: en vare, der går i stykker undervejs, kan ikke sendes retur.
