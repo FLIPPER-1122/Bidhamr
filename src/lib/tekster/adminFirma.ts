@@ -118,6 +118,8 @@ export const ADMIN_FIRMA = {
       begrundelsePladsholder: "Fx Filip har ringet til firmaet",
       bekraeft: "Gem introrabat",
       bekraeftFjern: "Fjern introrabat",
+      // Kortet er låst, når firmaet har en særpris (de kan ikke kombineres).
+      laastSaerpris: "Kan ikke gives sammen med en særpris. Fjern særprisen først.",
     },
     saerpris: {
       titel: "Særpris",
@@ -138,6 +140,8 @@ export const ADMIN_FIRMA = {
       aftalePladsholder: "Fx aftalt med ejeren i telefonen 26/10",
       bekraeft: "Gem særpris",
       bekraeftFjern: "Fjern særpris",
+      // Kortet er låst, når firmaet har en introrabat (de kan ikke kombineres).
+      laastIntro: "Kan ikke gives sammen med en introrabat. Fjern introrabatten først.",
     },
     ekstra: {
       auktionerTitel: "Ekstra auktioner",

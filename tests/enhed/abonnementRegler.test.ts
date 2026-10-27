@@ -6,6 +6,10 @@
 import { describe, expect, it } from "vitest";
 import {
   gyldigBegrundelse,
+  gyldigSaeraftaleBegrundelse,
+  introGaelder,
+  saerprisGaelder,
+  velkomstMaanederVedOprettelse,
   INTRO_MARGIN_SEK,
   introKuponMaaneder,
   introKuponMaanederCheckout,
@@ -258,6 +262,39 @@ describe("gratis periode", () => {
     expect(gyldigBegrundelse("Aftale  med\nHans")).toBe("Aftale med Hans");
     expect(gyldigBegrundelse("x".repeat(501))).toBeNull();
     expect(gyldigBegrundelse(42)).toBeNull();
+  });
+});
+
+describe("særpris og introrabat kan ikke kombineres (Filip, 27. okt. 2026)", () => {
+  const nu = new Date("2026-10-27T12:00:00Z").getTime();
+  it("en introrabat gælder, når den er planlagt eller kører - ikke når den er slut", () => {
+    expect(introGaelder({ intro_procent: 50, intro_til: null }, nu)).toBe(true);
+    expect(introGaelder({ intro_procent: 50, intro_til: "2027-04-27T12:00:00Z" }, nu)).toBe(true);
+    // Udløbet, men endnu ikke meldt færdig af Stripe (intro_status står stadig 'aktiv').
+    expect(introGaelder({ intro_procent: 50, intro_til: "2026-10-27T11:59:59Z" }, nu)).toBe(false);
+    expect(introGaelder({ intro_procent: null, intro_til: null }, nu)).toBe(false);
+  });
+  it("en særpris gælder kun på firmaets nuværende pakke (bortfalder ved pakkeskift)", () => {
+    expect(saerprisGaelder({ saerpris_oere: 79_900, saerpris_pakke_id: "butik", pakke_id: "butik" })).toBe(true);
+    expect(saerprisGaelder({ saerpris_oere: "79900", saerpris_pakke_id: "butik", pakke_id: "butik" })).toBe(true);
+    expect(saerprisGaelder({ saerpris_oere: 79_900, saerpris_pakke_id: "butik", pakke_id: "pro" })).toBe(false);
+    expect(saerprisGaelder({ saerpris_oere: null, saerpris_pakke_id: null, pakke_id: "butik" })).toBe(false);
+  });
+});
+
+describe("gratis måned til et CVR, der har haft abonnement før (Filip, 27. okt. 2026)", () => {
+  it("nyt CVR: 1 gratis måned; tidligere CVR: ingen - kun som særaftale", () => {
+    expect(velkomstMaanederVedOprettelse({ cvrTidligere: false, saeraftale: false })).toBe(1);
+    expect(velkomstMaanederVedOprettelse({ cvrTidligere: true, saeraftale: false })).toBe(0);
+    expect(velkomstMaanederVedOprettelse({ cvrTidligere: true, saeraftale: true })).toBe(1);
+  });
+  it("særaftalens begrundelse skal være 5-500 tegn", () => {
+    expect(gyldigSaeraftaleBegrundelse("Hej")).toBeNull();
+    expect(gyldigSaeraftaleBegrundelse("  abcd ")).toBeNull();
+    expect(gyldigSaeraftaleBegrundelse("Aftalt  med\nHans")).toBe("Aftalt med Hans");
+    expect(gyldigSaeraftaleBegrundelse("x".repeat(500))).toHaveLength(500);
+    expect(gyldigSaeraftaleBegrundelse("x".repeat(501))).toBeNull();
+    expect(gyldigSaeraftaleBegrundelse(undefined)).toBeNull();
   });
 });
 

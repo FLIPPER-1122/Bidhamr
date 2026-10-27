@@ -8,7 +8,6 @@ import {
   FIRMA_DASHBOARD as D,
   FIRMA_OVERSIGT as T,
   FIRMA_OVERSIGT_EKSTRA as X,
-  FIRMA_BETALING,
   FIRMA_FREMHAEV_KNAP as FV,
   FIRMA_ABONNEMENT as FA,
   FIRMA_UDBETALINGSKONTO as U,
@@ -47,7 +46,7 @@ export default async function FirmaOverblik() {
       {!abonnementAktivt(o) && <Advarsel titel={T.ikkeAktiv.titel} tekst={ikkeAktivTekst(o)} />}
       {o.firma.abonnement_status === "afventer_betaling" && (
         <Link href="/firma/abonnement" className={`${E_KNAP_PRIMAER} w-full sm:w-auto`}>
-          {gratisStart ? FA.gratisStartTitel : FIRMA_BETALING.knapBetal}
+          {gratisStart ? FA.gratisStartTitel : FA.knapStartAbonnement}
         </Link>
       )}
 

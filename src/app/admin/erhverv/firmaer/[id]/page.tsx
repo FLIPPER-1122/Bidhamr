@@ -338,6 +338,8 @@ export default async function FirmaSide({
           gratisTil: gratisTil ? dato(gratisTil) : null,
           gratisVedStart: f.gratis_maaneder_ved_start ?? 0,
           intro,
+          // Planlagt eller kører: så kan der ikke gives særpris (Filip, 27. okt. 2026).
+          introAktiv: !!intro && introNu !== "slut",
           ekstraAuktioner: kvote?.ekstra ?? 0,
           ekstraFremh: f.fremhaevninger?.ekstra ?? 0,
           ubegraenset: !!kvote?.ubegraenset,

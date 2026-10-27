@@ -11,7 +11,7 @@ import { opretFirmakonto, slaaCvrOp, type CvrTidligereFirma } from "@/app/action
 import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_EKSTRA as X, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
 import { ABONNEMENT_STATUS_NAVN, EMAIL, POSTNUMMER, erAbonnementStatus, type ErhvervPakke } from "@/lib/erhverv/regler";
 import { langDato } from "@/lib/erhverv/visning";
-import { INTRO_GRAENSER, INTRO_STANDARD } from "@/lib/erhverv/abonnementRegler";
+import { INTRO_GRAENSER, INTRO_STANDARD, SAERAFTALE_BEGRUNDELSE, gyldigSaeraftaleBegrundelse } from "@/lib/erhverv/abonnementRegler";
 
 export default function OpretFirmakonto({
   henvendelseId,
@@ -44,10 +44,21 @@ export default function OpretFirmakonto({
   const [cvrBesked, setCvrBesked] = useState<{ tekst: string; ok: boolean } | null>(null);
   const [slaarOp, startOpslag] = useTransition();
   const [feltFejl, setFeltFejl] = useState<Partial<Record<keyof FirmaVaerdier, string>>>({});
-  const [resultat, setResultat] = useState<{ firmaId: string; besked: string; mailSendt: boolean } | null>(null);
+  const [resultat, setResultat] = useState<{
+    firmaId: string;
+    besked: string;
+    mailSendt: boolean;
+    // "Ingen gratis måned" / "1 gratis måned (særaftale)" - kun for et CVR,
+    // der har haft abonnement før.
+    gratisTekst: string | null;
+  } | null>(null);
   // CVR'et har haft et abonnement før: advarslen vises i dialogen, og næste
   // tryk ("Opret alligevel") sender bekræftelsen med.
   const [tidligere, setTidligere] = useState<CvrTidligereFirma[] | null>(null);
+  // Et tidligere CVR får ingen gratis måned - kun som særaftale med en
+  // begrundelse (Filip, 27. okt. 2026). Kun synligt, når advarslen vises.
+  const [saeraftale, setSaeraftale] = useState(false);
+  const [saeraftaleGrund, setSaeraftaleGrund] = useState("");
 
   // Rettes CVR-nummeret, passer en gammel besked fra CVR-opslaget ikke
   // længere (fx "ikke fundet") - så fjernes den.
@@ -102,6 +113,7 @@ export default function OpretFirmakonto({
         className={`rounded-xl border p-5 ${resultat.mailSendt ? "border-succes-kant bg-succes-bg text-succes-tekst" : "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst"}`}
       >
         <p className="text-base font-semibold">{resultat.besked}</p>
+        {resultat.gratisTekst && <p className="mt-1 text-sm">{resultat.gratisTekst}</p>}
         <Link href={`/admin/erhverv/firmaer/${resultat.firmaId}`} className="btn btn-sekundaer mt-4">
           {X.seFirma}
         </Link>
@@ -138,8 +150,12 @@ export default function OpretFirmakonto({
       ip <= INTRO_GRAENSER.procentMaks &&
       im >= INTRO_GRAENSER.maanederMin &&
       im <= INTRO_GRAENSER.maanederMaks);
-  const klar = !!pakkeId && EMAIL.test(loginEmail.trim()) && introGyldig;
+  const saeraftaleGyldig = !tidligere || !saeraftale || !!gyldigSaeraftaleBegrundelse(saeraftaleGrund);
+  const klar = !!pakkeId && EMAIL.test(loginEmail.trim()) && introGyldig && saeraftaleGyldig;
   const valgtPakke = pakker.find((p) => p.id === pakkeId) ?? null;
+  // Gratis måned: nyt CVR = 1; et CVR, der har haft abonnement før = ingen,
+  // medmindre særaftalen er sat.
+  const gratis: "ny" | "ingen" | "saeraftale" = !tidligere ? "ny" : saeraftale ? "saeraftale" : "ingen";
   const opsummering = valgtPakke
     ? A.opret.pakkeOpsummering(
         valgtPakke.navn,
@@ -151,6 +167,7 @@ export default function OpretFirmakonto({
               pris: valgtPakke.maanedspris != null ? krTekst((valgtPakke.maanedspris * (100 - ip)) / 100) : null,
             }
           : null,
+        gratis,
       )
     : medIntro
       ? A.opret.introOpsummering(ip, im)
@@ -286,6 +303,8 @@ export default function OpretFirmakonto({
         foerAabning={() => {
           // Ny åbning = nyt tjek (felterne kan være rettet siden).
           setTidligere(null);
+          setSaeraftale(false);
+          setSaeraftaleGrund("");
           return tjekFelter();
         }}
         onConfirm={async () => {
@@ -298,6 +317,8 @@ export default function OpretFirmakonto({
             introProcent: medIntro ? ip : null,
             introMaaneder: medIntro ? im : null,
             cvrBekraeftet: tidligere !== null,
+            saeraftaleGratis: tidligere !== null && saeraftale,
+            saeraftaleBegrundelse: tidligere !== null && saeraftale ? saeraftaleGrund : null,
           });
           if ("fejl" in svar) return { fejl: svar.fejl };
           if ("cvrTidligere" in svar) {
@@ -306,10 +327,28 @@ export default function OpretFirmakonto({
           }
           // Resultatet ligger i state; siden genindlæses (revalidatePath),
           // men komponenten står samme sted og beholder det.
-          setResultat({ firmaId: svar.firmaId, besked: svar.besked, mailSendt: svar.mailSendt });
+          setResultat({
+            firmaId: svar.firmaId,
+            besked: svar.besked,
+            mailSendt: svar.mailSendt,
+            gratisTekst:
+              svar.gratisMaaneder === 0
+                ? X.cvrTidligere.resultatIngen
+                : tidligere !== null && saeraftale
+                  ? X.cvrTidligere.resultatSaeraftale
+                  : null,
+          });
         }}
       >
-        {tidligere && <CvrTidligere firmaer={tidligere} />}
+        {tidligere && (
+          <CvrTidligere
+            firmaer={tidligere}
+            saeraftale={saeraftale}
+            onSaeraftale={setSaeraftale}
+            grund={saeraftaleGrund}
+            onGrund={setSaeraftaleGrund}
+          />
+        )}
       </BekraeftDialog>
     </div>
   );
@@ -324,13 +363,28 @@ function krTekst(beloeb: number): string {
   })} kr.`;
 }
 
-function CvrTidligere({ firmaer }: { firmaer: CvrTidligereFirma[] }) {
+function CvrTidligere({
+  firmaer,
+  saeraftale,
+  onSaeraftale,
+  grund,
+  onGrund,
+}: {
+  firmaer: CvrTidligereFirma[];
+  saeraftale: boolean;
+  onSaeraftale: (v: boolean) => void;
+  grund: string;
+  onGrund: (v: string) => void;
+}) {
   const C = X.cvrTidligere;
   const dato = (iso: string | null) => (iso ? langDato(iso) : C.ingenDato);
+  const grundUgyldig = saeraftale && grund.trim() !== "" && !gyldigSaeraftaleBegrundelse(grund);
   return (
+    <div className="space-y-3">
     <div role="alert" className="border border-advarsel-kant bg-advarsel-bg p-3 text-sm text-advarsel-tekst">
       <p className="font-bold">{C.titel}</p>
       <p className="mt-1">{C.tekst}</p>
+      <p className="mt-2 font-semibold">{C.ingenGratis}</p>
       <ul className="mt-3 space-y-2">
         {firmaer.map((f, i) => (
           <li key={i} className="border border-advarsel-kant bg-white p-2.5 text-tekst">
@@ -350,6 +404,44 @@ function CvrTidligere({ firmaer }: { firmaer: CvrTidligereFirma[] }) {
           </li>
         ))}
       </ul>
+    </div>
+      <div className="border border-kant p-3">
+        <label className="flex min-h-11 cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={saeraftale}
+            onChange={(e) => onSaeraftale(e.target.checked)}
+            className="mt-0.5 h-5 w-5 shrink-0 accent-groen"
+          />
+          <span>
+            <span className="block text-[15px] font-medium text-tekst">{C.saeraftaleSlaa}</span>
+            <span className="block text-[13px] text-tekst-daempet">{C.saeraftaleHjaelp}</span>
+          </span>
+        </label>
+        {saeraftale && (
+          <div className="mt-3">
+            <label htmlFor="opret-saeraftale" className={ADMIN_LABEL}>
+              {C.saeraftaleBegrundelse}
+            </label>
+            <textarea
+              id="opret-saeraftale"
+              value={grund}
+              rows={2}
+              required
+              maxLength={SAERAFTALE_BEGRUNDELSE.maks}
+              aria-invalid={grundUgyldig || undefined}
+              placeholder={C.saeraftalePladsholder}
+              onChange={(e) => onGrund(e.target.value)}
+              className={ADMIN_FELT}
+            />
+            {grundUgyldig && (
+              <p role="alert" className="mt-1 text-xs font-medium text-fejl-tekst">
+                {C.saeraftaleUgyldig}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

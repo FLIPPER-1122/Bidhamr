@@ -25,6 +25,7 @@ import { firmaVelkomstMail } from "@/lib/mails/erhverv";
 import { sideUrl } from "@/lib/mails/layout";
 import { cvrTilOprettelse, slaaCvrOpOffentligt, type CvrOpslag } from "@/lib/erhverv/cvr";
 import { udstedVelkomstBillet, VELKOMST_TIMER } from "@/lib/erhverv/velkomstBillet";
+import { gyldigSaeraftaleBegrundelse } from "@/lib/erhverv/abonnementRegler";
 import {
   fortrydOpsigelse,
   opsigAbonnement,
@@ -108,6 +109,7 @@ const KODE_FEJL: Record<string, string> = {
   cvr_ikke_aktivt: ADMIN_ERHVERV.opret.fejl.cvrIkkeAktivt,
   cvr_ikke_fundet: "CVR-nummeret findes ikke i CVR-registret. Tjek nummeret. Kontoen kan ikke oprettes.",
   cvr_tidligere: "CVR'et har haft et abonnement før. Prøv igen, og bekræft, at kontoen skal oprettes alligevel.",
+  saeraftale_begrundelse: "Skriv en begrundelse for særaftalen (5-500 tegn). Den gemmes i loggen.",
   ugyldig_pakke: "Vælg en pakke (arkiverede pakker kan ikke vælges).",
   ugyldig_rabat_intro: "Introrabatten skal være 1-100 % i 1-24 måneder - udfyld begge eller ingen af dem.",
   henvendelse_findes_ikke: "Henvendelsen findes ikke længere.",
@@ -554,6 +556,11 @@ export async function opretFirmakonto(
     // Staff har set advarslen om, at CVR'et har haft et abonnement før, og
     // trykket "Opret alligevel".
     cvrBekraeftet?: boolean;
+    // CVR'et har haft et abonnement før: firmaet får INGEN gratis måned -
+    // medmindre staff giver 1 som særaftale med en begrundelse (5-500 tegn,
+    // logges med staffs navn). Filip, 27. okt. 2026 (20261102050000).
+    saeraftaleGratis?: boolean;
+    saeraftaleBegrundelse?: string | null;
   },
 ) {
   return koer("opretFirmakonto", async () => {
@@ -576,6 +583,9 @@ export async function opretFirmakonto(
     ) {
       kodeFejl("ugyldig_rabat_intro");
     }
+    const saeraftale = input.saeraftaleGratis === true;
+    const saeraftaleBegrundelse = saeraftale ? gyldigSaeraftaleBegrundelse(input.saeraftaleBegrundelse) : null;
+    if (saeraftale && !saeraftaleBegrundelse) kodeFejl("saeraftale_begrundelse");
 
     // CVR-registret (samme opslag som knappen "Slå CVR op"): kun et aktivt
     // dansk CVR kan få en firmakonto. Afvises kun, når opslaget med sikkerhed
@@ -667,7 +677,7 @@ export async function opretFirmakonto(
     }
     if (medNonce) await fjernBilletFraMetadata(link.user.id);
 
-    const { data, error } = await admin.rpc("erhverv_firma_opret", {
+    const opretArgs: Record<string, unknown> = {
       p_staff: userId,
       p_bruger: link.user.id,
       p_firmanavn: felter.firmanavn,
@@ -683,8 +693,18 @@ export async function opretFirmakonto(
       p_intro_procent: introProcent,
       p_intro_maaneder: introMaaneder,
       ...(medCvrTjek ? { p_cvr_bekraeftet: cvrBekraeftet } : {}),
-    });
-    const svar = data as { kode?: string; firma_id?: string; firmaer?: unknown } | null;
+    };
+    // Særaftalen sendes kun, når den er givet (så kald uden den virker som
+    // før). PGRST202: migrationen 20261102050000 er ikke kørt - den gamle
+    // funktion giver altid 1 gratis måned, hvilket er det, særaftalen giver.
+    let { data, error } = await admin.rpc(
+      "erhverv_firma_opret",
+      saeraftale ? { ...opretArgs, p_saeraftale_gratis: true, p_saeraftale_begrundelse: saeraftaleBegrundelse } : opretArgs,
+    );
+    if (saeraftale && error?.code === "PGRST202") {
+      ({ data, error } = await admin.rpc("erhverv_firma_opret", opretArgs));
+    }
+    const svar = data as { kode?: string; firma_id?: string; firmaer?: unknown; gratis_maaneder?: number } | null;
     if (error || svar?.kode !== "ok" || !svar.firma_id) {
       // Auth-brugeren findes nu som en tom (privat) konto uden firma. Den
       // slettes igen automatisk (ingen handelsdata) - databasen tjekker, at
@@ -715,8 +735,11 @@ export async function opretFirmakonto(
       throw new Error(error?.message ?? `erhverv_firma_opret: ${svar?.kode ?? "intet svar"}`);
     }
 
-    // Stripe-kunden laves nu; abonnementet (1 måned gratis + evt.
-    // introrabat) starter, når firmaet trykker "Betal for din pakke".
+    // Stripe-kunden laves nu; abonnementet (evt. 1 måned gratis + evt.
+    // introrabat) starter, når firmaet trykker "Start gratis" eller "Start
+    // abonnement". gratis_maaneder mangler kun, hvis 20261102050000 ikke er
+    // kørt (så gælder 1 som før).
+    const gratisMaaneder = typeof svar.gratis_maaneder === "number" ? svar.gratis_maaneder : 1;
     const betaling = await startAbonnement(svar.firma_id);
 
     const hashedToken = link.properties.hashed_token;
@@ -738,6 +761,7 @@ export async function opretFirmakonto(
       firmaId: svar.firma_id,
       mailSendt: sendt.ok,
       betaling: betaling.status,
+      gratisMaaneder,
       besked: sendt.ok
         ? `Firmakontoen er oprettet, og velkomstmailen er sendt til ${loginEmail}.`
         : "Firmakontoen er oprettet, men velkomstmailen kunne ikke sendes. Brug \"Send velkomstmail igen\".",

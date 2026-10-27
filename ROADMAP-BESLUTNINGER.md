@@ -357,7 +357,9 @@ Baggrund og research: `ERHVERV-OVERBLIK.md`. Lovspørgsmålene er sendt til advo
   - **Fremhævede auktioner:** ubrugte forsvinder ved månedens udgang (ny kvote den 1.). Fremhævning markeres som annonce.
   - **Rabat på Ugens butik** tælles pr. kalenderår (nulstilles 1. januar).
   - **1 måned gratis** for alle nye firmaer.
+  - **Firma med et CVR, der har haft abonnement før, får ingen gratis måned – kun som særaftale med begrundelse (Filip, 27. okt. 2026).** Første betaling trækkes, når firmaet starter abonnementet. Særaftalen gives i "Opret firmakonto" (begrundelse 5-500 tegn, logges med staffs navn). Staff kan stadig give gratis måneder bagefter med "Gratis periode". (`20261102050000_tidligere_cvr_ingen_gratis.sql`)
   - **Introrabat:** firmaer, Filip selv rækker ud til, får **50 % i 6 måneder efter den gratis måned** (måned 1 gratis, måned 2–7 halv pris). Sættes manuelt i admin.
+  - **Særpris og introrabat kan ikke kombineres – enten særpris eller rabat på normalprisen (Filip, 27. okt. 2026).** Har firmaet en introrabat, der er planlagt eller kører, kan der ikke sættes en særpris, og omvendt. Den ene skal fjernes først. Bortfalder særprisen ved pakkeskift, sker der intet med introrabatten. (`20261102050000_tidligere_cvr_ingen_gratis.sql`)
   - **Eksisterende firmaer** flyttes: Basis → Start, Plus → Butik, Pro/Max → Pro. De gamle pakker arkiveres (slettes ikke).
   - **Sælger-rollen kan lige så meget som chefen på firmasiden (Filip, 26. okt. 2026):** skifte pakke, gratis periode, introrabat, særpris, ekstra auktioner/fremhævninger, booke/annullere Ugens butik, pause/opsig og refundere firmaets regninger (abonnement og Ugens butik). Alt logges med navn.
   - **Sælger-rollen må se købers e-mail i klager over firmaer (Filip, 26. okt. 2026)** – så den kan håndtere klagerne selv (GDPR: need to know; visningen logges). Købsoplysninger på firmaets salg (`firma_faktura_salg` for et andet firma) er stadig kun for chefen.
