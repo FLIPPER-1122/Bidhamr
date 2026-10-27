@@ -621,4 +621,10 @@ Alle fire skal være færdige før lanceringen, på både hjemmesiden og i appen
 4. **Del auktion:** en tydelig Del-knap (Messenger, SMS, Facebook, kopiér link, og systemets delingsmenu i appen) og et pænt billede i linket (Open Graph).
 5. **Påmindelse før en auktion slutter:** for favoritter og auktioner, man har budt på, fx "slutter om 1 time – du fører ikke længere". Brugeren kan slå den fra under notifikationer.
 
+- **Modeller (Filip, 27. okt. 2026):**
+  - Botten bruger den billige model `claude-haiku-5-5` (env `BIDHAMR_BOT_MODEL`).
+  - Auktionsforslag bruger `claude-opus-5-5` (env `BIDHAMR_AUKTION_AI_MODEL`).
+  - Begge kan skiftes uden ny kode.
+- **Ansvar for AI-forslag (Filip, 27. okt. 2026):** ved hvert auktionsforslag står tydeligt, at det kun er et forslag fra AI og ikke BidHamrs vurdering af varen. Sælgeren skal selv tjekke og beslutte titel, beskrivelse, kategori, stand og pakkestørrelse og er ansvarlig for, at auktionen er korrekt. Sælgeren skal aktivt rette eller godkende forslaget, før auktionen kan oprettes. Samme ansvarsforbehold gælder botten: dens svar er vejledende, og det er reglerne og handelsbetingelserne, der gælder.
+
 Tips til gode billeder er fravalgt (Filip, 27. okt. 2026).
