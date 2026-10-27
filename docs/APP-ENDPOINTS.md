@@ -179,6 +179,33 @@ på samme måde: policyen `auktion_billeder_slet_ikke_laast` (`auktion_billede_l
 billede i mappen, så længe ejeren har en åben sag (ud over billeder fra auktioner med bud eller handel, som før).
 Svaret er da en tom sletning (intet slettet) - prøv ikke igen.
 
+## BidHamr-bot: GET/POST /api/app/bot og POST /api/app/bot/medarbejder
+
+Migration `20261102240000_bidhamr_bot.sql`. Samme kerne som hjemmesidens chatboble (`src/lib/bot/motor.ts`).
+`Authorization: Bearer <token>` er **valgfri**: uden header er brugeren "ikke logget ind" (botten svarer på regler,
+men slår ingen egne data op). Sendes en header, skal tokenet være gyldigt, ellers `401 ikke_logget_ind`.
+
+- `GET /api/app/bot` → `200 { ok, tilgaengelig, maksTegn: 1000, loftPrDoegn: 30 }`. Vis kun botten, når
+  `tilgaengelig` er `true` (falsk uden `ANTHROPIC_API_KEY`, og før lancering for alle uden adgang til den lukkede app).
+- `POST /api/app/bot` `{ samtaleId?: uuid, besked: string }` (højst 1.000 tegn). Første besked uden `samtaleId`;
+  gem det `samtaleId`, svaret giver, og send det med de næste gange. Svaret er en stream (`application/x-ndjson`), én
+  JSON pr. linje:
+  - `{ "type": "samtale", "samtaleId" }` altid først
+  - `{ "type": "tekst", "tekst" }` tekststykker - sæt dem sammen i rækkefølge (ren tekst, ingen markdown/HTML)
+  - `{ "type": "medarbejder" }` botten foreslår en medarbejder: fremhæv knappen
+  - `{ "type": "fejl", "fejl" }` svaret blev afbrudt (vis teksten)
+  - `{ "type": "slut" }` altid sidst
+  Fejl før streamen: `{ fejl, kode }` - `400 tom|for_lang|ugyldig`, `404 ikke_tilgaengelig`, `409 ukendt_samtale|samtale_fuld`
+  (start en ny samtale uden `samtaleId`), `429 loft_bruger|loft_ip|loft_alle|for_mange`, `500 fejl`.
+  Historikken hentes fra serveren - appen sender kun den nye besked.
+- `POST /api/app/bot/medarbejder` `{ samtaleId, email? }` (`email` kræves uden login) → `200 { ok, allerede }`.
+  Vis knappen **"Kontakt en rigtig medarbejder"** efter brugerens første besked. Samtalen bliver en henvendelse i
+  admin; medarbejderen svarer i Beskeder under "Fra BidHamr" (uden login: på mail). Dobbelttryk giver `allerede: true`.
+  Fejl: `400 mangler_email|ugyldig_email|tom_samtale`, `404 ukendt_samtale|ikke_tilgaengelig`, `429 for_mange`.
+
+UI-krav (som hjemmesiden): øverst "Du skriver med en AI – ikke et menneske." Under chatten: "Svarene er vejledende.
+Det er BidHamrs regler og handelsbetingelser, der gælder."
+
 ## Ændret i eksisterende endpoints
 
 - **DAO's handelsbetingelser (Filip, 20. okt. 2026):** `POST /api/fragt/app/book` tager nu
