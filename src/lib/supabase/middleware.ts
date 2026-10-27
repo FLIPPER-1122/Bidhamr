@@ -198,13 +198,13 @@ export function kraeverLoginEfterLancering(pathname: string) {
   return LOGIN_PAAKRAEVET_MOENSTRE.some((m) => m.test(pathname));
 }
 
-function erAabenEfterLancering(pathname: string) {
+export function erAabenEfterLancering(pathname: string) {
   if (pathname === "/") return true;
   if (AABNE_SIDER_EFTER_LANCERING.some((rute) => pathname === rute || pathname === `${rute}/`)) return true;
   return AABNE_MOENSTRE_EFTER_LANCERING.some((m) => m.test(pathname));
 }
 
-function erOffentligLaeseside(pathname: string, metode: string) {
+export function erOffentligLaeseside(pathname: string, metode: string) {
   if (metode !== "GET" && metode !== "HEAD") return false;
   return OFFENTLIGE_LAESESIDER.some(
     (rute) => pathname === rute || pathname.startsWith(`${rute}/`),
@@ -299,7 +299,7 @@ function firmaRedirectUrl(request: NextRequest, til: string): URL {
   return url;
 }
 
-function erOffentligRute(pathname: string) {
+export function erOffentligRute(pathname: string) {
   return OFFENTLIGE_RUTER.some(
     (rute) => pathname === rute || pathname.startsWith(`${rute}/`),
   );

@@ -29,6 +29,14 @@ import { KATEGORI_TEKST, SAMTYKKE_TEKST as T } from "@/lib/tekster/samtykke";
 // Datatilsynet: "Kun nødvendige" er lige så synlig og let som "Accepter alle"
 // (samme størrelse, farve og vægt), og ingen kategori er slået til på forhånd.
 
+// Er ingen kategori i brug (iBrug=false i src/lib/samtykke.ts), er der intet
+// at give samtykke til: et ja til fremtidige, ukendte cookies er ikke et
+// gyldigt samtykke. Så er banneret kun en oplysning med én knap ("OK", gemmer
+// "kun nødvendige"), og indstillingerne har ingen kontakter. Tages en
+// kategori i brug, kommer valget tilbage af sig selv - husk at tælle
+// SAMTYKKE_VERSION op, så alle bliver spurgt.
+const HAR_VALG = SAMTYKKE_KATEGORIER.some((k) => k.iBrug);
+
 // Begge valgknapper har nøjagtig samme udseende med vilje.
 const VALGKNAP =
   "btn w-full bg-groen text-white hover:bg-groen-mork active:bg-groen-mork sm:w-auto sm:min-w-[164px]";
@@ -216,9 +224,10 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
                       tabIndex={-1}
                       className="text-[15px] leading-snug text-groen-mork outline-none sm:text-[18px]"
                     >
-                      {T.bannerOverskrift}
+                      {HAR_VALG ? T.bannerOverskriftValg : T.bannerOverskrift}
                     </h2>
                     {/* Mobil/tablet: tekstlink ved overskriften. Computer: ved knapperne. */}
+                    {HAR_VALG && (
                     <button
                       ref={indstMobilRef}
                       type="button"
@@ -227,10 +236,11 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
                     >
                       {T.indstillinger}
                     </button>
+                    )}
                   </div>
                   {/* Mobil: én kort linje. Fra sm og op: hele forklaringen. */}
                   <p className="mt-0.5 text-sm leading-snug text-tekst-daempet sm:hidden">
-                    {T.bannerTekstKort}{" "}
+                    {HAR_VALG ? T.bannerTekstKortValg : T.bannerTekstKort}{" "}
                     <Link
                       href="/cookies"
                       className="font-medium text-groen underline underline-offset-2 hover:text-groen-mork focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
@@ -240,7 +250,7 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
                     </Link>
                   </p>
                   <p className="mt-1 hidden max-w-[70ch] text-sm leading-relaxed text-tekst-daempet sm:block">
-                    {T.bannerTekst}{" "}
+                    {HAR_VALG ? T.bannerTekstValg : T.bannerTekst}{" "}
                     <Link
                       href="/cookies"
                       className="font-medium text-groen underline underline-offset-2 hover:text-groen-mork focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
@@ -249,22 +259,30 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
                     </Link>
                   </p>
                 </div>
-                <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex sm:gap-3">
-                  <button
-                    ref={indstComputerRef}
-                    type="button"
-                    onClick={aabnFraBanner}
-                    className="btn hidden px-3 text-groen underline-offset-2 hover:underline lg:inline-flex"
-                  >
-                    {T.indstillinger}
-                  </button>
-                  <button type="button" onClick={() => vaelg({ ...ALT_VALGT })} className={VALGKNAP}>
-                    {T.accepterAlle}
-                  </button>
-                  <button type="button" onClick={() => vaelg({ ...INTET_VALG })} className={VALGKNAP}>
-                    {T.kunNoedvendige}
-                  </button>
-                </div>
+                {HAR_VALG ? (
+                  <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex sm:gap-3">
+                    <button
+                      ref={indstComputerRef}
+                      type="button"
+                      onClick={aabnFraBanner}
+                      className="btn hidden px-3 text-groen underline-offset-2 hover:underline lg:inline-flex"
+                    >
+                      {T.indstillinger}
+                    </button>
+                    <button type="button" onClick={() => vaelg({ ...ALT_VALGT })} className={VALGKNAP}>
+                      {T.accepterAlle}
+                    </button>
+                    <button type="button" onClick={() => vaelg({ ...INTET_VALG })} className={VALGKNAP}>
+                      {T.kunNoedvendige}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex shrink-0">
+                    <button type="button" onClick={() => vaelg({ ...INTET_VALG })} className={VALGKNAP}>
+                      {T.ok}
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div>
@@ -291,8 +309,8 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
                   )}
                 </div>
                 <p className="mt-1 max-w-[70ch] text-sm leading-relaxed text-tekst-daempet">
-                  {T.indstillingerTekst}
-                  {dato && <> {T.nuvaerendeValg(dato)}</>}{" "}
+                  {HAR_VALG ? T.indstillingerTekst : T.indstillingerTekstIntetValg}
+                  {HAR_VALG && dato && <> {T.nuvaerendeValg(dato)}</>}{" "}
                   <Link
                     href="/cookies"
                     className="font-medium text-groen underline underline-offset-2 hover:text-groen-mork focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen"
@@ -330,32 +348,43 @@ export default function CookieBanner({ startRaa }: { startRaa: string }) {
                             {!k.iBrug && <span className="sr-only"> {T.ikkeIBrug}.</span>}
                           </p>
                         </div>
-                        <Kontakt
-                          til={udkast[k.id]}
-                          onSkift={() => setUdkast((u) => (u ? { ...u, [k.id]: !u[k.id] } : u))}
-                          navnId={navnId}
-                          beskrivelseId={beskrivelseId}
-                        />
+                        {/* Kun kategorier i brug kan slås til - ellers er der intet at sige ja til. */}
+                        {k.iBrug && (
+                          <Kontakt
+                            til={udkast[k.id]}
+                            onSkift={() => setUdkast((u) => (u ? { ...u, [k.id]: !u[k.id] } : u))}
+                            navnId={navnId}
+                            beskrivelseId={beskrivelseId}
+                          />
+                        )}
                       </li>
                     );
                   })}
                 </ul>
 
-                <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:justify-end sm:gap-3">
-                  <button type="button" onClick={() => vaelg({ ...ALT_VALGT })} className={VALGKNAP}>
-                    {T.accepterAlle}
-                  </button>
-                  <button type="button" onClick={() => vaelg({ ...INTET_VALG })} className={VALGKNAP}>
-                    {T.kunNoedvendige}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => vaelg(udkast)}
-                    className={`${VALGKNAP} col-span-2 sm:col-span-1`}
-                  >
-                    {T.gemValg}
-                  </button>
-                </div>
+                {HAR_VALG ? (
+                  <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:justify-end sm:gap-3">
+                    <button type="button" onClick={() => vaelg({ ...ALT_VALGT })} className={VALGKNAP}>
+                      {T.accepterAlle}
+                    </button>
+                    <button type="button" onClick={() => vaelg({ ...INTET_VALG })} className={VALGKNAP}>
+                      {T.kunNoedvendige}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => vaelg(udkast)}
+                      className={`${VALGKNAP} col-span-2 sm:col-span-1`}
+                    >
+                      {T.gemValg}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-4 flex sm:justify-end">
+                    <button type="button" onClick={() => vaelg({ ...INTET_VALG })} className={VALGKNAP}>
+                      {T.ok}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

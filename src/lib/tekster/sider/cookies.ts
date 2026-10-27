@@ -43,14 +43,14 @@ export const COOKIES: Tekstside = {
     "Se, hvilke cookies BidHamr bruger, og ændr dit cookievalg. Vi bruger kun nødvendige cookies til login, sikkerhed og betaling – ingen statistik eller markedsføring.",
   intro:
     "En cookie er en lille fil, som en hjemmeside gemmer i din browser. BidHamr bruger kun de cookies, der skal til, for at siden virker: til login, til at beskytte din konto og når du betaler. Vi bruger ingen cookies til statistik eller markedsføring, og vi følger dig ikke rundt på nettet.",
-  senestOpdateret: "6. oktober 2026",
+  senestOpdateret: "27. oktober 2026",
   afsnit: [
     {
       id: "dit-valg",
       overskrift: "Dit cookievalg",
       tekst: [
-        "Første gang du besøger BidHamr, spørger vi, hvad du vil tillade. Nødvendige cookies er altid slået til. Statistik og markedsføring er slået fra, indtil du selv siger ja. Vi bruger dem ikke i dag, så det gør ingen forskel, om du trykker \"Accepter alle\" eller \"Kun nødvendige\".",
-        "Du kan altid ændre dit valg eller trække dit samtykke tilbage. Det er lige så nemt som at give det: tryk på \"Cookieindstillinger\" her eller nederst på siden. Vi spørger dig igen efter 12 måneder, eller hvis vi ændrer, hvilke cookies vi bruger.",
+        "Første gang du besøger BidHamr, fortæller vi dig, at vi kun bruger nødvendige cookies. De er altid slået til. Cookies til statistik og markedsføring bruger vi ikke i dag, så der er ikke noget at sige ja eller nej til.",
+        "Begynder vi at bruge cookies til statistik eller markedsføring, spørger vi dig først. De er slået fra, indtil du selv siger ja, og du kan altid trække dit samtykke tilbage under \"Cookieindstillinger\" her eller nederst på siden. Det er lige så nemt som at give det.",
       ],
     },
     {
