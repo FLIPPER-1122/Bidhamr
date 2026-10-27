@@ -8,6 +8,7 @@ import {
   type Anmeldelse,
   type Gruppe,
   type Klage,
+  type Tillaeg,
 } from "@/components/admin/dsa/DsaKort";
 import { Pille, PlaceringLink, fristNiveau, tid, type FristNiveau } from "@/components/admin/dsa/DsaDele";
 import {
@@ -37,6 +38,7 @@ export const metadata = { title: "Anmeldelser og klager" };
 
 const ANM_FELTER =
   "id, sagsnummer, indhold_type, indhold_id, auktion_id, anmeldt_bruger_id, placering, kategori, begrundelse, anmelder_id, anmelder_navn, anmelder_email, status, frist_kl, eskaleret_kl, eskaleret_af, eskaleret_note, udfald, svar_til_anmelder, intern_note, politi_underrettet, behandlet_af, behandlet_kl, genaabnet_kl, anonymiseret_kl, oprettet_kl";
+const TILLAEG_FELTER = "id, anmeldelse_id, kategori, sag_kategori_foer, begrundelse, oprettet_kl";
 const AFG_FELTER =
   "id, sagsnummer, bruger_id, indhold_type, indhold_id, indhold_tekst, handling, regel_kode, regel_tekst, grundlag, fakta, intern_note, automatisk_opdaget, anmeldelse_id, medarbejder_id, oprettet_kl, ophaevet_kl, ophaevet_grund, varighed_til";
 const KLAGE_FELTER =
@@ -127,6 +129,26 @@ export default async function DsaAdminSide({
       : Promise.resolve({ data: [] as Anmeldelse[] }),
   ]);
   const afgMap = new Map(((kAfg ?? []) as Afgoerelse[]).map((a) => [a.id, a]));
+
+  // Tilføjelser fra anmelderen (nye kategorier på en åben sag). Fejler
+  // opslaget (fx før 20261102110000 er kørt), vises sagerne uden dem.
+  const alleAnm = [...aabne, ...afsAnm, ...((kAnm ?? []) as Anmeldelse[])];
+  const anmIds = [...new Set(alleAnm.map((a) => a.id))];
+  if (anmIds.length) {
+    const { data: tillaeg, error: tillaegFejl } = await admin
+      .from("dsa_anmeldelse_tillaeg")
+      .select(TILLAEG_FELTER)
+      .in("anmeldelse_id", anmIds)
+      .order("oprettet_kl");
+    if (tillaegFejl) console.error("DSA: tilføjelser kunne ikke hentes:", tillaegFejl.message);
+    const pr = new Map<string, Tillaeg[]>();
+    for (const t of (tillaeg ?? []) as Tillaeg[]) {
+      const l = pr.get(t.anmeldelse_id);
+      if (l) l.push(t);
+      else pr.set(t.anmeldelse_id, [t]);
+    }
+    for (const a of alleAnm) a.tillaeg = pr.get(a.id) ?? [];
+  }
   // Firmakonti blandt de ramte (klager over konto-afgørelser): medhold i en
   // klage over lukning eller permanent suspension kræver chef eller
   // sælger-rollen (dsa_klage_afgoer svarer 'kun_erhverv').
