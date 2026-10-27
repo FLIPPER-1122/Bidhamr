@@ -1,6 +1,6 @@
 // Kontaktoplysninger i en auktions titel og beskrivelse (TS-spejlet af
 // public.auktion_kontaktinfo_grund). Samme eksempler kører i testblokken
-// sidst i supabase/migrations/20261102170000_kontaktinfo_rettelser.sql.
+// sidst i supabase/migrations/20261102190000_kontaktinfo_rettelser2.sql.
 import { describe, expect, it } from "vitest";
 import {
   auktionKontaktFejl,
