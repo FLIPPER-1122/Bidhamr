@@ -67,6 +67,7 @@ export const BOOST_TEKST = {
     forbrug: "Boost",
     tilbagefoersel: "Trukket tilbage",
     staff: "Justeret af BidHamr",
+    henvisning: "Henvist en ven",
   } as Record<string, string>,
 
   // Auktionssiden (ejeren).

@@ -10,6 +10,8 @@
 // - bh_tjek_email (src/lib/tilmelding.ts, src/app/actions/auth.ts): mailen
 //   efter signup til "Tjek din indbakke". 24 timer, httpOnly.
 // - bh_samtykke (src/lib/samtykke.ts): cookievalget. 12 måneder.
+// - bh_ven (src/proxy.ts, src/lib/henvisning/kode.ts): koden fra et
+//   henvisningslink (?ven=KODE) til kontoen er oprettet. 30 dage, httpOnly.
 // - Stripe: Stripe.js indlæses først, når man åbner betalingen eller trykker
 //   "Gem et kort" (src/lib/stripeKlient.ts). Stripe sætter __stripe_mid og
 //   __stripe_sid til svindelforebyggelse og kan sætte cookies på egne
@@ -90,6 +92,13 @@ export const COOKIES: Tekstside = {
             "Husker din e-mail, mens du venter på mailen, der bekræfter din konto.",
             "BidHamr",
             "24 timer",
+            "Nødvendig",
+          ],
+          [
+            "Henvis en ven · bh_ven",
+            "Husker koden fra en vens link, til du har oprettet din konto, så din ven kan få boost-point. Slettes, når kontoen er bekræftet.",
+            "BidHamr",
+            "30 dage",
             "Nødvendig",
           ],
           [
