@@ -12,6 +12,11 @@ I dag viser bidhamr.dk coming soon direkte på forsiden `/` for alle uden adgang
 - **Opret bruger / Invite user i Supabase-dashboardet virker aldrig** efter migrationen (der er ingen billet). Testbrugere oprettes via `supabase/seed.sql`, firmakonti under Admin → Erhverv.
 - Lokalt (`npm run dev`, testdatabasen) er siden altid "lanceret", så forsiden kan ses på http://localhost:3000. `SIMULER_FOER_LANCERING=true` i `.env.local` viser den lukkede udgave med coming-soon. `LANCERET` har ingen virkning på testdatabasen. `SIMULER_TILMELDING_LUKKET=true` lukker tilmeldingen lokalt, så beta-tilmeldingen kan testes.
 
+## Sikkerhed før lancering (sikkerhedsgennemgang 27. okt. 2026)
+- **CAPTCHA og adgangskoder i Supabase:** slå "Prevent use of leaked passwords", CAPTCHA (Cloudflare Turnstile) og lavere rate limits til – se `docs/SIKKERHED-AUTH.md`. **Ikke før appen sender `captchaToken`** (ellers kan appen hverken oprette konti eller logge ind), og Cloudflare skal stå i privatlivspolitikken (advokat nr. 138-139).
+- **Staff kan spærres ude af admin-login:** loftet `admin_login_email` (10 pr. 15 min. pr. e-mail, alle IP'er) kan rammes med vilje af nogen, der kender en staff-e-mail. Skal løses før lancering (fx kun tælle mislykkede forsøg på staff-konti + "kendt enhed"-cookie efter to-trins-login), når gaten på /adgang fjernes.
+- **Edge-funktionen `notificer-foelgere`** skal deployes til prod igen (dit ja), lige efter migration 20261102060000 er kørt: `supabase functions deploy notificer-foelgere --project-ref lkifkrexeldimmghnsie --use-api`.
+
 ## Betalingsformularen vises ikke på bidhamr.dk (19. okt. 2026) – tjek Stripe-nøglen i Vercel
 Lokalt prod-build med prods CSP virker, så fejlen ligger med stor sandsynlighed i Vercel-buildet: `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` bygges ind ved `next build`, og mangler den i buildet, forbliver "Betal"-knappen grå.
 - **Vercel → Project → Settings → Environment Variables:** `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` skal have flueben ved **Production** (ikke kun Preview/Development). Navnet skal stå præcis sådan, og værdien skal starte med `pk_test_` (samme konto som `STRIPE_SECRET_KEY`). Ingen anførselstegn og intet mellemrum.
