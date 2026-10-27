@@ -1375,6 +1375,7 @@ export const FIRMA_ABONNEMENT = {
   introPlanlagt: (procent: number, maaneder: number, efterGratis: boolean) =>
     `Du får ${procent} % rabat i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}${efterGratis ? " fra din første betaling" : ""}. Derefter betaler du pakkens almindelige pris.`,
   // Butik/Pro: første måned til halv pris (Filip, 27. okt. 2026).
+  halvPrisIDag: (ekskl: string, inkl: string) => `I dag betaler du ${ekskl} + moms (${inkl} i alt) for din første måned`,
   halvPrisTekst: (fuld: string) => `Din første måned koster halv pris. Fra næste måned betaler du ${fuld}.`,
   introPris: (pris: string) => `Med rabatten betaler du ${pris} om måneden + moms.`,
   kortTitel: "Dit betalingskort",

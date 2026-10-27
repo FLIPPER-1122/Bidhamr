@@ -101,7 +101,15 @@ Betalings-cron'en (hvert 5. min) markeres som fejlet, når et pengetrin fejler; 
   - Overvej også `Review if :amount_in_dkk: > 5000 and not :is_3d_secure_authenticated:` (store beløb uden 3D Secure til manuel gennemgang - et åbent review stopper udbetalingen i koden).
   - Behold Stripes indbyggede regler (bl.a. "Block if :risk_level: = 'highest'" og blokering ved fejlet 3D Secure). MobilePay, Revolut Pay og Apple Pay har ikke 3D Secure - bloker dem ikke med en 3DS-regel (Link tilbydes ikke, 20. okt. 2026). Google Pay: kort i Google Wallet på telefonen (DPAN) har ikke 3D Secure, men et kort, der kun er gemt i Chrome/Google-kontoen (Googles "PAN_ONLY"/FPAN), behandles som et kort og kan få en 3D Secure-udfordring (docs.stripe.com/google-pay, "Liability shift").
   - Testet i testmiljøet 11. okt. 2026: med `'any'` gav både 4000 0000 0000 3055 og 4242 4242 4242 4242 `requires_action` (3D Secure-vinduet i Payment Element); uden gav 3055 `succeeded`.
-- [ ] Billing (erhverv): Smart Retries, fakturaindstillinger (firmanavn, CVR, nummerering), kundeportal, e-mail-kvitteringer.
+- [ ] Billing (erhverv): Smart Retries, kundeportal, e-mail-kvitteringer.
+- [ ] **Fakturaindstillinger (erhvervsabonnementet er en B2B-faktura med moms)** - se `STRIPE-ERHVERV-NOTE.md`, "Fakturaen":
+  - [ ] Firmanavn (Public/Legal business name) og adresse (Settings -> Business).
+  - [ ] BidHamrs CVR som "Default account tax ID" (eu_vat `DK<CVR>`, Settings -> Billing -> Invoices).
+  - [ ] Logo og farve (Settings -> Branding).
+  - [ ] Fakturanummer-præfiks (fx `BH-`) og fortløbende nummerering for kontoen (Settings -> Billing -> Invoices -> Invoice numbering).
+  - [ ] Default footer med firmanavn, CVR, adresse og e-mail.
+  - [ ] Lav én testfaktura i live og tjek "Fra" (BidHamr, CVR) og "Faktura til" (firmanavn, adresse, CVR-felt og "DK VAT").
+  - Koden sætter selv kundens navn, adresse, momsnummer og CVR-feltet og låser abonnementerne til kun kort (`payment_settings.payment_method_types = ['card']`).
 - [ ] Webhook-endpoints oprettet i **live** med de samme events som i C. Noter signatur-hemmelighederne.
 
 ### E2. Ryd testdata i produktionsdatabasen (kræver Filips "ja" – skriv det som en migration)

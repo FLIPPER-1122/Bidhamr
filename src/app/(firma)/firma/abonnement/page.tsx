@@ -170,7 +170,9 @@ export default async function FirmaAbonnement({
           </p>
           {prisNu != null && (
             <p className="mt-3 text-[20px] font-semibold text-tekst">
-              {B.prisMedMoms(krFraOere(oereInklMoms(prisNu).ekskl), krFraOere(oereInklMoms(prisNu).inkl))}
+              {halvPris && !(intro && introPlanlagt)
+                ? FA.halvPrisIDag(krFraOere(oereInklMoms(prisNu).ekskl), krFraOere(oereInklMoms(prisNu).inkl))
+                : B.prisMedMoms(krFraOere(oereInklMoms(prisNu).ekskl), krFraOere(oereInklMoms(prisNu).inkl))}
             </p>
           )}
           {intro && introPlanlagt && (

@@ -47,6 +47,15 @@
 //  15. Introkupon fra Checkout, der ikke rammer præcis N betalte måneder,
 //      sættes på igen ved spejlingen.
 //
+// Femte del (egne test clocks, 20261102070000 - regel for måned 1):
+//  M1. Start: første måned gratis, fuld pris fra måned 2; kun kort; CVR-felt.
+//  M2. Butik: 50 % i måned 1, fuld pris fra måned 2; nedgradering til Start
+//      i måned 1 gælder fra måned 2.
+//  M3. Start opgraderet til Pro i den gratis måned: 50 % af Pro nu, fuld pris
+//      fra næste måned.
+//  M4. Introrabat på Start og Butik: 6 x 50 %, ingen gratis måned.
+//  M5. Tidligere CVR med og uden særaftale; CVR-skift kan ikke omgå reglen.
+//
 // Fjerde del (kun databasen, 20261102050000):
 //  16. Særpris og introrabat kan ikke kombineres: begge veje, fjerne er altid
 //      tilladt, og en udløbet introrabat blokerer ikke.
@@ -143,9 +152,10 @@ beforeAll(async () => {
       proeve_maaneder: 1,
       proeve_slut: null,
       proeve_givet_kl: null,
-      // Ingen ventende gratis måneder fra en tidligere kørsel (de ville blive
-      // lagt på ved start - afstemGratisVedStart, 20261102030000).
-      proeve_ekstra_ventende: 0,
+      // 1 gratis måned som særaftale fra staff (ny regel for måned 1, Filip
+      // 27. okt. 2026: en introrabat gælder ellers fra måned 1 uden gratis
+      // måned). Så testes gratis periode + introrabat efter den.
+      proeve_ekstra_ventende: 1,
       proeve_ekstra_sub: null,
       proeve_ekstra_sub_antal: 0,
       gratis_afstemt_sub: null,
@@ -226,13 +236,13 @@ afterAll(async () => {
 }, 120_000);
 
 describe("firmapakker mod Stripes testmiljø", () => {
-  it("1-2. Checkout med 1 gratis måned oprettes (og lukkes igen)", async () => {
+  it("1-2. Checkout med 1 gratis måned (særaftale) og introrabat oprettes (og lukkes igen)", async () => {
     const svar = await startBetaling(brugerId, "https://test.bidhamr.dk");
     expect(svar).toMatchObject({ ok: true });
     const sessioner = await stripe.checkout.sessions.list({ customer: kunde, status: "open", limit: 5 });
     expect(sessioner.data).toHaveLength(1);
     const s = sessioner.data[0];
-    expect(s.metadata).toMatchObject({ firma_id: FIRMA, pakke_id: START, gratis_maaneder: "1" });
+    expect(s.metadata).toMatchObject({ firma_id: FIRMA, pakke_id: START, gratis_maaneder: "1", gratis_ekstra: "1", gratis_velkomst: "0", maaned1: "ingen" });
     expect(s.payment_method_collection).toBe("always");
     // Første betaling i dag er 0 kr. (gratis måned).
     expect(s.amount_total).toBe(0);
@@ -252,14 +262,15 @@ describe("firmapakker mod Stripes testmiljø", () => {
     // Som Checkout: kortet gemmes som standard, abonnementet starter med trial_end.
     const pm = await stripe.paymentMethods.attach("pm_card_visa", { customer: kunde });
     await stripe.customers.update(kunde, { invoice_settings: { default_payment_method: pm.id } });
-    const f = await firma();
     const sub = await stripe.subscriptions.create({
       customer: kunde,
       items: [{ price: await firmaPris({ id: FIRMA, saerpris_oere: null, saerpris_pakke_id: null }, START), quantity: 1 }],
       default_tax_rates: [await sikrMomssats()],
       default_payment_method: pm.id,
-      trial_end: plusMaaneder(t0, Number(f.proeve_maaneder)),
-      metadata: { firma_id: FIRMA, pakke_id: START },
+      trial_end: plusMaaneder(t0, 1),
+      // Som startBetaling: 1 staff-måned (særaftale), ingen velkomstfordel
+      // (introrabatten gælder i stedet).
+      metadata: { firma_id: FIRMA, pakke_id: START, gratis_ekstra: "1", gratis_velkomst: "0", maaned1: "ingen", gratis_saeraftale: "ja" },
     });
     subId = sub.id;
     expect(sub.status).toBe("trialing");
@@ -282,7 +293,7 @@ describe("firmapakker mod Stripes testmiljø", () => {
     expect(kupon).toMatchObject({ percent_off: 50, duration: "repeating", duration_in_months: 6 });
   });
 
-  it("4. opgradering i den gratis periode sker med det samme uden betaling", async () => {
+  it("4. opgradering i en gratis periode fra staff (særaftale) sker med det samme uden betaling", async () => {
     const svar = await skiftPakkeForBruger(brugerId, BUTIK);
     expect(svar).toMatchObject({ ok: true, kode: "opgraderet" });
     const f = await firma();
@@ -675,7 +686,9 @@ async function nulstilFirma(pakke: string, ekstra: Record<string, unknown> = {})
     })
     .eq("id", FIRMA);
   if (error) throw new Error(error.message);
-  await db.from("firma_regninger").update({ status: "annulleret" }).eq("firma_id", FIRMA).eq("status", "betalt");
+  // Betalte og refunderede regninger fra tidligere tests må ikke tælle som
+  // "har betalt" (velkomstfordelen er brugt, 20261102070000).
+  await db.from("firma_regninger").update({ status: "annulleret" }).eq("firma_id", FIRMA).in("status", ["betalt", "krediteret"]);
   await db.from("firma_pakkeskift").update({ status: "annulleret" }).eq("firma_id", FIRMA).in("status", ["afventer_betaling", "planlagt"]);
 }
 
@@ -707,9 +720,10 @@ describe("gratis måneder under en åben Checkout og introrabat mod en planlagt 
   let gammelKupon = "";
 
   beforeAll(async () => {
-    // Nyt firma (velkomstperioden er ikke brugt) med introrabat 50 % i 3
-    // betalte måneder efter den gratis periode.
-    await nulstilFirma(BUTIK);
+    // Nyt firma med introrabat 50 % i 3 betalte måneder og 1 gratis måned
+    // som særaftale (ny regel for måned 1: introrabatten erstatter
+    // velkomstfordelen, så den gratis periode her er staffs).
+    await nulstilFirma(BUTIK, { proeve_ekstra_ventende: 1 });
     expect(
       await rpc("erhverv_firma_intro_gem", {
         p_staff: SAELGERROLLE,
@@ -736,11 +750,12 @@ describe("gratis måneder under en åben Checkout og introrabat mod en planlagt 
     expect(aabne.data).toHaveLength(1);
     const sess = aabne.data[0];
     gammelMeta = { ...(sess.metadata ?? {}) };
-    expect(gammelMeta).toMatchObject({ gratis_maaneder: "1", gratis_velkomst: "1", gratis_ekstra: "0" });
+    expect(gammelMeta).toMatchObject({ gratis_maaneder: "1", gratis_velkomst: "0", gratis_ekstra: "1", maaned1: "ingen" });
     gammelKupon = String(gammelMeta.intro_kupon);
     expect(gammelKupon).toMatch(/^bidhamr_intro_50_/);
 
-    // +2 velkomstmåneder (firmaet har ikke startet endnu).
+    // +2 måneder (firmaet har ikke startet endnu): venter altid i
+    // proeve_ekstra_ventende (20261102070000).
     expect(
       await rpc("erhverv_firma_gratis_gem", {
         p_staff: SAELGERROLLE,
@@ -751,7 +766,7 @@ describe("gratis måneder under en åben Checkout og introrabat mod en planlagt 
         p_proeve_slut: null,
         p_klik: randomUUID(),
       }),
-    ).toMatchObject({ kode: "ok", hvor: "velkomst", gratis_maaneder_ved_start: 3 });
+    ).toMatchObject({ kode: "ok", hvor: "ventende", gratis_maaneder_ved_start: 3 });
     expect(await lukAabneCheckout(FIRMA)).toBe(1);
     expect((await stripe.checkout.sessions.retrieve(sess.id)).status).toBe("expired");
     // Igen: intet at lukke.
@@ -759,10 +774,13 @@ describe("gratis måneder under en åben Checkout og introrabat mod en planlagt 
   });
 
   it("13b. firmaet nåede at betale med den gamle session: de manglende måneder lægges på ved start (én gang)", async () => {
-    // Og staff gav (fx lige efter) 1 måned mere, der står som ventende.
-    await db.from("firmaer").update({ proeve_ekstra_ventende: 1 }).eq("id", FIRMA);
     // Som Checkout med den GAMLE session: 1 gratis måned, introkuponen fra
-    // sessionen og sessionens metadata.
+    // sessionen og sessionens metadata. Abonnementet oprettes EFTER sessionen
+    // (som i Checkout): uret står ellers før sessionens tidspunkt, og
+    // kuponen fra sessionen ville ikke passe - så sætter den deployede
+    // test-webhook (test.bidhamr.dk, samme testdatabase) introrabatten på
+    // igen i kapløb med testen.
+    await spol(t0 + 600);
     const f = await firma();
     const sub = await stripe.subscriptions.create({
       customer: kunde,
@@ -773,7 +791,10 @@ describe("gratis måneder under en åben Checkout og introrabat mod en planlagt 
       metadata: {
         firma_id: FIRMA,
         pakke_id: BUTIK,
-        gratis_velkomst: "1",
+        gratis_velkomst: "0",
+        gratis_ekstra: "1",
+        maaned1: "ingen",
+        gratis_saeraftale: "ja",
         intro_noegle: String(f.intro_noegle),
         intro_kupon: gammelKupon,
       },
@@ -782,16 +803,16 @@ describe("gratis måneder under en åben Checkout og introrabat mod en planlagt 
     await spol(t0 + 3600);
     await spejlAlt();
     const s = await stripe.subscriptions.retrieve(subId);
-    // 1 (sessionen) + 2 (velkomst) + 1 (ventende) = 4 gratis måneder.
-    expect(s.trial_end).toBe(plusMaaneder(plusMaaneder(t0, 1), 3));
-    expect(s.metadata).toMatchObject({ gratis_velkomst: "3", gratis_ekstra: "1" });
+    // 1 (sessionen) + 2 (givet, mens sessionen var åben) = 3 gratis måneder.
+    expect(s.trial_end).toBe(plusMaaneder(plusMaaneder(t0, 1), 2));
+    expect(s.metadata).toMatchObject({ gratis_velkomst: "0", gratis_ekstra: "3" });
     const efter = await firma();
     expect(efter).toMatchObject({
       abonnement_status: "aktiv",
       stripe_abonnement_status: "trialing",
       proeve_ekstra_ventende: 0,
       proeve_ekstra_sub: subId,
-      proeve_ekstra_sub_antal: 1,
+      proeve_ekstra_sub_antal: 3,
       gratis_afstemt_sub: subId,
       intro_status: "aktiv",
     });
@@ -809,13 +830,13 @@ describe("gratis måneder under en åben Checkout og introrabat mod en planlagt 
     expect((await firma()).proeve_ekstra_ventende).toBe(0);
   }, 180_000);
 
-  it("13c. fakturaerne: 4 gratis måneder, 3 med 50 %, så fuld pris", async () => {
+  it("13c. fakturaerne: 3 gratis måneder, 3 med 50 %, så fuld pris", async () => {
     for (const m of [2, 4, 6, 8]) await spol(plusMaaneder(t0, m) + 1800);
     const betalte = (await fakturaer()).filter((x) => x.billing_reason === "subscription_cycle");
     const halv = Math.round(99_900 * 0.5 * 1.25);
     const fuld = Math.round(99_900 * 1.25);
-    // Første betalte faktura ved trial_end (t0 + 4 md.), så 5, 6, 7 og 8 md.
-    expect(betalte.map((x) => x.total)).toEqual([halv, halv, halv, fuld, fuld]);
+    // Første betalte faktura ved trial_end (t0 + 3 md.), så 4, 5, 6, 7 og 8 md.
+    expect(betalte.map((x) => x.total)).toEqual([halv, halv, halv, fuld, fuld, fuld]);
     await spejlAlt();
   }, 600_000);
 
@@ -1036,4 +1057,268 @@ describe("særpris og introrabat kan ikke kombineres (20261102050000)", () => {
     await db.from("firmaer").update({ pakke_id: PRO }).eq("id", FIRMA);
     expect(await rpc("erhverv_firma_intro_gem", introArgs(50))).toMatchObject({ kode: "ok" });
   });
+});
+
+// =============================================================================
+// Femte del: regel for måned 1 (Filip, 27. okt. 2026 - 20261102070000)
+//   Start: første måned gratis. Butik og Pro: første måned til halv pris,
+//   derefter fuld pris. Introrabat: 50 % i måned 1-6, ingen gratis måned.
+//   Tidligere CVR: ingen fordel - med særaftale pakkens regel.
+// =============================================================================
+const START_OERE = 49_900;
+const PRO_OERE = 199_900;
+
+// Den åbne Checkout-session, startBetaling lige har lavet (lukkes igen).
+async function nySession(): Promise<Stripe.Checkout.Session> {
+  const svar = await startBetaling(brugerId, "https://test.bidhamr.dk");
+  expect(svar).toMatchObject({ ok: true });
+  // Stripes liste kan være et øjeblik bagud lige efter oprettelsen.
+  let aabne: Stripe.ApiList<Stripe.Checkout.Session> | null = null;
+  for (let i = 0; i < 10; i++) {
+    aabne = await stripe.checkout.sessions.list({ customer: kunde, status: "open", limit: 5, expand: ["data.discounts"] });
+    if (aabne.data.length) break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  expect(aabne!.data).toHaveLength(1);
+  const s = aabne!.data[0];
+  if ("url" in svar) expect(s.url).toBe(svar.url);
+  await stripe.checkout.sessions.expire(s.id);
+  return s;
+}
+
+function kuponer(s: Stripe.Checkout.Session): string[] {
+  return (s.discounts ?? []).map((d) => (typeof d.coupon === "string" ? d.coupon : (d.coupon?.id ?? "")));
+}
+
+// Som Checkout: abonnementet med sessionens gratis periode, kupon og metadata.
+async function abonnementSomCheckout(s: Stripe.Checkout.Session, pakke: string): Promise<Stripe.Subscription> {
+  const m = s.metadata ?? {};
+  const gratis = Number(m.gratis_maaneder ?? 0);
+  const k = kuponer(s);
+  // Abonnementet oprettes efter sessionen (som i Checkout).
+  await spol(t0 + 600);
+  const sub = await stripe.subscriptions.create({
+    customer: kunde,
+    items: [{ price: await firmaPris({ id: FIRMA, saerpris_oere: null, saerpris_pakke_id: null }, pakke), quantity: 1 }],
+    default_tax_rates: [await sikrMomssats()],
+    ...(gratis > 0 ? { trial_end: plusMaaneder(t0, gratis) } : {}),
+    ...(k.length ? { discounts: [{ coupon: k[0] }] } : {}),
+    metadata: {
+      firma_id: FIRMA,
+      pakke_id: pakke,
+      gratis_velkomst: m.gratis_velkomst ?? "0",
+      maaned1: m.maaned1 ?? "",
+      ...(m.velkomst_kupon ? { velkomst_kupon: m.velkomst_kupon } : {}),
+      ...(m.intro_noegle ? { intro_noegle: m.intro_noegle, intro_kupon: m.intro_kupon ?? "" } : {}),
+    },
+  });
+  subId = sub.id;
+  return sub;
+}
+
+// Beløb ekskl. moms på abonnementets fakturaer med et beløb (i rækkefølge).
+async function beloeb(): Promise<number[]> {
+  return (await fakturaer()).filter((x) => x.total > 0).map((x) => x.total_excluding_tax ?? -1);
+}
+
+async function nulstilSkiftGraense(): Promise<void> {
+  await db.from("rate_limits").delete().eq("noegle", `firma_skift_pakke:${brugerId}`);
+}
+
+describe("regel for måned 1 (20261102070000)", () => {
+  afterAll(async () => {
+    if (subId) await stripe.subscriptions.cancel(subId).catch(() => {});
+    if (ur) await stripe.testHelpers.testClocks.del(ur.id).catch(() => {});
+    await nulstilFirma(START);
+    await db.from("firmaer").update({ stripe_customer_id: null, intro_procent: null, intro_maaneder: null, intro_fra: null, intro_status: null, intro_noegle: null, intro_coupon_id: null, intro_til: null }).eq("id", FIRMA);
+  }, 120_000);
+
+  it("M1. Start: første måned gratis (0 kr. i Checkout), fuld pris fra måned 2; abonnementet låses til kun kort", async () => {
+    await nulstilFirma(START, { intro_procent: null, intro_maaneder: null, intro_fra: null, intro_status: null, intro_til: null });
+    await nytUr("BidHamr maaned1 start");
+    expect(await rpc("erhverv_maaned1", { p_firma: FIRMA })).toBe("gratis");
+    const s = await nySession();
+    expect(s.metadata).toMatchObject({ maaned1: "gratis", gratis_maaneder: "1", gratis_velkomst: "1", gratis_ekstra: "0" });
+    expect(s.amount_total).toBe(0);
+    expect(kuponer(s)).toEqual([]);
+    expect(s.payment_method_types).toEqual(["card"]);
+
+    await abonnementSomCheckout(s, START);
+    await spol(t0 + 3600);
+    await spejlAlt();
+    expect(await firma()).toMatchObject({ abonnement_status: "aktiv", stripe_abonnement_status: "trialing", kort_laast_sub: subId });
+    const sub = await stripe.subscriptions.retrieve(subId);
+    expect(sub.payment_settings?.payment_method_types).toEqual(["card"]);
+    // Velkomstfordelen er brugt (gratis periode givet).
+    expect(await rpc("erhverv_maaned1", { p_firma: FIRMA })).toBe("ingen");
+
+    await spol(plusMaaneder(t0, 1) + 1800);
+    await spol(plusMaaneder(t0, 2) + 1800);
+    expect(await beloeb()).toEqual([START_OERE, START_OERE]);
+    // Fakturaen viser firmaets CVR som eget felt (kunden er synket).
+    // Ny version (unik idempotency key - testens kunde er ny hver gang).
+    const version = 1_000 + Math.floor(Math.random() * 1_000_000);
+    await db.from("firmaer").update({ stripe_kunde_version: version }).eq("id", FIRMA);
+    const f = await firma();
+    expect(await synkKundeStripe(FIRMA, version)).toBe("ok");
+    const k = (await stripe.customers.retrieve(kunde)) as Stripe.Customer;
+    expect(k.invoice_settings.custom_fields).toEqual([{ name: "CVR", value: String(f.cvr) }]);
+  }, 300_000);
+
+  it("M2. Butik: første måned til halv pris (engangskupon), fuld pris fra måned 2; nedgradering til Start i måned 1 gælder fra måned 2", async () => {
+    await nulstilFirma(BUTIK);
+    await nytUr("BidHamr maaned1 butik");
+    expect(await rpc("erhverv_maaned1", { p_firma: FIRMA })).toBe("halv");
+    const s = await nySession();
+    expect(s.metadata).toMatchObject({ maaned1: "halv", gratis_maaneder: "0", velkomst_kupon: "bidhamr_velkomst_50_once" });
+    expect(kuponer(s)).toEqual(["bidhamr_velkomst_50_once"]);
+    expect(s.amount_subtotal).toBe(BUTIK_OERE);
+    expect(s.total_details?.amount_discount).toBe(BUTIK_OERE / 2);
+    const kupon = await stripe.coupons.retrieve("bidhamr_velkomst_50_once");
+    expect(kupon).toMatchObject({ percent_off: 50, duration: "once", metadata: { bidhamr: "velkomst" } });
+
+    await abonnementSomCheckout(s, BUTIK);
+    await spol(t0 + 3600);
+    await spejlAlt();
+    expect(await firma()).toMatchObject({ abonnement_status: "aktiv", stripe_abonnement_status: "active" });
+    expect(await beloeb()).toEqual([BUTIK_OERE / 2]);
+    // Fordelen er brugt - en ny Checkout (fx efter en mislykket betaling) får den ikke igen.
+    expect(await rpc("erhverv_maaned1", { p_firma: FIRMA })).toBe("ingen");
+
+    // Nedgradering i måned 1: Butik resten af måned 1 (betalt med 50 %), Start
+    // fra måned 2 til fuld pris - ingen refusion, ingen gratis Start-måned.
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, START)).toMatchObject({ ok: true, kode: "nedgradering_planlagt" });
+    await spol(plusMaaneder(t0, 1) + 1800);
+    await spejlAlt();
+    await spol(plusMaaneder(t0, 2) + 1800);
+    expect(await beloeb()).toEqual([BUTIK_OERE / 2, START_OERE, START_OERE]);
+    expect((await firma()).pakke_id).toBe(START);
+  }, 300_000);
+
+  it("M3. Start opgraderet til Pro i den gratis måned: den gratis periode slutter, Pro koster 50 % nu og fuld pris fra næste måned", async () => {
+    await nulstilFirma(START);
+    await nytUr("BidHamr maaned1 start-pro");
+    const s = await nySession();
+    await abonnementSomCheckout(s, START);
+    await spol(t0 + 3600);
+    await spejlAlt();
+    const t1 = t0 + 10 * 86_400;
+    await spol(t1);
+
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, PRO)).toMatchObject({ ok: true, kode: "opgraderet" });
+    const sub = await stripe.subscriptions.retrieve(subId);
+    expect(sub.status).toBe("active");
+    expect(sub.items.data[0].price).toMatchObject({ unit_amount: PRO_OERE, metadata: { pakke_id: PRO } });
+    expect(sub.metadata.skift_id ?? "").toBe("");
+    const f = await firma();
+    expect(f).toMatchObject({ pakke_id: PRO, abonnement_status: "aktiv", stripe_abonnement_status: "active" });
+    // Pro aldrig gratis: 50 % af Pro nu.
+    expect(await beloeb()).toEqual([PRO_OERE / 2]);
+    const { data: skift } = await db
+      .from("firma_pakkeskift")
+      .select("status, stripe_invoice_id")
+      .eq("firma_id", FIRMA)
+      .eq("til_pakke_id", PRO)
+      .order("oprettet_kl", { ascending: false })
+      .limit(1)
+      .single();
+    expect(skift).toMatchObject({ status: "gennemfoert" });
+    const { data: regning } = await db
+      .from("firma_regninger")
+      .select("status, type, beloeb_oere")
+      .eq("stripe_invoice_id", String(skift!.stripe_invoice_id))
+      .single();
+    expect(regning).toMatchObject({ status: "betalt", type: "abonnement" });
+
+    // Webhooken igen: intet sker dobbelt.
+    await spejlAlt();
+    expect((await firma()).pakke_id).toBe(PRO);
+    await spol(plusMaaneder(t1, 1) + 1800);
+    expect(await beloeb()).toEqual([PRO_OERE / 2, PRO_OERE]);
+  }, 300_000);
+
+  for (const [navn, pakke, oere] of [
+    ["Start", START, START_OERE],
+    ["Butik", BUTIK, BUTIK_OERE],
+  ] as const) {
+    it(`M4. introrabat på ${navn}: 50 % i måned 1-6 (ingen gratis måned), fuld pris fra måned 7`, async () => {
+      await nulstilFirma(pakke);
+      expect(
+        await rpc("erhverv_firma_intro_gem", {
+          p_staff: SAELGERROLLE,
+          p_firma: FIRMA,
+          p_procent: 50,
+          p_maaneder: 6,
+          p_fra: "efter_gratis",
+          p_begrundelse: `Stripe-test: introrabat ${navn}`,
+        }),
+      ).toMatchObject({ kode: "ok" });
+      await nytUr(`BidHamr maaned1 intro ${navn}`);
+      expect(await rpc("erhverv_maaned1", { p_firma: FIRMA })).toBe("ingen");
+      const s = await nySession();
+      expect(s.metadata).toMatchObject({ maaned1: "ingen", gratis_maaneder: "0", intro_kupon: "bidhamr_intro_50_6" });
+      expect(kuponer(s)).toEqual(["bidhamr_intro_50_6"]);
+      expect(s.total_details?.amount_discount).toBe(oere / 2);
+
+      await abonnementSomCheckout(s, pakke);
+      await spol(t0 + 3600);
+      await spejlAlt();
+      expect((await firma()).intro_status).toBe("aktiv");
+      for (const m of [2, 4, 6, 7]) await spol(plusMaaneder(t0, m) + 1800);
+      const h = oere / 2;
+      expect(await beloeb()).toEqual([h, h, h, h, h, h, oere, oere]);
+      await db.from("firmaer").update({ intro_procent: null, intro_maaneder: null, intro_fra: null, intro_status: null, intro_noegle: null, intro_coupon_id: null, intro_til: null }).eq("id", FIRMA);
+    }, 600_000);
+  }
+
+  it("M5. tidligere CVR: ingen fordel uden særaftale; med særaftale pakkens regel; et CVR-skift bagefter kan ikke omgå reglen", async () => {
+    await nulstilFirma(BUTIK, { proeve_maaneder: 0 });
+    await nytUr("BidHamr maaned1 tidligere-cvr");
+    expect(await rpc("erhverv_maaned1", { p_firma: FIRMA })).toBe("ingen");
+    let s = await nySession();
+    expect(s.metadata).toMatchObject({ maaned1: "ingen", gratis_maaneder: "0" });
+    expect(kuponer(s)).toEqual([]);
+    expect(s.total_details?.amount_discount ?? 0).toBe(0);
+    expect(s.amount_subtotal).toBe(BUTIK_OERE);
+
+    // Særaftale (proeve_maaneder = 1, som erhverv_firma_opret giver den).
+    await db.from("firmaer").update({ proeve_maaneder: 1 }).eq("id", FIRMA);
+    s = await nySession();
+    expect(s.metadata).toMatchObject({ maaned1: "halv" });
+    expect(kuponer(s)).toEqual(["bidhamr_velkomst_50_once"]);
+    await db.from("firmaer").update({ pakke_id: START }).eq("id", FIRMA);
+    s = await nySession();
+    expect(s.metadata).toMatchObject({ maaned1: "gratis", gratis_maaneder: "1" });
+    expect(s.amount_total).toBe(0);
+
+    // CVR'et rettes til et CVR, der har haft abonnement før: fordelen fjernes,
+    // og både gammelt og nyt CVR logges.
+    const gammelt = String((await firma()).cvr);
+    const tidligere = "24256790";
+    const svar = await rpc("erhverv_firma_opdater", { p_staff: SAELGERROLLE, p_firma: FIRMA, p_cvr: tidligere });
+    try {
+      expect(svar).toMatchObject({ kode: "ok", velkomst_fjernet: true });
+      expect((await firma()).proeve_maaneder).toBe(0);
+      expect(await rpc("erhverv_maaned1", { p_firma: FIRMA })).toBe("ingen");
+      const { data: log } = await db
+        .from("moderation_log")
+        .select("aarsag")
+        .eq("maal_id", FIRMA)
+        .ilike("aarsag", `%CVR ændret: ${gammelt} → ${tidligere}%`)
+        .limit(1);
+      expect(log?.length).toBe(1);
+    } finally {
+      const tilbage = await rpc("erhverv_firma_opdater", { p_staff: SAELGERROLLE, p_firma: FIRMA, p_cvr: gammelt });
+      expect(tilbage).toMatchObject({ kode: "ok" });
+    }
+    const { data: log2 } = await db
+      .from("moderation_log")
+      .select("aarsag")
+      .eq("maal_id", FIRMA)
+      .ilike("aarsag", `%CVR ændret: ${tidligere} → ${gammelt}%`)
+      .limit(1);
+    expect(log2?.length).toBe(1);
+  }, 300_000);
 });

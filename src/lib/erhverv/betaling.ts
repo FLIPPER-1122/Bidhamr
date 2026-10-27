@@ -2058,7 +2058,11 @@ async function laasKunKort(firmaId: string, sub: Stripe.Subscription): Promise<"
     if (sub.pending_update) return "venter";
     await stripe().subscriptions.update(
       sub.id,
-      { payment_settings: { payment_method_types: ["card"] } },
+      {
+        payment_settings: {
+          payment_method_types: ["card"],
+        },
+      },
       { idempotencyKey: idempotensNoegle.kortLaas(sub.id) },
     );
   }

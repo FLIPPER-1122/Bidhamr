@@ -10,6 +10,9 @@ import {
   introGaelder,
   saerprisGaelder,
   velkomstMaanederVedOprettelse,
+  checkoutPlan,
+  erKunVelkomstGratis,
+  maaned1Regel,
   INTRO_MARGIN_SEK,
   introKuponMaaneder,
   introKuponMaanederCheckout,
@@ -319,5 +322,32 @@ describe("pakker og kvote", () => {
       "Du har oprettet 10 af 10 auktioner i denne måned. Du kan oprette den næste den 1. november.",
     );
     expect(erhvervFejlTekst("erhverv_kvote: noget andet", "BHE03")).toBe(ERHVERV_FEJL.kvote);
+  });
+});
+
+describe("regel for måned 1 (Filip, 27. okt. 2026)", () => {
+  it("Start gratis, Butik/Pro halv pris; ingen fordel uden ret eller med introrabat", () => {
+    expect(maaned1Regel({ pakke: "gratis", velkomst: true, introGaelder: false })).toBe("gratis");
+    expect(maaned1Regel({ pakke: "halv", velkomst: true, introGaelder: false })).toBe("halv");
+    expect(maaned1Regel({ pakke: "halv", velkomst: false, introGaelder: false })).toBe("ingen");
+    expect(maaned1Regel({ pakke: "gratis", velkomst: true, introGaelder: true })).toBe("ingen");
+  });
+  it("Checkout-plan: Start trial, Butik/Pro engangskupon - staff-måneder erstatter 50 %", () => {
+    expect(checkoutPlan({ maaned1: "gratis", velkomstMaaneder: 1, ekstra: 0 })).toEqual({ velkomstGratis: 1, ekstra: 0, halvPris: false });
+    expect(checkoutPlan({ maaned1: "gratis", velkomstMaaneder: 3, ekstra: 2 })).toEqual({ velkomstGratis: 1, ekstra: 2, halvPris: false });
+    expect(checkoutPlan({ maaned1: "halv", velkomstMaaneder: 1, ekstra: 0 })).toEqual({ velkomstGratis: 0, ekstra: 0, halvPris: true });
+    expect(checkoutPlan({ maaned1: "halv", velkomstMaaneder: 1, ekstra: 1 })).toEqual({ velkomstGratis: 0, ekstra: 1, halvPris: false });
+    expect(checkoutPlan({ maaned1: "ingen", velkomstMaaneder: 1, ekstra: 0 })).toEqual({ velkomstGratis: 0, ekstra: 0, halvPris: false });
+    // Butik/Pro får aldrig gratis måneder uden en særaftale.
+    for (const v of [0, 1, 5]) expect(checkoutPlan({ maaned1: "halv", velkomstMaaneder: v, ekstra: 0 }).velkomstGratis).toBe(0);
+  });
+  it("kun Starts velkomstmåned (ingen særaftale) gør et skift op betalingspligtigt", () => {
+    expect(erKunVelkomstGratis({ maaned1: "gratis" })).toBe(true);
+    expect(erKunVelkomstGratis({ maaned1: "gratis", gratis_ekstra: "0" })).toBe(true);
+    expect(erKunVelkomstGratis({ maaned1: "gratis", gratis_ekstra: "1" })).toBe(false);
+    expect(erKunVelkomstGratis({ maaned1: "gratis", gratis_saeraftale: "ja" })).toBe(false);
+    expect(erKunVelkomstGratis({ maaned1: "ingen" })).toBe(false);
+    expect(erKunVelkomstGratis({})).toBe(false);
+    expect(erKunVelkomstGratis(null)).toBe(false);
   });
 });
