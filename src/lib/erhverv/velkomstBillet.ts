@@ -12,8 +12,10 @@ import "server-only";
 // Mail-scannere, der åbner linket først, bruger derfor ikke noget op.
 //
 // Billetten er ugyldig, når den er udløbet, når staff har sendt en ny (den
-// gamle annulleres), eller når firmaet har logget ind (så bruges "Glemt
-// adgangskode"). Kun sha256-hashen gemmes i databasen.
+// gamle annulleres), når knappen på /bekraeft er trykket, og login er lykkedes
+// (brugt_kl, sat af /auth/callback - 20261102060000), eller når firmaet har
+// logget ind på anden vis (så bruges "Glemt adgangskode"). Kun sha256-hashen
+// gemmes i databasen.
 
 import { createHash, randomBytes } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -69,6 +71,28 @@ export async function udstedVelkomstBillet(
   return sideUrl(`/auth/velkomst?b=${billet}`);
 }
 
+// Markerer firmaets aktive velkomstbilletter som brugt (brugt_kl,
+// 20261102060000). Kaldes af /auth/callback, når knappen på /bekraeft er
+// trykket fra et velkomstlink, og login er lykkedes. Herefter kan billetten
+// ikke lave flere friske links (heller ikke hvis mailen videresendes).
+// Kaster aldrig - fejler det, gælder last_sign_in_at-tjekket stadig.
+export async function markerVelkomstBilletBrugt(admin: Admin, brugerId: string): Promise<void> {
+  try {
+    const { error } = await admin
+      .from("firma_velkomst_billetter")
+      .update({ brugt_kl: new Date().toISOString() })
+      .eq("bruger_id", brugerId)
+      .is("brugt_kl", null)
+      .is("annulleret_kl", null);
+    // Tabellen eller kolonnen findes ikke endnu (migrationen er ikke kørt).
+    if (error && !tabelMangler(error) && error.code !== "42703" && error.code !== "PGRST204") {
+      console.error("firma_velkomst_billetter (brugt):", error.code, error.message);
+    }
+  } catch (err) {
+    console.error("firma_velkomst_billetter (brugt):", err);
+  }
+}
+
 export type VelkomstOpslag =
   | { kode: "ok"; email: string }
   | { kode: "ugyldig" | "udloebet" | "logget_ind" };
@@ -77,14 +101,25 @@ export type VelkomstOpslag =
 // har aldrig logget ind - så må der laves et frisk Supabase-link.
 export async function slaaVelkomstBilletOp(admin: Admin, billet: string): Promise<VelkomstOpslag> {
   if (!erVelkomstBillet(billet)) return { kode: "ugyldig" };
+  // "*": brugt_kl findes først efter 20261102060000 (service role - ingen
+  // kolonne-grants at tage hensyn til).
   const { data, error } = await admin
     .from("firma_velkomst_billetter")
-    .select("id, bruger_id, udloeber_kl, annulleret_kl, aabnet_antal")
+    .select("*")
     .eq("token_hash", hash(billet))
-    .maybeSingle<{ id: string; bruger_id: string; udloeber_kl: string; annulleret_kl: string | null; aabnet_antal: number }>();
+    .maybeSingle<{
+      id: string;
+      bruger_id: string;
+      udloeber_kl: string;
+      annulleret_kl: string | null;
+      aabnet_antal: number;
+      brugt_kl?: string | null;
+    }>();
   if (tabelMangler(error)) return { kode: "ugyldig" };
   if (error) throw new Error(`firma_velkomst_billetter: ${error.message}`);
   if (!data) return { kode: "ugyldig" };
+  // Brugt: firmaet har trykket på knappen på /bekraeft og er logget ind.
+  if (data.brugt_kl) return { kode: "logget_ind" };
   if (data.annulleret_kl || Date.parse(data.udloeber_kl) <= Date.now()) return { kode: "udloebet" };
 
   const { data: auth, error: authFejl } = await admin.auth.admin.getUserById(data.bruger_id);

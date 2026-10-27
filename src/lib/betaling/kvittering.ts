@@ -75,7 +75,8 @@ export async function bygKvittering(
   const [{ data: a }, { data: t }, { data: u }, { data: fm }] = await Promise.all([
     admin.from("auctions").select("titel").eq("id", b.auction_id).maybeSingle<{ titel: string | null }>(),
     admin.from("trades").select("afhentning").eq("id", tradeId).maybeSingle<{ afhentning: boolean | null }>(),
-    admin.from("users").select("navn").eq("id", modpartId).maybeSingle<{ navn: string | null }>(),
+    // Modparten med kort navn som i resten af handlen (users.visningsnavn).
+    admin.from("users").select("visningsnavn").eq("id", modpartId).maybeSingle<{ visningsnavn: string | null }>(),
     // Firmasalg: sælgeren har en firmakonto (firmaer-rækken findes kun for
     // erhvervskonti). Firmaet sender selv fakturaen på varen.
     admin
@@ -86,7 +87,7 @@ export async function bygKvittering(
   ]);
   const firma = fm ? { firmanavn: fm.firmanavn, cvr: fm.cvr } : null;
   const titel = a?.titel ?? "Vare";
-  const modpartNavn = u?.navn?.trim() || (rolle === "koeber" ? "Sælgeren" : "Køberen");
+  const modpartNavn = u?.visningsnavn?.trim() || (rolle === "koeber" ? "Sælgeren" : "Køberen");
   const afhentning = t?.afhentning === true;
 
   if (rolle === "koeber") {

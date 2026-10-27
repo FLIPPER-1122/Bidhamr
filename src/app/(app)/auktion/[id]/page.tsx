@@ -14,7 +14,7 @@ import SaelgerAuktionHandlinger from "@/components/SaelgerAuktionHandlinger";
 import SpoergSaelger from "@/components/SpoergSaelger";
 import SaetOpIgenKnap from "@/components/dsa/SaetOpIgenKnap";
 import SpaerByder, { type ByderValg } from "@/components/tryghed/SpaerByder";
-import { kortNavn } from "@/lib/kortNavn";
+import { visNavn } from "@/lib/kortNavn";
 import { standNavn } from "@/lib/stand";
 import { getStaffRole, staffRolleTilVisning } from "@/lib/adminAuth";
 import { adminUrl } from "@/lib/adminVaert";
@@ -131,9 +131,9 @@ export default async function AuktionPage({
   // Sælgerens navn hentes sammen med resten nedenfor (Promise.all).
   const saelgerOpslag = supabase
     .from("users")
-    .select("navn, mitid_verificeret_kl")
+    .select("visningsnavn, mitid_verificeret_kl")
     .eq("id", auktion.bruger_id)
-    .maybeSingle<{ navn: string | null; mitid_verificeret_kl: string | null }>();
+    .maybeSingle<{ visningsnavn: string | null; mitid_verificeret_kl: string | null }>();
 
   // "Byder 1", "Byder 2" ... i den raekkefoelge, de foerst bød. Egne bud vises som "Dig".
   const byderNr = new Map<string, number>();
@@ -345,7 +345,7 @@ export default async function AuktionPage({
       .maybeSingle<{ kunst_kontrol: string | null }>();
     kunstAfventer = k?.kunst_kontrol === "afventer";
   }
-  const sælgerNavn = kortNavn(saelger?.navn ?? null, erhvervAuktion);
+  const sælgerNavn = visNavn(saelger?.visningsnavn);
   const spoergsmaal = (Array.isArray(spoergsmaalData) ? spoergsmaalData : []) as SpoergsmaalVisning[];
 
   const varenummer = auktion.id.slice(-6).toUpperCase();

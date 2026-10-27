@@ -44,8 +44,10 @@ export default async function BetalPage({ params }: { params: Promise<{ trade_id
 
   const [{ data: auktion }, { data: saelger }, { data: mig }, betaling, checkoutSvar, saelgerHarAdresse] = await Promise.all([
     supabase.from("auctions").select("titel, billeder, erhverv").eq("id", handel.auction_id).maybeSingle(),
-    supabase.from("users").select("navn").eq("id", handel.seller_id).maybeSingle<{ navn: string | null }>(),
-    supabase.from("users").select("navn").eq("id", user.id).maybeSingle<{ navn: string | null }>(),
+    // Andre brugere ser kun det korte navn (users.visningsnavn); eget fulde
+    // navn (forudfyldt leveringsnavn) kun via mit_navn() (20261102060000).
+    supabase.from("users").select("visningsnavn").eq("id", handel.seller_id).maybeSingle<{ visningsnavn: string | null }>(),
+    supabase.rpc("mit_navn").maybeSingle<{ navn: string | null }>(),
     hentBetalingsstatus(handel.id),
     hentCheckoutAction(handel.id),
     // Kun ja/nej: adressen selv vises først efter betaling
@@ -71,7 +73,7 @@ export default async function BetalPage({ params }: { params: Promise<{ trade_id
   const vare = {
     titel: (auktion?.titel as string | undefined) ?? "Slettet auktion",
     billede: ((auktion?.billeder as string[] | null) ?? [])[0] ?? null,
-    saelgerNavn: saelger?.navn ?? null,
+    saelgerNavn: saelger?.visningsnavn ?? null,
     // Erhvervshandel: ingen chat med firmaet.
     erhverv: auktion?.erhverv === true,
     saelgerHarAdresse,

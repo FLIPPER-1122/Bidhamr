@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { nulstilAdgangskode } from "@/app/actions/auth";
 import { useHydreret } from "@/lib/useHydreret";
+import Turnstile from "@/components/Turnstile";
+import { CAPTCHA_MANGLER, turnstileAktiv } from "@/lib/turnstile";
 
 export default function GlemtAdgangskodePage() {
   const [email, setEmail] = useState("");
@@ -13,17 +15,26 @@ export default function GlemtAdgangskodePage() {
   const [error, setError] = useState<string | null>(null);
   const [sendt, setSendt] = useState(false);
 
+  // Turnstile (CAPTCHA) - kun når NEXT_PUBLIC_TURNSTILE_SITE_KEY er sat.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaNulstil, setCaptchaNulstil] = useState(0);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    if (turnstileAktiv() && !captchaToken) {
+      setError(CAPTCHA_MANGLER);
+      return;
+    }
+    setLoading(true);
 
     // Sendes fra serveren, saa det kan rate-limites (src/app/actions/auth.ts).
-    const svar = await nulstilAdgangskode(email);
+    const svar = await nulstilAdgangskode(email, captchaToken ?? undefined);
 
     setLoading(false);
 
     if ("fejl" in svar) {
+      setCaptchaNulstil((n) => n + 1);
       setError(svar.fejl);
       return;
     }
@@ -88,6 +99,8 @@ export default function GlemtAdgangskodePage() {
                 className="mt-1.5 h-11 w-full rounded-xl border border-kant-staerk px-4 text-[15px] text-tekst placeholder:text-pladsholder bg-white hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25"
               />
             </div>
+
+            <Turnstile handling="glemt" onToken={setCaptchaToken} nulstil={captchaNulstil} />
 
             {error && (
               <p role="alert" className="rounded-xl border border-fejl-kant bg-fejl-bg p-4 text-sm text-fejl-tekst">

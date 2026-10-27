@@ -17,6 +17,7 @@ import {
   slutterKlFraVarighed,
   valideStartpris,
   beloebForHoejtTekst,
+  auktionLoftTekst,
   type VarighedDage,
 } from "@/lib/auktionRegler";
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
@@ -436,6 +437,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         else if (insertError.code === "BHA03") besked = "Vælg varens stand.";
         else if (insertError.code === "BHA04") besked = `Titlen må højst være ${MAKS_TITEL} tegn.`;
         else if (insertError.code === "BHA05") besked = `Beskrivelsen må højst være ${MAKS_BESKRIVELSE} tegn.`;
+        // Loft for private (20261102060000): 30 nye pr. time, 200 aktive.
+        else if (auktionLoftTekst(insertError.code)) besked = auktionLoftTekst(insertError.code)!;
         else if (erhvervFejlTekst(insertError.message, insertError.code))
           besked = erhvervFejlTekst(insertError.message, insertError.code)!;
         else if (fragtFejlTekst(insertError.code)) besked = fragtFejlTekst(insertError.code)!;

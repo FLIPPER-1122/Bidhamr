@@ -796,9 +796,13 @@ export function monitorHaendelser(m: Monitor): { haendelser: WebhookHaendelse[];
   };
   const basis = { forsendelsesId: id, sporingsnummer, transportoer, tidspunkt: tid, beskrivelse: tekst };
   if (r.type) {
-    // Uden tidspunkt fra Shipmondo: nøglen uden tid, så samme besked to
-    // gange stadig er én hændelse.
-    const noegle = `shipmondo:${id}:${status}:${state}:${harTid ? tid : "uden-tid"}`;
+    // Nøglen er (forsendelse, kode, tidspunkt): samme hændelse sendt igen -
+    // også med en anden current_state - er én hændelse og gør intet anden
+    // gang. Databasen afviser desuden en dublet med det gamle nøgleformat (med
+    // state) - forsendelse_haendelser_dublet, 20261102060000. Uden tidspunkt
+    // fra Shipmondo: nøglen uden tid, så samme besked to gange stadig er én
+    // hændelse.
+    const noegle = `shipmondo:${id}:${status}:${harTid ? tid : "uden-tid"}`;
     ud.haendelser.push({ ...basis, type: r.type, noegle, raa: { ...raa, vurderes: true } });
   }
   // DANGER: markering til staff (ændrer ikke status). Én pr. status.

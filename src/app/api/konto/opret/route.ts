@@ -5,6 +5,8 @@ import { VILKAAR_VERSION } from "@/lib/vilkaar";
 import { godkendtSignupVersion } from "@/lib/vilkaarServer";
 import { opretKontoPaaServeren, renEmail, renNavn } from "@/lib/kontoOprettelse";
 import { UGYLDIG, fremmedOrigin, jsonKrop, svar } from "@/lib/mitid/appAuth";
+import { CAPTCHA_FEJL } from "@/lib/turnstile";
+import { tjekTurnstile } from "@/lib/turnstileServer";
 
 // Appen opretter konti her (docs/APP-SIGNUP.md) - aldrig med supabase.auth.signUp
 // (det afviser databasen). Samme kodevej som hjemmesidens opretKonto
@@ -16,7 +18,9 @@ import { UGYLDIG, fremmedOrigin, jsonKrop, svar } from "@/lib/mitid/appAuth";
 // POST /api/konto/opret
 //   Content-Type: application/json
 //   { "fornavn": "...", "efternavn": "...", "email": "...", "password": "...",
-//     "vilkaar_version": "<VILKAAR_VERSION>" }
+//     "vilkaar_version": "<VILKAAR_VERSION>", "captchaToken": "..." }
+//   captchaToken: Turnstile-token - kræves kun, når TURNSTILE_SECRET_KEY er
+//   sat på serveren (docs/SIKKERHED-AUTH.md).
 //
 // Svar (JSON):
 //   200 { ok: true }   ALTID ved gyldigt input - uanset om e-mailen er ny,
@@ -24,7 +28,7 @@ import { UGYLDIG, fremmedOrigin, jsonKrop, svar } from "@/lib/mitid/appAuth";
 //                      tilmelding) eller noget fejlede. Vis "Tjek din indbakke".
 //                      Samme kald igen = "Send ny kode" (højst én kodemail pr.
 //                      e-mail hvert 2. minut; inden for vinduet sendes intet).
-//   400 { fejl, kode: "ugyldig" | "fornavn" | "efternavn" | "email" | "adgangskode" | "vilkaar" }
+//   400 { fejl, kode: "ugyldig" | "fornavn" | "efternavn" | "email" | "adgangskode" | "vilkaar" | "captcha" }
 //   403 { fejl, kode: "ikke_tilladt" }   fremmed Origin (browser på et andet domæne)
 //   429 { fejl, kode: "for_mange" }
 //   503 { fejl, kode: "ikke_tilgaengelig" }   grænsen kunne ikke tjekkes (fail closed)
@@ -75,6 +79,12 @@ export async function POST(req: NextRequest) {
   const graense = await tjekGraenserLukket([["opret_ip", ip], ["gensend_email", email]]);
   if (graense === "for_mange") return svar(429, FOR_MANGE);
   if (graense === "fejl") return svar(503, IKKE_TILGAENGELIG);
+
+  // CAPTCHA (docs/SIKKERHED-AUTH.md): kun når TURNSTILE_SECRET_KEY er sat.
+  // generateLink har ingen CAPTCHA i Supabase, så serveren tjekker selv.
+  if (!(await tjekTurnstile(krop.captchaToken, ip))) {
+    return svar(400, { fejl: CAPTCHA_FEJL, kode: "captcha" });
+  }
 
   // Kaster aldrig; fejl logges i /admin/drift. Svaret er det samme uanset udfald.
   // Navn, vilkår og adgangskode gemmes IKKE her - appen sender dem igen til

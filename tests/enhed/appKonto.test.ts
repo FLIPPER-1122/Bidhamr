@@ -113,7 +113,8 @@ describe("POST /api/konto/glemt", () => {
     m.sendNulstillingsmail.mockResolvedValue({ ok: true });
     const r = await json(await glemt.POST(req("/api/konto/glemt", { email: "ida@test.bidhamr.dk" }, null)));
     expect(r).toEqual({ status: 200, body: { ok: true } });
-    expect(m.sendNulstillingsmail).toHaveBeenCalledWith(expect.anything(), "ida@test.bidhamr.dk", "127.0.0.9");
+    // 4. argument: captchaToken fra appen (ingen her).
+    expect(m.sendNulstillingsmail).toHaveBeenCalledWith(expect.anything(), "ida@test.bidhamr.dk", "127.0.0.9", undefined);
   });
 
   it("ugyldig e-mail: 400; for mange: 429; grænserne kan ikke tjekkes: 503", async () => {

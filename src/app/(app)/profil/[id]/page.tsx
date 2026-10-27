@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { kortNavn } from "@/lib/kortNavn";
+import { visNavn } from "@/lib/kortNavn";
 import { BIDHAMR_SYSTEM_ID } from "@/lib/staffChat";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import { markerBoostede } from "@/lib/boost/visning";
@@ -67,15 +67,20 @@ export async function generateMetadata({
   const supabase = await createClient();
   const [{ data: authData }, { data: profil }] = await Promise.all([
     supabase.auth.getUser(),
-    supabase.from("users").select("navn, konto_type").eq("id", id).single(),
+    // Kun det korte navn kan læses af andre (users.visningsnavn,
+    // 20261102060000); eget fulde navn via mit_navn().
+    supabase.from("users").select("visningsnavn").eq("id", id).single<{ visningsnavn: string | null }>(),
   ]);
   if (!profil) return { title: "Profil", robots: { index: false, follow: false } };
   const erEgen = authData.user?.id === id;
-  const visNavn = erEgen ? (profil.navn ?? "") : kortNavn(profil.navn, profil.konto_type === "erhverv");
   // Kun det korte navn (som på siden) - aldrig fulde navn i søgemaskiner.
-  const offentligtNavn = kortNavn(profil.navn, profil.konto_type === "erhverv");
+  const offentligtNavn = visNavn(profil.visningsnavn);
+  const egetNavn = erEgen
+    ? (await supabase.rpc("mit_navn").maybeSingle<{ navn: string | null }>()).data?.navn ?? ""
+    : null;
+  const titelNavn = egetNavn ?? offentligtNavn;
   return {
-    title: `${genitiv(visNavn)} profil`,
+    title: `${genitiv(titelNavn)} profil`,
     description: `Se ${genitiv(offentligtNavn)} auktioner og bedømmelser på BidHamr.`,
     alternates: { canonical: `/profil/${id}` },
     openGraph: { title: `${genitiv(offentligtNavn)} profil · BidHamr`, url: `/profil/${id}` },
@@ -98,7 +103,7 @@ export default async function ProfilPage({
     supabase.auth.getUser(),
     supabase
       .from("users")
-      .select("id, navn, avatar_url, oprettet, konto_type, mitid_verificeret_kl")
+      .select("id, visningsnavn, avatar_url, oprettet, konto_type, mitid_verificeret_kl")
       .eq("id", id)
       .single(),
   ]);
@@ -133,6 +138,7 @@ export default async function ProfilPage({
       { data: egneFoelgere },
       opsummering,
       egenPopulaer,
+      { data: egetNavn },
     ] = await Promise.all([
       supabase
         .from("auctions")
@@ -160,6 +166,8 @@ export default async function ProfilPage({
       // Gennemsnit og antal fra databasen - listen er begrænset til 200.
       hentBedoemmelseOpsummering(supabase, id),
       erPopulaerSaelger(id),
+      // Eget fulde navn (users.navn kan kun læses af en selv via mit_navn).
+      supabase.rpc("mit_navn").maybeSingle<{ navn: string | null }>(),
     ]);
 
     const antalRatings = opsummering.antal;
@@ -252,7 +260,7 @@ export default async function ProfilPage({
       <main className="flex-1 bg-groen-lys px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
         <div className="mx-auto max-w-5xl">
           <ProfileHeader
-            navn={profil.navn ?? ""}
+            navn={egetNavn?.navn ?? ""}
             email={egenEmail?.email}
             avatarUrl={profil.avatar_url}
             medlemSiden={medlemSiden}
@@ -291,7 +299,7 @@ export default async function ProfilPage({
               mineBud={mineBud}
               ratings={ratings}
               brugerId={id}
-              navn={profil.navn}
+              navn={egetNavn?.navn ?? ""}
               telefon={egenEmail?.telefon ?? null}
               adresse={kontakt?.adresse ?? null}
               email={egenEmail?.email ?? ""}
@@ -366,7 +374,7 @@ export default async function ProfilPage({
     <main className="flex-1 bg-groen-lys px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
       <div className="mx-auto max-w-5xl space-y-6">
         <ProfileHeader
-          navn={kortNavn(profil.navn, profil.konto_type === "erhverv")}
+          navn={visNavn(profil.visningsnavn)}
           avatarUrl={profil.avatar_url}
           medlemSiden={medlemSiden}
           gennemsnitRating={gennemsnitRating}
@@ -385,7 +393,7 @@ export default async function ProfilPage({
             !blokeretAfProfil && harBlokeret !== true ? (
               <FoelgKnap
                 saelgerId={id}
-                navn={kortNavn(profil.navn, profil.konto_type === "erhverv")}
+                navn={visNavn(profil.visningsnavn)}
                 foelger={Boolean(minFoelgning)}
                 loginHref={erLoggetInd ? undefined : `/login?redirect=/profil/${id}`}
               />
@@ -394,12 +402,12 @@ export default async function ProfilPage({
         />
 
         {!erLoggetInd && (
-          <AnmeldKnap type="profil" id={id} hvad={`Profilen ${kortNavn(profil.navn, profil.konto_type === "erhverv")}`} loggetInd={false} label="Anmeld profil" />
+          <AnmeldKnap type="profil" id={id} hvad={`Profilen ${visNavn(profil.visningsnavn)}`} loggetInd={false} label="Anmeld profil" />
         )}
         {erLoggetInd && (
           <ProfilTryghed
             brugerId={id}
-            navn={kortNavn(profil.navn, profil.konto_type === "erhverv")}
+            navn={visNavn(profil.visningsnavn)}
             erBlokeret={harBlokeret === true}
           />
         )}

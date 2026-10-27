@@ -15,9 +15,9 @@ import { sendNulstillingsmail } from "@/lib/adgangskodeSkift";
 //
 // POST /api/konto/glemt
 //   Content-Type: application/json
-//   { email }
+//   { email, captchaToken? }                captchaToken: se docs/SIKKERHED-AUTH.md
 //   200 { ok: true }                       altid ved en gyldig e-mail
-//   400 { fejl, kode: "ugyldig" | "email" }
+//   400 { fejl, kode: "ugyldig" | "email" | "captcha" }
 //   403 { fejl, kode: "ikke_tilladt" }    fremmed Origin
 //   429 { fejl, kode: "for_mange" }
 //   503 { fejl, kode: "ikke_tilgaengelig" } grænserne kunne ikke tjekkes (fail closed)
@@ -40,9 +40,11 @@ export async function POST(req: NextRequest) {
     const klient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, offentligNoegle(), {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
-    const r = await sendNulstillingsmail(klient, k.krop.email, ip);
+    // captchaToken: Turnstile-token fra appen, når CAPTCHA er slået til i
+    // Supabase (docs/SIKKERHED-AUTH.md).
+    const r = await sendNulstillingsmail(klient, k.krop.email, ip, k.krop.captchaToken);
     if ("fejl" in r) {
-      const status = r.kode === "email" ? 400 : r.kode === "for_mange" ? 429 : 503;
+      const status = r.kode === "email" || r.kode === "captcha" ? 400 : r.kode === "for_mange" ? 429 : 503;
       return appSvar(status, { fejl: r.fejl, kode: r.kode });
     }
     return appSvar(200, { ok: true });

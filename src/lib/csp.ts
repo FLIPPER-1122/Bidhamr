@@ -26,12 +26,16 @@ export function lavCsp(nonce: string, zone: CspZone = "hoved"): string {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const supabaseWss = supabaseUrl.replace(/^https:/, "wss:");
   const admin = zone === "admin";
+  // Cloudflare Turnstile (CAPTCHA på login, glemt adgangskode og opret konto -
+  // src/components/Turnstile.tsx): script og iframe fra challenges.cloudflare.com.
+  // Kun på hjemmesiden og kun, når NEXT_PUBLIC_TURNSTILE_SITE_KEY er sat.
+  const turnstile = !admin && (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "").trim() ? " https://challenges.cloudflare.com" : "";
 
   return [
     "default-src 'self'",
     admin
       ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`
-      : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://js.stripe.com https://pay.google.com https://applepay.cdn-apple.com${isDev ? " 'unsafe-eval'" : ""}`,
+      : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://js.stripe.com https://pay.google.com https://applepay.cdn-apple.com${turnstile}${isDev ? " 'unsafe-eval'" : ""}`,
     // React-style-attributter og Stripe kraever inline-styles.
     "style-src 'self' 'unsafe-inline'",
     // api.maptiler.com (og tile.openstreetmap.org uden nøgle): kortfliser i
@@ -42,10 +46,10 @@ export function lavCsp(nonce: string, zone: CspZone = "hoved"): string {
     "font-src 'self'",
     admin
       ? `connect-src 'self' ${supabaseUrl} ${supabaseWss}`
-      : `connect-src 'self' ${supabaseUrl} ${supabaseWss} https://api.stripe.com https://*.stripe.com https://pay.google.com https://google.com/pay https://www.google.com/pay`,
+      : `connect-src 'self' ${supabaseUrl} ${supabaseWss} https://api.stripe.com https://*.stripe.com https://pay.google.com https://google.com/pay https://www.google.com/pay${turnstile}`,
     admin
       ? "frame-src 'none'"
-      : "frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://m.stripe.network https://pay.google.com",
+      : `frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://m.stripe.network https://pay.google.com${turnstile}`,
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",

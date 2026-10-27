@@ -271,7 +271,8 @@ export default async function HandelDetalje({
     modtagetViaFragt,
   ] = await Promise.all([
     supabase.from("auctions").select("titel, billeder, startpris, erhverv, pakkestoerrelse, vaegt_gram").eq("id", handel.auction_id).maybeSingle(),
-    supabase.from("users").select("navn").eq("id", modpartId).maybeSingle(),
+    // Modparten ses kun med det korte navn (users.visningsnavn, 20261102060000).
+    supabase.from("users").select("visningsnavn").eq("id", modpartId).maybeSingle<{ visningsnavn: string | null }>(),
     // Sikker uden medlemskabsfilter, fordi notFound() ovenfor allerede har
     // afvist alle andre end køber og sælger. Flyttes denne query op over
     // det tjek, lækker den chatten til staff.
@@ -323,7 +324,7 @@ export default async function HandelDetalje({
                 }>()
             : Promise.resolve({ data: null }),
           visFragtlabel
-            ? supabase.from("users").select("navn").eq("id", user.id).maybeSingle<{ navn: string | null }>()
+            ? supabase.rpc("mit_navn").maybeSingle<{ navn: string | null }>()
             : Promise.resolve({ data: null }),
           // Har sælgeren accepteret den aktuelle version af DAO's
           // handelsbetingelser (RLS: egne rækker)? Fejl (fx før migrationen) =
@@ -479,7 +480,7 @@ export default async function HandelDetalje({
         kanSende: m.sag?.kode === "ok",
       };
       // Køberens gemte adresse (fra min_returfragt) - ellers profilens navn.
-      const { data: mig } = await supabase.from("users").select("navn").eq("id", user.id).maybeSingle<{ navn: string | null }>();
+      const { data: mig } = await supabase.rpc("mit_navn").maybeSingle<{ navn: string | null }>();
       const g = m.afsender ?? null;
       const tlf = g?.telefon ?? "";
       returAfsender = {
@@ -1269,7 +1270,7 @@ export default async function HandelDetalje({
               <HandelChat
                 tradeId={handel.id}
                 brugerId={user.id}
-                modpartNavn={modpart?.navn ?? "modparten"}
+                modpartNavn={modpart?.visningsnavn ?? "modparten"}
                 startBeskeder={(beskeder ?? []).filter((b) => b.fra_bidhamr)}
                 kunFraBidhamr
               />
@@ -1279,7 +1280,7 @@ export default async function HandelDetalje({
         <HandelChat
           tradeId={handel.id}
           brugerId={user.id}
-          modpartNavn={modpart?.navn ?? "modparten"}
+          modpartNavn={modpart?.visningsnavn ?? "modparten"}
           startBeskeder={beskeder ?? []}
         />
         )}

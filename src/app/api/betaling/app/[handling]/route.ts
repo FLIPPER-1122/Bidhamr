@@ -179,8 +179,13 @@ async function saelgerNavnForHandel(tradeId: unknown): Promise<string | null> {
   const admin = createAdminClient();
   const { data: t } = await admin.from("trades").select("seller_id").eq("id", tradeId).maybeSingle<{ seller_id: string }>();
   if (!t) return null;
-  const { data: u } = await admin.from("users").select("navn").eq("id", t.seller_id).maybeSingle<{ navn: string | null }>();
-  return u?.navn ?? null;
+  // Kun det korte navn (users.visningsnavn, 20261102060000) - aldrig det fulde.
+  const { data: u } = await admin
+    .from("users")
+    .select("visningsnavn")
+    .eq("id", t.seller_id)
+    .maybeSingle<{ visningsnavn: string | null }>();
+  return u?.visningsnavn ?? null;
 }
 
 const obj = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
