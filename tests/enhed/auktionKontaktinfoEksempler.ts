@@ -1,7 +1,7 @@
 // Eksempler til kontaktoplysninger i auktioner (auktionKontaktGrund i
 // src/lib/auktionKontaktinfo.ts og public.auktion_kontaktinfo_grund i
 // databasen). PRÆCIS samme liste står i testblokken sidst i
-// supabase/migrations/20261102130000_beskrivelse_kontaktinfo.sql - ændres en
+// supabase/migrations/20261102170000_kontaktinfo_rettelser.sql - ændres en
 // regel, SKAL begge steder rettes.
 //
 // [tekst, svar for en privat sælger, svar for et firma]
@@ -22,10 +22,36 @@ export const AUKTION_KONTAKT_EKSEMPLER: AuktionKontaktEksempel[] = [
   ["Se flere billeder på www.dba.dk", "link", null],
   ["Læs mere på https://firma.dk/sofaer/model-x", "link", null],
   ["Producentens side: firma.com", "link", null],
+  ["www.firma.dk", "link", null],
+  ["Se www.firma.dk - varenr. 80275887", "link", null],
   // Et link fjerner ikke resten.
   ["Se www.firma.dk eller ring 22 33 44 55", "link", "telefon"],
   ["Se www.firma.dk - MobilePay 22334455", "link", "mobilepay"],
   ["www.firma.dk / salg@firma.dk", "email", "email"],
+  // Stien tjekkes, og 7+ cifre i et link stoppes.
+  ["www.firma.dk/22334455", "link", "telefon"],
+  ["Se https://firma.dk/sofa?tlf=22334455", "link", "telefon"],
+  ["www.firma.dk/produkt/1234567", "link", "telefon"],
+  ["Se 22334455.dk", "link", "telefon"],
+  // Beskedtjenester og betalingsapps - stoppes også for firmaer.
+  ["https://wa.me/4522334455", "socialt_medie", "socialt_medie"],
+  ["t.me/firmaet", "socialt_medie", "socialt_medie"],
+  ["instagram.com/firmaet", "socialt_medie", "socialt_medie"],
+  ["Følg os: www.facebook.com/firmaet", "socialt_medie", "socialt_medie"],
+  ["m.me/firmaet", "socialt_medie", "socialt_medie"],
+  ["mobilepay.dk/box/12345", "mobilepay", "mobilepay"],
+  ["Betal på paypal.me/firmaet", "bank", "bank"],
+  // Varenumre, IKEA-numre og signalværdier (uden kontaktord).
+  ["Varenummer 80275887", null, null],
+  ["IKEA Billy reol 402.638.47", null, null],
+  ["IKEA Billy reol 402.638.47.", null, null],
+  ["Signal: analog", null, null],
+  ["Art.nr. 802-758-87, reservedelsnr 40263847", null, null],
+  ["Varenummer 80275887 ring 22334455", "telefon", "telefon"],
+  ["Varenummer 80275887 22334455", "telefon", "telefon"],
+  ["Vare 22334455", "telefon", "telefon"],
+  ["Fin sofa. 22334455. Afhentes.", "telefon", "telefon"],
+  ["Signal: hans_123", "socialt_medie", "socialt_medie"],
   // Almindelige beskrivelser - slipper igennem.
   ["Sofa i grå uld. Mål: 200 x 90 x 45 cm. Nypris 4.500 kr, sælges for 1.200 kr.", null, null],
   ["Købt 12.03.2024, brugt ca. 10 gange. Afhentes efter 24/12.", null, null],

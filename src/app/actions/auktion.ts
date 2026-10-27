@@ -38,7 +38,7 @@ import { forbudtBesked } from "@/lib/forbudteVarer";
 import { ERHVERV_FEJL, ERHVERV_GRAENSER, erhvervFejlTekst } from "@/lib/erhverv/regler";
 import { udbetalingskontoFejltekst } from "@/lib/betaling/frossetServer";
 import { sletFjernedeBilleder } from "@/lib/auktionBilledOprydning";
-import { auktionKontaktFejl, type AuktionKontaktFelt } from "@/lib/auktionKontaktinfo";
+import { auktionKontaktFejl, auktionKontaktOpIgenTekst, type AuktionKontaktFelt } from "@/lib/auktionKontaktinfo";
 
 // felt: kontaktoplysninger (BHA08) - fejlen vises ved feltet.
 type Fejl = { fejl: string; mitid?: true; felt?: AuktionKontaktFelt };
@@ -300,6 +300,9 @@ export async function saetVarenOpIgen(auktionId: string): Promise<{ ok: true; au
       // Ubetalt ekstra fragt efter fristen (BHX01, auctions_a1_ekstra_fragt).
       if (erEkstraFragtFejl(error.code, error.message)) return { fejl: EKSTRA_FRAGT_SPAERRET_TEKST };
       if (error.code === "23505") return { fejl: SAET_OP_IGEN_FEJL.allerede_genopsat };
+      // Kontaktoplysninger i titel/beskrivelse (BHA08, auktion_kontaktinfo_afvis).
+      const kontakt = auktionKontaktFejl(error);
+      if (kontakt) return { fejl: auktionKontaktOpIgenTekst(kontakt.felt, kontakt.erhverv) };
       // 200 aktive auktioner for private (auctions_oprettelse_loft, BHA07).
       const aktiveLoft = auktionLoftTekst(error.code, false);
       if (aktiveLoft) return { fejl: aktiveLoft };

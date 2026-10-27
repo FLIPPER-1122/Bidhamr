@@ -200,7 +200,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Må jeg skrive mit telefonnummer i auktionen?",
-          svar: "Nej. Telefonnumre, e-mails, links og MobilePay- eller bankoplysninger må ikke stå i titlen eller beskrivelsen. Køber og sælger skal tale sammen via BidHamr, så I begge er beskyttet. Firmaer må gerne linke til deres hjemmeside, men telefon og e-mail står på firmasiden og ikke i auktionen.",
+          svar: "Nej. Telefonnumre, e-mails, links og MobilePay- eller bankoplysninger må ikke stå i titlen eller beskrivelsen. Køber og sælger skal tale sammen via BidHamr, så I begge er beskyttet. Firmaer må gerne linke til deres hjemmeside, men ikke til sociale medier, beskedtjenester eller betalingsapps, og telefon og e-mail står på firmasiden og ikke i auktionen.",
         },
         {
           spoergsmaal: "Kan jeg rette eller annullere min auktion?",

@@ -343,7 +343,7 @@ const SPAM_REGLER = {
 };
 
 // public.besked_normaliser: NFKC, små bogstaver, usynlige tegn fjernet.
-function normaliserBesked(tekst: string): string {
+export function normaliserBesked(tekst: string): string {
   return tekst
     .normalize("NFKC")
     .toLowerCase()

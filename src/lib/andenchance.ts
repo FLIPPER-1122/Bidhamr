@@ -17,6 +17,7 @@ import { erDac7Fejl, DAC7_FEJL_TEKST } from "@/lib/dac7/fejl";
 import { erEkstraFragtFejl, EKSTRA_FRAGT_SPAERRET_TEKST } from "@/lib/ekstraFragt/tekster";
 import { MITID } from "@/lib/tekster/mitid";
 import { erVilkaarFejl } from "@/lib/vilkaar";
+import { auktionKontaktFejl, auktionKontaktOpIgenTekst } from "@/lib/auktionKontaktinfo";
 import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
 import { udbetalingskontoFejltekst } from "@/lib/betaling/frossetServer";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -338,6 +339,9 @@ export async function genopsaetAuktionFor(
       const krav = kravFejl(error.code, error.message, true);
       if (krav) return krav;
       if (error.code === "23505") return { fejl: GENOPSAET_FEJL.allerede_genopsat, kode: "allerede_genopsat" };
+      // Kontaktoplysninger i titel/beskrivelse (BHA08, auktion_kontaktinfo_afvis).
+      const kontakt = auktionKontaktFejl(error);
+      if (kontakt) return { fejl: auktionKontaktOpIgenTekst(kontakt.felt, kontakt.erhverv), kode: "kontaktinfo" };
       // 200 aktive auktioner for private (auctions_oprettelse_loft, BHA07).
       const loft = auktionLoftTekst(error.code, false);
       if (loft) return { fejl: loft, kode: "auktion_loft" };
