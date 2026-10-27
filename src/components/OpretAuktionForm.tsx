@@ -23,6 +23,12 @@ import {
 import { forbudtBesked, tjekForbudtTekst } from "@/lib/forbudteVarer";
 import { KUNST_TEKST, tjekKunstTekst } from "@/lib/kunstForbud";
 import KunstAdvarsel from "@/components/opret/KunstAdvarsel";
+import {
+  auktionKontaktFejl,
+  auktionKontaktGrund,
+  auktionKontaktTekst,
+  type AuktionKontaktFelt,
+} from "@/lib/auktionKontaktinfo";
 import { manglerKunstSkema } from "@/lib/kunstSkema";
 import { erStand, standNavn } from "@/lib/stand";
 import { erhvervFejlTekst } from "@/lib/erhverv/regler";
@@ -212,6 +218,11 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
   const hydreret = useHydreret();
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Databasen afviste kontaktoplysninger (BHA08), som TS-spejlet ikke fangede.
+  // Vises ved feltet, til teksten ændres.
+  const [serverKontakt, setServerKontakt] = useState<{ felt: AuktionKontaktFelt; tekst: string; vaerdi: string } | null>(
+    null,
+  );
 
   // Kladden læses som et "eksternt lager" - ingen setState i en effekt, og
   // serveren renderer uden kladde (ingen hydreringsfejl).
@@ -289,6 +300,16 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
   // markerer auktionen og sender den til staff-tjek.
   const kunst = forbudtTekst ? null : tjekKunstTekst(titel, beskrivelse);
   const kunstOrd = kunst?.resultat === "kunst" ? kunst.ord : null;
+  // Kontaktoplysninger i titel/beskrivelse (BHA08, src/lib/auktionKontaktinfo.ts).
+  // Vises, mens brugeren skriver. Firmaer må skrive links.
+  const kontaktFejl = (felt: AuktionKontaktFelt, tekst: string) =>
+    auktionKontaktGrund(tekst, erFirma) !== null
+      ? auktionKontaktTekst(felt, erFirma)
+      : serverKontakt?.felt === felt && serverKontakt.vaerdi === tekst.trim()
+        ? serverKontakt.tekst
+        : null;
+  const kontaktTitel = kontaktFejl("titel", titel);
+  const kontaktBeskrivelse = kontaktFejl("beskrivelse", beskrivelse);
 
   function valider(): Partial<Record<FeltNavn, string>> {
     const f: Partial<Record<FeltNavn, string>> = {};
@@ -296,6 +317,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
     else if (!billeder.every(billedeKlar)) f.billeder = "Vent, til billederne er klar.";
     if (!titel.trim()) f.titel = "Skriv en titel, fx mærke og model.";
     else if (forbudtTekst) f.titel = forbudtTekst;
+    else if (kontaktTitel) f.titel = kontaktTitel;
+    if (kontaktBeskrivelse) f.beskrivelse = kontaktBeskrivelse;
     if (kunstOrd && !kunstBekraeftet) f.kunst = KUNST_TEKST.mangler;
     if (!kategori) f.kategori = "Vælg en kategori.";
     if (!erStand(stand)) f.stand = "Vælg varens stand.";
@@ -444,7 +467,14 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         else if (fragtFejlTekst(insertError.code)) besked = fragtFejlTekst(insertError.code)!;
         else if (insertError.code === "BHS02")
           besked = "Din konto er suspenderet, og du kan ikke sætte varer til salg. Kontakt support@bidhamr.dk, hvis du mener, det er en fejl.";
-        else if (insertError.code === "BHF01") {
+        else if (auktionKontaktFejl(insertError)) {
+          // Kontaktoplysninger (BHA08): tilbage til formularen med fejlen ved feltet.
+          const k = auktionKontaktFejl(insertError)!;
+          besked = k.tekst;
+          setServerKontakt({ felt: k.felt, tekst: k.tekst, vaerdi: (k.felt === "titel" ? titel : beskrivelse).trim() });
+          setVisForhaandsvisning(false);
+          setForsoegt(true);
+        } else if (insertError.code === "BHF01") {
           let ord = "";
           let kat = "";
           try {
@@ -686,15 +716,21 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
             value={titel}
             onChange={(e) => aendret(setTitel)(e.target.value)}
             placeholder="Fx: iPhone 13, 128 GB, sort"
-            aria-invalid={feltFejl.titel || forbudtTekst ? true : undefined}
-            aria-describedby={describedBy("titel", "titel-hjaelp")}
-            className={feltKlasse(!!feltFejl.titel || !!forbudtTekst)}
+            aria-invalid={feltFejl.titel || forbudtTekst || kontaktTitel ? true : undefined}
+            aria-describedby={
+              !feltFejl.titel && kontaktTitel && !forbudtTekst
+                ? "titel-hjaelp titel-kontakt"
+                : describedBy("titel", "titel-hjaelp")
+            }
+            className={feltKlasse(!!feltFejl.titel || !!forbudtTekst || !!kontaktTitel)}
           />
           <Hjaelp id="titel-hjaelp">
             Skriv mærke, model og størrelse. {titel.length}/{MAKS_TITEL}
           </Hjaelp>
           {feltFejl.titel ? (
             <FeltFejl id="titel-fejl">{feltFejl.titel}</FeltFejl>
+          ) : kontaktTitel && !forbudtTekst ? (
+            <FeltFejl id="titel-kontakt">{kontaktTitel}</FeltFejl>
           ) : (
             forbudtTekst && (
               <FeltFejl id="titel-forbudt">
@@ -718,12 +754,18 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
             value={beskrivelse}
             onChange={(e) => aendret(setBeskrivelse)(e.target.value)}
             placeholder="Fortæl om alder, mål, fejl og mangler – og hvad der følger med."
-            aria-describedby="beskrivelse-hjaelp"
-            className={tekstfeltKlasse()}
+            aria-invalid={kontaktBeskrivelse ? true : undefined}
+            aria-describedby={kontaktBeskrivelse ? "beskrivelse-hjaelp beskrivelse-fejl" : "beskrivelse-hjaelp"}
+            className={tekstfeltKlasse(!!kontaktBeskrivelse)}
           />
           <Hjaelp id="beskrivelse-hjaelp">
-            En ærlig beskrivelse giver færre spørgsmål og sager. {beskrivelse.length}/{MAKS_BESKRIVELSE}
+            En ærlig beskrivelse giver færre spørgsmål og sager.{" "}
+            {erFirma
+              ? "Skriv ikke telefonnummer eller e-mail – de står på firmasiden."
+              : "Skriv ikke telefonnummer, e-mail eller links – køber og sælger taler sammen via BidHamr."}{" "}
+            {beskrivelse.length}/{MAKS_BESKRIVELSE}
           </Hjaelp>
+          {kontaktBeskrivelse && <FeltFejl id="beskrivelse-fejl">{kontaktBeskrivelse}</FeltFejl>}
         </div>
 
         <div aria-live="polite">

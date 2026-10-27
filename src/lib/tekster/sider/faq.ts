@@ -199,6 +199,10 @@ export const FAQ_SIDE: Tekstside = {
           svar: "Pengene bliver frigivet til dig, når køberen har godkendt varen, eller når køberen ikke har oprettet en sag inden for 48 timer. Ved afhentning bliver de frigivet, så snart du har tastet køberens kode. Vores betalingspartner Stripe sender pengene til din bankkonto hver 14. dag. Har du solgt flere ting i den periode, kommer de samlet i én udbetaling.",
         },
         {
+          spoergsmaal: "Må jeg skrive mit telefonnummer i auktionen?",
+          svar: "Nej. Telefonnumre, e-mails, links og MobilePay- eller bankoplysninger må ikke stå i titlen eller beskrivelsen. Køber og sælger skal tale sammen via BidHamr, så I begge er beskyttet. Firmaer må gerne linke til deres hjemmeside, men telefon og e-mail står på firmasiden og ikke i auktionen.",
+        },
+        {
           spoergsmaal: "Kan jeg rette eller annullere min auktion?",
           svar: "Ja, så længe der ikke er bud på den. Når det første bud er kommet, er auktionen låst: du kan ikke ændre noget, tilføje noget eller annullere den. Er der et problem med varen, så kontakt BidHamr.",
         },
