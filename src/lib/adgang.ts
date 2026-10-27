@@ -23,7 +23,6 @@ import { createClient, paaAdminVaert } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logIndUdenCaptcha } from "@/lib/supabase/adgangskodeLogin";
 import {
-  FOR_MANGE_FORSOEG,
   PROEV_IGEN_OM_LIDT,
   graenseFejl,
   klientIp,
@@ -156,7 +155,12 @@ async function logIndAdminTrin(emailInput: string, password: string): Promise<{ 
     const supabase = await createClient();
     const { data, error } = await logIndUdenCaptcha(supabase, email, password);
     if (error || !data.user) {
-      if (error?.status === 429) return { fejl: FOR_MANGE_FORSOEG };
+      // Supabase Auths egen grænse (429) svarer som et forkert login: kun
+      // staff-e-mails når hertil, så en særlig tekst ville afsløre dem.
+      if (error?.status === 429) {
+        console.error("logIndAdmin: Supabase Auth rate limit (429)");
+        return { fejl: FORKERT_LOGIN };
+      }
       if (error && error.code !== "invalid_credentials" && error.code !== "user_banned" && error.code !== "email_not_confirmed") {
         console.error("logIndAdmin fejlede:", error.code, error.message);
       }
@@ -460,7 +464,11 @@ async function gendanAdminTrin(
     const supabase = await createClient();
     const { data, error } = await logIndUdenCaptcha(supabase, email, password);
     if (error || !data.user) {
-      if (error?.status === 429) return { fejl: FOR_MANGE_FORSOEG };
+      // Som logIndAdmin: 429 må ikke afsløre, at e-mailen er staff.
+      if (error?.status === 429) {
+        console.error("gendanAdmin: Supabase Auth rate limit (429)");
+        return { fejl: FORKERT };
+      }
       return { fejl: FORKERT };
     }
 
