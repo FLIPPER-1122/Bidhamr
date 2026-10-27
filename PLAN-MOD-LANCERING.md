@@ -49,7 +49,9 @@ Princippet:
 - [ ] Stripe: live-aktiveringen sendt ind (firma, bank, ID).
 - [ ] Advokat og revisor: materialet sendt, svar aftalt senest 30. nov.
 - [ ] Idura: MitID-produktion bestilt.
-- [ ] Dinero (betalt plan), Google Play-udviklerkonto og opgraderet Resend.
+- [x] Google Play-udviklerkonto oprettet og betalt (27. okt.); afventer Googles verificering.
+- [x] Anthropic API: konto, 20 US$ kredit og test-nøgle i bidhamr-test (27. okt.).
+- [ ] Dinero (betalt plan) og opgraderet Resend.
 - [ ] DAO-kontrakt underskrevet, og Shipmondo bekræftet med Dea. Plan og nøgler sendt til mig.
 - [ ] Firma-delen testet på test.bidhamr.dk, især opret auktion og bankkonto-trinnet. Appen testet via TestFlight.
 - [ ] `main` pushet, og ja givet til produktionsmigrationerne.
