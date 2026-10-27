@@ -406,3 +406,86 @@ export function erKunVelkomstGratis(metadata: Record<string, string> | null | un
   const ekstra = Number(metadata.gratis_ekstra ?? 0);
   return !(Number.isFinite(ekstra) && ekstra > 0);
 }
+
+// --- Rettelser 4 af måned 1-skiftet (27. okt. 2026) ---------------------------
+
+// "visning" fra siden eller appen (POST /api/firma/skift-pakke): mangler den
+// (undefined/null), er den null; en sendt værdi skal være gyldig - ellers
+// afvises forespørgslen (400 ugyldig_visning) i stedet for stille at blive null.
+export function tolkVelkomstVisning(v: unknown): { ok: true; visning: string | null } | { ok: false } {
+  if (v === undefined || v === null) return { ok: true, visning: null };
+  return erVelkomstVisning(v) ? { ok: true, visning: v } : { ok: false };
+}
+
+// Er et skift til pakken et skift op fra Starts gratis velkomstmåned, som
+// koster pakkens pris med rabat nu (opgraderFraVelkomst)? Samme regel som
+// siden (PakkeValg.fraVelkomst): firmaet er i velkomstmåneden, pakken er
+// større, er ikke gratis i måned 1 og har en pris.
+export function erVelkomstSkiftTil(input: {
+  iVelkomstMaaned: boolean;
+  stoerre: boolean;
+  maaned1: string | null | undefined;
+  maanedsprisKr: number | null;
+}): boolean {
+  return input.iVelkomstMaaned && input.stoerre && input.maaned1 !== "gratis" && input.maanedsprisKr != null;
+}
+
+// Hvad appen får vist før et skift op fra den gratis måned (GET
+// /api/firma/skift-pakke?til=<pakke>) - SAMME udfald som serveren bruger ved
+// skiftet. visning sendes med i POST'en. beloeb kun ved udfald 'skift'.
+export type VelkomstSkiftTilbud = {
+  udfald: VelkomstSkiftUdfald["udfald"];
+  visning: string;
+  rabat: VelkomstSkiftRabat | null;
+  beloeb: { eksklOere: number; inklOere: number } | null;
+  // false ved ret_rabat: serveren afviser skiftet (vis ingen knap).
+  kanSkifte: boolean;
+};
+
+export function velkomstSkiftTilbud(u: VelkomstSkiftUdfald, maanedsprisKr: number): VelkomstSkiftTilbud {
+  if (u.udfald !== "skift") {
+    return { udfald: u.udfald, visning: velkomstVisning(u), rabat: null, beloeb: null, kanSkifte: u.udfald === "venter" };
+  }
+  const b = oereMedRabat(maanedsprisKr, u.rabat.procent);
+  return {
+    udfald: "skift",
+    visning: velkomstVisning(u),
+    rabat: u.rabat,
+    beloeb: { eksklOere: b.ekskl, inklOere: b.inkl },
+    kanSkifte: true,
+  };
+}
+
+// Rabatten i procent på en faktura (ekskl. moms): rabatbeløbet mod beløbet
+// før rabat. total_excluding_tax er efter alle rabatter, og
+// total_discount_amounts er rabatterne summeret over alle linjer
+// (docs.stripe.com/api/invoices/object). null uden beløb.
+export function rabatProcentPaaFaktura(
+  totalEksklMoms: number | null | undefined,
+  rabatter: { amount: number }[] | null | undefined,
+): number | null {
+  if (totalEksklMoms == null) return null;
+  const rabat = (rabatter ?? []).reduce((s, r) => s + r.amount, 0);
+  const foer = totalEksklMoms + rabat;
+  if (foer <= 0) return null;
+  return Math.round((rabat * 100) / foer);
+}
+
+// Drift-alarmen "rabatten skal rettes" (ret_rabat) kommer én gang pr. firma og
+// aftale, ikke ved hvert klik: nøglen er drift_fejl.digest, som databasen
+// dedupper på (drift_fejl_log: samme digest inden for 24 timer tæller kun
+// op). Aftalen er intro_noegle (uuid) - en ny aftale giver en ny alarm.
+export function retRabatAlarmNoegle(firmaId: string, introNoegle: string | null): string {
+  const ren = (s: string) => s.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 36);
+  return `vrr-${ren(firmaId)}-${introNoegle ? ren(introNoegle) : "ingen"}`;
+}
+
+// Noten på pakkeskiftet, når skiftet op fra den gratis måned er betalt - med
+// den rigtige rabat (50 % = halv pris; en introrabat på 30 % er ikke halv pris).
+export function velkomstBetaltNote(procent: number | null): string {
+  const start = "Skiftet op i den gratis måned: den gratis periode sluttede, og første måned af den nye pakke er betalt";
+  if (procent == null) return start;
+  if (procent === 50) return `${start} til halv pris`;
+  if (procent <= 0) return `${start} til fuld pris`;
+  return `${start} med ${procent} % rabat`;
+}
