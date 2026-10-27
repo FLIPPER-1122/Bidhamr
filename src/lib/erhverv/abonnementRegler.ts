@@ -262,6 +262,113 @@ export function velkomstSkiftRabat(input: {
   return { slags: "velkomst", procent: VELKOMST_RABAT_PROCENT };
 }
 
+// Hvad et skift op fra Starts gratis velkomstmåned til Butik/Pro gør - ÉN
+// regel for både siden (beløbet, der vises) og serveren (beløbet, der trækkes;
+// opgraderFraVelkomst), ud fra databasens aftale OG rabatterne på abonnementet
+// i Stripe (20261102200000-rettelserne):
+//   skift:     rabatten er afklaret - firmaet betaler pakkens pris med rabat
+//              nu. velkomstKupon: 50 %-engangskuponen sættes på i skiftet;
+//              ellers bruges rabatten, der allerede ligger på abonnementet.
+//   venter:    introrabatten er aftalt ('planlagt'), men kuponen på
+//              abonnementet hører ikke til netop den aftale (eller der er
+//              ingen). Intet trækkes - rabatten sættes på først.
+//   ret_rabat: databasen og Stripe er uenige (fx 'aktiv' uden kupon, en
+//              introkupon uden aftale eller en fremmed rabat). Intet trækkes,
+//              og staff skal rette det (drift-alarm). aarsag til alarmen.
+// Firmaet må aldrig blive trukket et andet beløb end det, siden har vist.
+export type VelkomstSkiftUdfald =
+  | { udfald: "skift"; rabat: VelkomstSkiftRabat; velkomstKupon: boolean }
+  | { udfald: "venter" }
+  | { udfald: "ret_rabat"; aarsag: string };
+
+export type VelkomstIntroKupon = {
+  kuponId: string;
+  procent: number | null;
+  // discount.end (sekunder) - null for en kupon uden slutdato.
+  slutSek: number | null;
+};
+
+export function velkomstSkiftUdfald(input: {
+  saerprisGaelder: boolean;
+  aftale: {
+    status: string | null;
+    procent: number | null;
+    maaneder: number | null;
+    kuponId: string | null;
+    noegle: string | null;
+    // introGaelder: aftalt og ikke udløbet.
+    gaelder: boolean;
+  };
+  abonnement: {
+    // BidHamrs introkuponer på abonnementet (metadata.bidhamr = 'intro').
+    introer: VelkomstIntroKupon[];
+    // Alle andre rabatter på abonnementet (fx en kupon sat direkte i Stripe).
+    andre: number;
+    // subscription.metadata.intro_noegle (sat af Checkout for netop den aftale).
+    introNoegle: string | null;
+  };
+  // Dansk dato for discount.end (fx langDato).
+  dato: (sek: number) => string;
+}): VelkomstSkiftUdfald {
+  const { aftale, abonnement } = input;
+  if (abonnement.andre > 0) {
+    return { udfald: "ret_rabat", aarsag: `abonnementet har ${abonnement.andre} rabat(ter), som ikke er BidHamrs introrabat` };
+  }
+  if (abonnement.introer.length > 1) {
+    return { udfald: "ret_rabat", aarsag: `abonnementet har ${abonnement.introer.length} introkuponer` };
+  }
+  const kupon = abonnement.introer[0] ?? null;
+  const medIntro = (k: VelkomstIntroKupon, procent: number, maaneder: number): VelkomstSkiftUdfald => ({
+    udfald: "skift",
+    rabat: velkomstSkiftRabat({
+      saerprisGaelder: false,
+      intro: { procent, til: k.slutSek != null ? input.dato(k.slutSek) : null, maaneder },
+    }),
+    velkomstKupon: false,
+  });
+
+  if (aftale.status === "planlagt" && aftale.procent != null && aftale.maaneder != null) {
+    // Kun en kupon, der hører til NETOP denne aftale (Checkout satte den på
+    // med aftalens nøgle), og med aftalens procent. En kupon fra en tidligere
+    // aftale (eller ingen) -> vent: den rigtige sættes på først.
+    const hoererTil =
+      !!kupon && !!aftale.noegle && abonnement.introNoegle === aftale.noegle && kupon.procent === aftale.procent;
+    return hoererTil ? medIntro(kupon, aftale.procent, aftale.maaneder) : { udfald: "venter" };
+  }
+  if (aftale.status === "aktiv" && aftale.gaelder && aftale.procent != null && aftale.maaneder != null) {
+    if (kupon && aftale.kuponId && kupon.kuponId === aftale.kuponId && kupon.procent === aftale.procent) {
+      return medIntro(kupon, aftale.procent, aftale.maaneder);
+    }
+    return {
+      udfald: "ret_rabat",
+      aarsag: kupon
+        ? `introrabatten står som aktiv i databasen (${aftale.kuponId ?? "ingen kupon"}, ${aftale.procent} %), men abonnementet har en anden introkupon (${kupon.kuponId}, ${kupon.procent ?? "?"} %)`
+        : `introrabatten står som aktiv i databasen (${aftale.kuponId ?? "ingen kupon"}, ${aftale.procent} %), men ligger ikke på abonnementet`,
+    };
+  }
+  // Ingen kørende aftale i databasen (intro_status null, eller udløbet).
+  if (kupon) {
+    return {
+      udfald: "ret_rabat",
+      aarsag: `abonnementet har introkuponen ${kupon.kuponId} (${kupon.procent ?? "?"} %), men firmaet har ingen kørende introrabat i databasen (intro_status ${aftale.status ?? "null"})`,
+    };
+  }
+  if (input.saerprisGaelder) return { udfald: "skift", rabat: velkomstSkiftRabat({ saerprisGaelder: true, intro: null }), velkomstKupon: false };
+  return { udfald: "skift", rabat: velkomstSkiftRabat({ saerprisGaelder: false, intro: null }), velkomstKupon: true };
+}
+
+// Hvad siden viste for et skift op fra den gratis måned (sendes med skiftet,
+// så serveren kan afvise, hvis rabatten er ændret imens): "velkomst:50",
+// "intro:30", "saerpris:0" - eller "venter"/"ret_rabat", når der ikke blev
+// vist et beløb. Kun beløbet I DAG tæller (slags + procent).
+export function velkomstVisning(u: VelkomstSkiftUdfald): string {
+  return u.udfald === "skift" ? `${u.rabat.slags}:${u.rabat.procent}` : u.udfald;
+}
+
+export function erVelkomstVisning(v: unknown): v is string {
+  return typeof v === "string" && /^(velkomst:\d{1,3}|intro:\d{1,3}|saerpris:0|venter|ret_rabat)$/.test(v);
+}
+
 // Beløbet ekskl. og inkl. moms i hele øre (moms 25 %, afrundet til nærmeste
 // øre som i Stripe) for en månedspris i kroner med rabat i procent.
 export function oereMedRabat(maanedsprisKr: number, rabatProcent: number): { ekskl: number; inkl: number } {

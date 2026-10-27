@@ -35,6 +35,7 @@ import { fragtfirmaNavne } from "@/lib/fragt";
 import { hentMitIdStatus } from "@/lib/mitid/status";
 import { ERHVERVSSAELGER, ERHVERV_GPSR, FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 import { KUNST_TEKST } from "@/lib/kunstForbud";
+import { henvisningskodeTilDeling } from "@/lib/del/henvisning";
 
 // Titel, beskrivelse (pris + slut), første billede som delebillede og
 // canonical. JSON-LD ligger i layout.tsx.
@@ -253,6 +254,7 @@ export default async function AuktionPage({
     minKontoType,
     minMitId,
     saelgerPopulaer,
+    henvisningskode,
   ] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
     // staffHandling: staff-handlinger direkte på siden (kun uden ADMIN_VAERT -
@@ -280,6 +282,8 @@ export default async function AuktionPage({
     mitId && mitId !== auktion.bruger_id ? hentMitIdStatus(mitId) : Promise.resolve(null),
     // "Populær sælger" (mindst 50 gennemførte salg) - offentligt.
     erPopulaerSaelger(auktion.bruger_id),
+    // Del-knappen: koden fra "Henvis en ven" (krog - null indtil den er koblet på).
+    henvisningskodeTilDeling(mitId),
   ]);
   const erhvervAuktion = auktion.erhverv === true;
   const erFirmakonto = minKontoType === "erhverv";
@@ -528,7 +532,7 @@ export default async function AuktionPage({
             <h1 className="min-w-0 text-[26px] leading-tight break-words sm:text-[32px]">
               {auktion.titel}
             </h1>
-            <AuctionTitleActions auktionId={auktion.id} titel={auktion.titel} />
+            <AuctionTitleActions auktionId={auktion.id} titel={auktion.titel} henvisningskode={henvisningskode} />
           </div>
           {(erhvervAuktion || boostAktiv) && (
             <div className="mt-2 flex flex-wrap items-center gap-2">

@@ -204,7 +204,7 @@ async function pushTil(
     .filter((t) => typeof t === "string" && EXPO_TOKEN.test(t));
   if (liste.length === 0) return INGEN_MODTAGER;
 
-  const beskeder = liste.map((to) => ({
+  const beskeder: ExpoBesked[] = liste.map((to) => ({
     to,
     title: input.titel.slice(0, 200),
     body: input.tekst.slice(0, 500),
@@ -212,7 +212,27 @@ async function pushTil(
     // Appen bruger link til at åbne den rigtige skærm.
     data: { type, link, ...(input.data ?? {}) },
   }));
+  const r = await sendExpo(admin, beskeder);
+  if (r.sendt.size > 0) return SENDT;
+  // Kun afmeldte enheder (DeviceNotRegistered): ingen modtager, ikke en fejl.
+  if (r.kunDoede) return INGEN_MODTAGER;
+  return fejlet(r.sidsteFejl ?? "Push blev ikke sendt");
+}
 
+type ExpoBesked = {
+  to: string;
+  title: string;
+  body: string;
+  sound: "default";
+  data: Record<string, unknown>;
+};
+
+// Sender beskederne til Expo i bundter á 100 og fjerner afmeldte enheder
+// (DeviceNotRegistered). sendt = de tokens, Expo tog imod. Kaster aldrig.
+async function sendExpo(
+  admin: Admin,
+  beskeder: ExpoBesked[],
+): Promise<{ sendt: Set<string>; sidsteFejl: string | null; kunDoede: boolean }> {
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
@@ -221,7 +241,7 @@ async function pushTil(
     headers.Authorization = `Bearer ${process.env.EXPO_ACCESS_TOKEN}`;
   }
 
-  let enSendt = false;
+  const sendt = new Set<string>();
   // Sidste fejl (kode, aldrig token), hvis ingen blev sendt.
   let sidsteFejl: string | null = null;
   let kunDoede = true;
@@ -245,7 +265,7 @@ async function pushTil(
       const tickets = json.data ?? [];
       const doede: string[] = [];
       tickets.forEach((t, idx) => {
-        if (t.status === "ok") enSendt = true;
+        if (t.status === "ok") sendt.add(del[idx].to);
         else if (t.details?.error === "DeviceNotRegistered") doede.push(del[idx].to);
         else {
           console.warn("Notifikation: push afvist:", t.details?.error ?? t.message);
@@ -263,10 +283,71 @@ async function pushTil(
       kunDoede = false;
     }
   }
-  if (enSendt) return SENDT;
-  // Kun afmeldte enheder (DeviceNotRegistered): ingen modtager, ikke en fejl.
-  if (kunDoede) return INGEN_MODTAGER;
-  return fejlet(sidsteFejl ?? "Push blev ikke sendt");
+  return { sendt, sidsteFejl, kunDoede };
+}
+
+export type PushOpgave = {
+  brugerId: string;
+  type: NotifikationType;
+  input: NotifikationInput;
+};
+
+// Push til MANGE brugere på én gang (cron-batch): ét opslag af push-tokens
+// pr. 200 modtagere og Expo i bundter á 100 - ikke ét opslag pr. bruger.
+// Kalderen skal selv have tjekket kanalvalget. Returnerer de brugere, der
+// fik mindst én push, og en fejltekst, hvis noget fejlede. Kaster aldrig.
+export async function sendPushBatch(
+  admin: Admin,
+  opgaver: PushOpgave[],
+): Promise<{ modtog: Set<string>; fejl: string | null }> {
+  const modtog = new Set<string>();
+  if (opgaver.length === 0) return { modtog, fejl: null };
+  try {
+    const ids = [...new Set(opgaver.map((o) => o.brugerId))];
+    const tokens = new Map<string, string[]>();
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data, error } = await admin
+        .from("push_tokens")
+        .select("user_id, token")
+        .in("user_id", ids.slice(i, i + 200));
+      if (error) {
+        console.error("Notifikation: push tokens kunne ikke hentes:", error.message);
+        return { modtog, fejl: renFejltekst(error, 300) };
+      }
+      for (const r of data ?? []) {
+        const t = r.token as string;
+        if (typeof t !== "string" || !EXPO_TOKEN.test(t)) continue;
+        const liste = tokens.get(r.user_id as string) ?? [];
+        liste.push(t);
+        tokens.set(r.user_id as string, liste);
+      }
+    }
+    const ejer = new Map<string, string>();
+    const beskeder: ExpoBesked[] = [];
+    for (const o of opgaver) {
+      const link = o.input.link ? sikkerSti(o.input.link, "") || null : null;
+      for (const to of tokens.get(o.brugerId) ?? []) {
+        ejer.set(to, o.brugerId);
+        beskeder.push({
+          to,
+          title: o.input.titel.slice(0, 200),
+          body: o.input.tekst.slice(0, 500),
+          sound: "default",
+          data: { type: o.type, link, ...(o.input.data ?? {}) },
+        });
+      }
+    }
+    if (beskeder.length === 0) return { modtog, fejl: null };
+    const r = await sendExpo(admin, beskeder);
+    for (const to of r.sendt) {
+      const id = ejer.get(to);
+      if (id) modtog.add(id);
+    }
+    return { modtog, fejl: r.sidsteFejl };
+  } catch (err) {
+    console.error("Notifikation: push-batch kastede:", err);
+    return { modtog, fejl: renFejltekst(err, 300) };
+  }
 }
 
 // Samlet status for afsendelsen (se migration 20261005060000).

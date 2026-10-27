@@ -211,6 +211,9 @@ export const GRAENSER = {
   auktion_app_ip: { maks: 300, vindueSek: 60 * 60 },
   auktion_app_bruger: { maks: 30, vindueSek: 10 * 60 },
   konto_data_app_ip: { maks: 60, vindueSek: 60 * 60 },
+  // Henvis en ven i appen (POST /api/konto/henvisning) pr. IP, før tokenet
+  // er valideret - kun læsning af eget link og egen status.
+  henvisning_app_ip: { maks: 300, vindueSek: 60 * 60 },
   // Admin-hosten (src/app/actions/adgang.ts og adminToTrin.ts) - fail closed.
   // Login: som på hovedsitet, men strammere. e-mail+IP nulstilles ved et
   // gennemført login. Koden fra app'en: 5 forkerte pr. medarbejder pr. 15

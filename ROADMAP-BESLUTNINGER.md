@@ -603,3 +603,29 @@ Indsnævrer "Intet to-trins-login" fra 7. okt. 2026: **brugere har stadig intet 
   - **8 cifre blokeres altid (chefen, 27. okt. 2026)** – med eller uden skilletegn, også efter et vareord ("Varenr. 22334455"). Et dansk telefonnummer kan ikke skelnes fra et varenummer på 8 cifre. Varenumre med andre længder (6, 7, 9 eller flere cifre) må gerne stå efter et vareord. IKEA-numre i formatet 3.3.2 ("402.638.47") tillades kun, når ordet "ikea" står i teksten (kendt rest: et telefonnummer i 3.3.2-format sammen med "ikea" slipper igennem). Datoer, beløb, årstal og størrelseslister tæller ikke som telefonnumre (samme regler som chatten). Alle skilletegn mellem cifrene tæller ("22:33:44:55", "(22) 33 44 55", "22 -- 33"), 0/00/45/0045 foran stoppes, alle Unicode-cifre læses som 0-9, og 8 cifre i grupperne 4-4 eller 2-2-2-2 inde i et længere nummer stoppes ("Varenr 2233/4455/1"). %XX og HTML-entiteter afkodes.
   - **Al betaling går via BidHamr:** ordet MobilePay (også "mobile pay", "mp box", "på mp") stoppes, og står der konto, reg eller bank i teksten, stoppes 4 cifre + 6-10 cifre (bankoplysninger skrevet som varenummer). "kontor" og "bankskab" er ikke bankord. (`20261102130000`, `20261102170000`, `20261102190000`, `20261102220000_kontaktinfo_rettelser3.sql`)
   - `auctions.lokation` sættes af databasen til bynavnet for postnummeret, så der ikke kan stå fri tekst (`20261102170000`; aktive auktioner rettet i `20261102190000`).
+
+## Nye funktioner før lancering (Filip, 27. okt. 2026)
+Alle fire skal være færdige før lanceringen, på både hjemmesiden og i appen.
+1. ~~**AI-hjælp til auktionen**~~ **Fravalgt (Filip, 27. okt. 2026: "det giver for meget bøvl").** Oprindeligt: sælgeren tager billeder, og BidHamr foreslår titel, kategori, beskrivelse og pakkestørrelse. Sælgeren retter forslaget og godkender selv; intet oprettes automatisk. Forslaget skal overholde kontaktinfo-reglen (BHA08) og de andre regler for indhold. Det kører via Claude API (Anthropic) bag en env-nøgle.
+2. **BidHamr-bot:** en chat på hjemmesiden og i appen, hvor brugeren kan skrive til "BidHamr-bot".
+   - Den svarer på spørgsmål om regler, gebyrer, fragt, betaling og BidHamr Beskyttelse ud fra hjælpesider og FAQ.
+   - For indloggede brugere kan den læse status på brugerens **egne** handler, auktioner og bud.
+   - Den kan **aldrig ændre noget eller flytte penge**, og den kan ikke se andre brugeres data.
+   - Kan den ikke svare, sender den samtalen videre til en medarbejder som en henvendelse i admin. Medarbejderen svarer i Beskeder under "Fra BidHamr".
+   - Det skal tydeligt fremgå, at man skriver med en AI (AI-forordningen, art. 50).
+   - **Efter brugerens første besked** vises knappen **"Kontakt en rigtig medarbejder"** (Filip, 27. okt. 2026). Den sender samtalen videre til en medarbejder på samme måde.
+3. **Henvis en ven:** brugeren deler sit eget link. Når en ven, der har oprettet sig via linket, er **MitID-verificeret**, får den, der henviste, **10 boost-point**.
+   - Højst 10 venner om måneden (100 point).
+   - Kun private kan få point, for firmaer kan ikke bruge boost.
+   - Ingen point for sig selv eller for en konto, der allerede fandtes.
+   - Pointene registreres i den eksisterende point-historik.
+   - *Bygget 27. okt. 2026 (`20261102230000_henvis_en_ven.sql`, Min konto → Henvis en ven `/konto/henvis`, app: `POST /api/konto/henvisning` i docs/APP-ENDPOINTS.md):* linket er `bidhamr.dk/?ven=KODE` (10 tilfældige tegn, afslører hverken id eller navn). Koden gemmes i den nødvendige cookie `bh_ven` (30 dage) og knyttes, når vennen bekræfter sin e-mail med koden fra mailen (appen sender `henvisningskode`). Kun en **ny** konto (oprettet inden for 7 dage, aldrig MitID-verificeret) kan knyttes, ingen selvhenvisning, og henviseren kan ikke skiftes. Når vennen bliver MitID-verificeret, vurderer databasen henvisningen én gang i samme transaktion (trigger på `mitid_verificeringer`): 10 point (posteringstype `henvisning`) eller 0 point med grund: loft (10 belønnede pr. kalendermåned, dansk tid), firma, spærret konto, før lancering, samme person (henviserens egen MitID) eller tidligere konto (MitID'en har været på en anden konto, fx slettet og oprettet igen, eller er vurderet før). Før lancering gives ingen point; optjeningen starter af sig selv, når serveren kører med `LANCERET=1`. Brugeren ser kun sine egne henvisninger: antal, status, point og vennens korte navn. *Chefens valg (Filip kan ændre):* en ven, der verificeres før lanceringen, giver aldrig point senere; en suspenderet/lukket henviser får 0 point for den ven; det seneste link, en besøgende har klikket på, gælder.
+4. **Del auktion:** en tydelig Del-knap (Messenger, SMS, Facebook, kopiér link, og systemets delingsmenu i appen) og et pænt billede i linket (Open Graph).
+5. **Påmindelse før en auktion slutter:** for favoritter og auktioner, man har budt på, fx "slutter om 1 time – du fører ikke længere". Brugeren kan slå den fra under notifikationer.
+
+- **Modeller (Filip, 27. okt. 2026):**
+  - Botten bruger den billige model `claude-haiku-5-5` (env `BIDHAMR_BOT_MODEL`).
+  - Begge kan skiftes uden ny kode.
+- **Ansvarsforbehold for botten (Filip, 27. okt. 2026):** dens svar er vejledende, og det er reglerne og handelsbetingelserne, der gælder.
+
+Tips til gode billeder er fravalgt (Filip, 27. okt. 2026).

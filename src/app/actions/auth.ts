@@ -17,6 +17,7 @@ import { adgangskodeAendretMail } from "@/lib/mails/konto";
 import { vurderAdgangskode } from "@/lib/adgangskode";
 import { registrerLogin } from "@/lib/enheder";
 import { TJEK_EMAIL_COOKIE, tilmeldingAaben } from "@/lib/tilmelding";
+import { HENVISNING_COOKIE } from "@/lib/henvisning/kode";
 import { logDriftFejl } from "@/lib/drift";
 import { saetAdgangskodeEfterMaillink, sendNulstillingsmail } from "@/lib/adgangskodeSkift";
 import { CAPTCHA_FEJL, erCaptchaFejl, renCaptchaToken } from "@/lib/turnstile";
@@ -272,6 +273,8 @@ export async function verificerSignupKode(
     ip,
     adgangskode: ventende?.adgangskode ?? null,
     profil: ventende?.profil ?? null,
+    // Henvis en ven: koden fra linket (cookien sættes af proxyen, ?ven=KODE).
+    henvisningskode: (await cookies()).get(HENVISNING_COOKIE)?.value ?? null,
   });
   if ("fejl" in svar) {
     if (svar.fejl === "konto") {
@@ -289,6 +292,7 @@ export async function verificerSignupKode(
   }
 
   (await cookies()).delete(TJEK_EMAIL_COOKIE);
+  (await cookies()).delete(HENVISNING_COOKIE);
   await sletVentendeAdgangskode();
 
   // Kontoen har kun en tilfældig adgangskode, hvis cookien manglede (anden

@@ -65,7 +65,8 @@ const HANDLINGER: Record<string, Handling> = {
   "erhverv-henvendelse": sendErhvervHenvendelse,
   // skiftFirmaPakke kræver selv login, og firma_skift_pakke_server afviser
   // alle andre end firmakontoen selv (src/lib/erhverv/pakkeskift.ts).
-  "firma-skift-pakke": (fd) => skiftFirmaPakke(tekst(fd, "pakkeId") ?? ""),
+  // visning: hvad siden viste ved et skift op fra Starts gratis måned.
+  "firma-skift-pakke": (fd) => skiftFirmaPakke(tekst(fd, "pakkeId") ?? "", tekst(fd, "visning")),
   // Kræver login som firmakonto (src/lib/erhverv/betalingHandlinger.ts).
   "firma-betal": (_fd, origin) => betalForPakke(origin),
   "firma-betalingskort": (_fd, origin) => skiftBetalingskort(origin),
