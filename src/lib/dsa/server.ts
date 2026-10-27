@@ -122,7 +122,7 @@ export type AnmeldInput = {
 // anmeldelsen blev oprettet, indholdet ikke findes, eller e-mailen tilhører
 // den, der ejer indholdet (så oprettes ingen sag).
 export type AnmeldResultat =
-  | { ok: true; sagsnummer: string; statusSti: string; findes?: true }
+  | { ok: true; sagsnummer: string; statusSti: string; findes?: true; opdateret?: true }
   | { ok: true; anonym: true }
   | { fejl: string; kode: string };
 
@@ -248,7 +248,9 @@ export async function opretAnmeldelse(
     console.error("dsa_anmeldelse_opret fejlede:", error.code, error.message);
     return { kode: "fejl", fejl: GENERISK };
   }
-  const svar = (data ?? {}) as { kode?: string; id?: string; sagsnummer?: string };
+  // opdateret: anmelderen havde en åben sag om indholdet, og den nye kategori
+  // er føjet til den (evt. med kortere frist) - 20261102090000.
+  const svar = (data ?? {}) as { kode?: string; id?: string; sagsnummer?: string; opdateret?: boolean };
   if (svar.kode === "ok" && svar.id) {
     const anmeldelseId = svar.id;
     after(() => sendAnmeldelseKvittering(anmeldelseId));
@@ -263,6 +265,7 @@ export async function opretAnmeldelse(
       sagsnummer: svar.sagsnummer,
       statusSti: anmeldelseSti(anmeldelseId),
       ...(svar.kode === "findes" ? { findes: true as const } : {}),
+      ...(svar.kode === "findes" && svar.opdateret === true ? { opdateret: true as const } : {}),
     };
   }
   return fejl(svar.kode ?? "fejl");

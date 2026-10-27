@@ -343,6 +343,14 @@ async function gemProfil(brugerId: string, profil: SignupProfil | null): Promise
     if (error) {
       // Fx BHN01/BHN02 (navnet indeholder "BidHamr" eller kontaktoplysninger).
       await logSignupFejl("bekraeftKode.navn", `${error.code ?? ""}: ${error.message}`, brugerId);
+      // Navnet fra signup-metadata (handle_new_user) må ikke blive stående -
+      // det kan være et forbudt navn eller fra den, der oprettede kontoen.
+      // Kontoen hedder "Bruger", og brugeren bliver bedt om sit navn.
+      const { error: nulFejl } = await admin
+        .from("users")
+        .update({ navn: "Bruger", fornavn: null, efternavn: null })
+        .eq("id", brugerId);
+      if (nulFejl) await logSignupFejl("bekraeftKode.navnNulstil", `${nulFejl.code ?? ""}: ${nulFejl.message}`, brugerId);
     } else {
       navnSat = true;
     }

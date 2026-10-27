@@ -167,13 +167,44 @@ function erForside(pathname: string) {
   return pathname === "/";
 }
 
-function erAabenEfterLancering(pathname: string) {
+// Efter lancering: de sider, der kræver login. Kun dem sender en besøgende
+// uden login til /login - alle andre ukendte adresser går videre og giver en
+// rigtig 404 (not-found.tsx) i stedet for et login-krav. /api/* og /dev/*
+// står her, så route handlers uden for OFFENTLIGE_RUTER aldrig nås uden login.
+// Tilføjes en ny side, der kræver login, skal den med her (siderne tjekker
+// også selv brugeren - listen er kun til at sende pænt til /login).
+const LOGIN_PAAKRAEVET_EFTER_LANCERING = [
+  "/admin",
+  "/api",
+  "/dev",
+  "/konto",
+  "/mine-handler",
+  "/opret-auktion",
+  "/beskeder",
+  "/favoritter",
+  "/notifikationer",
+  "/andenchance",
+  "/velkommen",
+  "/firma",
+  "/profil/mig",
+];
+// /auktion/<id>/rediger (og alt under en auktion ud over selve siden).
+const LOGIN_PAAKRAEVET_MOENSTRE = [/^\/auktion\/[^/]+\/.+/];
+
+export function kraeverLoginEfterLancering(pathname: string) {
+  if (LOGIN_PAAKRAEVET_EFTER_LANCERING.some((rute) => pathname === rute || pathname.startsWith(`${rute}/`))) {
+    return true;
+  }
+  return LOGIN_PAAKRAEVET_MOENSTRE.some((m) => m.test(pathname));
+}
+
+export function erAabenEfterLancering(pathname: string) {
   if (pathname === "/") return true;
   if (AABNE_SIDER_EFTER_LANCERING.some((rute) => pathname === rute || pathname === `${rute}/`)) return true;
   return AABNE_MOENSTRE_EFTER_LANCERING.some((m) => m.test(pathname));
 }
 
-function erOffentligLaeseside(pathname: string, metode: string) {
+export function erOffentligLaeseside(pathname: string, metode: string) {
   if (metode !== "GET" && metode !== "HEAD") return false;
   return OFFENTLIGE_LAESESIDER.some(
     (rute) => pathname === rute || pathname.startsWith(`${rute}/`),
@@ -268,7 +299,7 @@ function firmaRedirectUrl(request: NextRequest, til: string): URL {
   return url;
 }
 
-function erOffentligRute(pathname: string) {
+export function erOffentligRute(pathname: string) {
   return OFFENTLIGE_RUTER.some(
     (rute) => pathname === rute || pathname.startsWith(`${rute}/`),
   );
@@ -525,6 +556,12 @@ export async function updateSession(
   if (!session) {
     if (!foerLancering()) {
       if (erAabenEfterLancering(pathname) || erStatiskFil(pathname, request.method)) {
+        return supabaseResponse;
+      }
+      // Ukendte adresser (ikke åbne og ikke en side, der kræver login) går
+      // videre til Next, som svarer med en rigtig 404. Kun læsninger - en
+      // server action kan sendes til enhver sti og afvises herunder.
+      if (erLaesning && !kraeverLoginEfterLancering(pathname)) {
         return supabaseResponse;
       }
       if (request.method === "GET" || request.method === "HEAD") {

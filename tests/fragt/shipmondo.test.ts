@@ -554,8 +554,17 @@ describe("webhook: statuskoder (fælles for DAO, GLS og PostNord)", () => {
     expect(monitorHaendelser(m).haendelser[0].noegle).toBe(monitorHaendelser({ ...m }).haendelser[0].noegle);
     const utenTid = { ...m, current_status_registered_at: null };
     const a = monitorHaendelser(utenTid).haendelser[0].noegle;
-    expect(a).toBe("shipmondo:69835919:DELIVERED:SUCCESS:uden-tid");
+    expect(a).toBe("shipmondo:69835919:DELIVERED:uden-tid");
     expect(monitorHaendelser({ ...utenTid }).haendelser[0].noegle).toBe(a);
+  });
+
+  it("samme forsendelse, kode og tidspunkt med en anden current_state er samme hændelse (20261102060000)", () => {
+    const m = (fx("monitor_gls_leveret.json") as { data: Record<string, unknown> }).data;
+    const a = monitorHaendelser(m).haendelser[0].noegle;
+    expect(monitorHaendelser({ ...m, current_state: "PROGRESSING" }).haendelser[0].noegle).toBe(a);
+    expect(a).not.toContain("SUCCESS");
+    // Et andet tidspunkt er en ny hændelse.
+    expect(monitorHaendelser({ ...m, current_status_registered_at: "2026-01-01T00:00:00Z" }).haendelser[0].noegle).not.toBe(a);
   });
 
   it("monitorTilType: kendte statusser pr. transportør", () => {

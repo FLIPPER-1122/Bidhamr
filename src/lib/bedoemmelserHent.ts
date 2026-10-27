@@ -5,7 +5,7 @@ import "server-only";
 // bedømmelser og skjulte/slettede svar kommer aldrig med (sælgeren ser dog
 // sit eget skjulte svar, markeret skjult).
 import type { createClient } from "@/lib/supabase/server";
-import { kortNavn } from "@/lib/kortNavn";
+import { visNavn } from "@/lib/kortNavn";
 import { svarKanRettes, type BedoemmelseVisning } from "@/lib/bedoemmelser";
 
 type Klient = Awaited<ReturnType<typeof createClient>>;
@@ -53,7 +53,8 @@ export async function hentBedoemmelser(
   const ids = liste.map((r) => r.id as string);
   const fraIds = [...new Set(liste.map((r) => r.fra_bruger_id as string))];
   const [{ data: navne }, { data: svar, error: svarFejl }, slettede] = await Promise.all([
-    supabase.from("users").select("id, navn, konto_type").in("id", fraIds),
+    // Kort navn fra databasen (users.visningsnavn, 20261102060000).
+    supabase.from("users").select("id, visningsnavn").in("id", fraIds),
     supabase
       .from("bedoemmelse_svar")
       .select("rating_id, tekst, oprettet, rettet_kl, skjult")
@@ -74,11 +75,8 @@ export async function hentBedoemmelser(
   }
 
   const nu = Date.now();
-  const navnMap = new Map((navne ?? []).map((u) => [u.id as string, u.navn as string | null]));
-  // Firmakonti vises med det fulde firmanavn (kortNavn).
-  const firmaIds = new Set(
-    (navne ?? []).filter((u) => (u as { konto_type?: string | null }).konto_type === "erhverv").map((u) => u.id as string),
-  );
+  // Firmakonti har det fulde firmanavn i visningsnavn.
+  const navnMap = new Map((navne ?? []).map((u) => [u.id as string, u.visningsnavn as string | null]));
   const svarMap = new Map(
     (svar ?? []).map((s) => [
       s.rating_id as string,
@@ -95,7 +93,7 @@ export async function hentBedoemmelser(
   return liste.map((r) => ({
     id: r.id as string,
     fra_bruger_id: r.fra_bruger_id as string,
-    fra_bruger_navn: kortNavn(navnMap.get(r.fra_bruger_id as string), firmaIds.has(r.fra_bruger_id as string)),
+    fra_bruger_navn: visNavn(navnMap.get(r.fra_bruger_id as string)),
     stjerner: Number(r.stjerner),
     kommentar: (r.kommentar as string | null) ?? null,
     oprettet: r.oprettet as string,

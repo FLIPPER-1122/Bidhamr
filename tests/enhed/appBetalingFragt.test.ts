@@ -33,7 +33,7 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () =>
     falskKlient((q) => {
       if (q.tabel === "trades") return { data: { seller_id: SAELGER }, error: null };
-      if (q.tabel === "users") return { data: { navn: "Ida H." }, error: null };
+      if (q.tabel === "users") return { data: { visningsnavn: "Ida H." }, error: null };
       return undefined;
     }).klient,
 }));

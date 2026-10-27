@@ -26,7 +26,9 @@ export default defineConfig({
     hookTimeout: 300_000,
     fileParallelism: false,
     pool: "forks",
-    poolOptions: { forks: { singleFork: true } },
+    // Én proces til alle filer (Vitest 4: tidligere poolOptions.forks.singleFork).
+    maxWorkers: 1,
+    isolate: false,
     sequence: { concurrent: false, shuffle: false, sequencer: Navneorden },
     reporters: ["verbose"],
     // Testmails ("[testmail, ikke sendt]") og webhook-logs fylder - vis dem

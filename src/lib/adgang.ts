@@ -12,13 +12,17 @@ import "server-only";
 // kan ikke postes til admin-hostens login-sider uden om gaten før lancering.
 //
 // Sessionen er admin-hostens egen cookie (src/lib/supabase/server.ts vælger
-// navnet ud fra Host). En almindelig bruger kan aldrig komme længere end
-// login: ikke-staff logges ud igen med samme besked som en forkert
-// adgangskode (afslører ikke, hvem der er medarbejder).
+// navnet ud fra Host). En almindelig bruger kommer aldrig så langt som til et
+// login: e-mailen slås først op med service role (staffMaaLoggeInd), og kun
+// aktive staff-konti logges ind (uden CAPTCHA). Alle andre - ukendte e-mails,
+// almindelige brugere, lukkede, slettede og suspenderede konti - får samme
+// svar som en forkert adgangskode, og alle svar tager mindst MIN_SVARTID_MS,
+// så hverken tekst eller svartid afslører, om e-mailen findes, eller hvem der
+// er medarbejder (sikkerhedsgennemgangen 27. okt. 2026, A-1).
 import { createClient, paaAdminVaert } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logIndUdenCaptcha } from "@/lib/supabase/adgangskodeLogin";
 import {
-  FOR_MANGE_FORSOEG,
   PROEV_IGEN_OM_LIDT,
   graenseFejl,
   klientIp,
@@ -42,7 +46,7 @@ import {
   sendSikkerhedsmail,
   sletAlleFaktorer,
 } from "@/lib/staffToTrin";
-import { renGendannelseskode, renTotpKode } from "@/lib/staffToTrinRegler";
+import { STAFF_ROLLER, renGendannelseskode, renTotpKode } from "@/lib/staffToTrinRegler";
 import { toTrinGendannetMail, toTrinMailKodeMail, toTrinOpsatMail } from "@/lib/mails/staffToTrin";
 import { sendHandelMailDetaljer } from "@/lib/mails/send";
 
@@ -61,6 +65,56 @@ async function kunAdminVaert(): Promise<boolean> {
   return paaAdminVaert();
 }
 
+// Fast minimumssvartid for login og gendannelse. Et adgangskodetjek hos
+// Supabase (bcrypt + netværk) tager typisk 0,2-0,8 s; gulvet ligger klart
+// over, så et svar for en ukendt e-mail (intet login) tager lige så lang tid
+// som et for en medarbejder med forkert adgangskode.
+const MIN_SVARTID_MS = 2000;
+
+async function medMinimumSvartid<T>(fn: () => Promise<T>): Promise<T> {
+  const start = Date.now();
+  try {
+    return await fn();
+  } finally {
+    const rest = MIN_SVARTID_MS - (Date.now() - start);
+    if (rest > 0) await new Promise((r) => setTimeout(r, rest));
+  }
+}
+
+// Samme roller som staff_to_trin_er_staff_rolle (inkl. erhvervssælgere).
+const STAFF_ROLLE_SAET = new Set<string>(STAFF_ROLLER);
+
+type StaffOpslag = { kode: "ja"; id: string } | { kode: "nej" } | { kode: "fejl" };
+
+// Må e-mailen overhovedet forsøge at logge ind på admin-hosten? Slås op med
+// service role FØR adgangskoden prøves. "nej" for ukendte e-mails, konti uden
+// staff-rolle og lukkede, slettede eller (aktivt) suspenderede konti.
+async function staffMaaLoggeInd(email: string): Promise<StaffOpslag> {
+  const { data, error } = await createAdminClient()
+    .from("users")
+    .select("id, rolle, suspenderet, suspenderet_til, konto_slettet_kl, konto_lukket_kl")
+    .eq("email", email)
+    .limit(2);
+  if (error) {
+    console.error("staffMaaLoggeInd: opslag fejlede:", error.message);
+    return { kode: "fejl" };
+  }
+  const raekker = (data ?? []) as {
+    id: string;
+    rolle: string | null;
+    suspenderet: boolean | null;
+    suspenderet_til: string | null;
+    konto_slettet_kl: string | null;
+    konto_lukket_kl: string | null;
+  }[];
+  if (raekker.length !== 1) return { kode: "nej" };
+  const u = raekker[0];
+  if (!u.rolle || !STAFF_ROLLE_SAET.has(u.rolle)) return { kode: "nej" };
+  if (u.konto_slettet_kl || u.konto_lukket_kl) return { kode: "nej" };
+  if (u.suspenderet && (!u.suspenderet_til || new Date(u.suspenderet_til) > new Date())) return { kode: "nej" };
+  return { kode: "ja", id: u.id };
+}
+
 type Naeste = "kode" | "opsaet" | "lukket";
 
 // Log ind med e-mail og adgangskode. Svaret siger, hvilket trin der er det
@@ -69,6 +123,15 @@ type Naeste = "kode" | "opsaet" | "lukket";
 export async function logIndAdmin(emailInput: string, password: string): Promise<{ ok: true; naeste: Naeste } | Fejl> {
   try {
     if (!(await kunAdminVaert())) return { fejl: IKKE_HER };
+    return await medMinimumSvartid(() => logIndAdminTrin(emailInput, password));
+  } catch (err) {
+    console.error("logIndAdmin kastede:", err);
+    return { fejl: GENERISK };
+  }
+}
+
+async function logIndAdminTrin(emailInput: string, password: string): Promise<{ ok: true; naeste: Naeste } | Fejl> {
+  try {
     const email = renEmail(emailInput);
     if (!email || typeof password !== "string" || password.length === 0 || password.length > 200) {
       return { fejl: FORKERT_LOGIN };
@@ -76,28 +139,45 @@ export async function logIndAdmin(emailInput: string, password: string): Promise
 
     const ip = await klientIp();
     const graense = graenseFejl(
-      await tjekGraenserLukket([["admin_login_ip", ip], ["admin_login_email_ip", `${email}|${ip}`]]),
+      await tjekGraenserLukket([
+        ["admin_login_ip", ip],
+        ["admin_login_email_ip", `${email}|${ip}`],
+        ["admin_login_email", email],
+      ]),
     );
     if (graense) return { fejl: graense };
 
+    // Først opslaget: kun aktive staff-konti logges ind uden CAPTCHA.
+    const adgang = await staffMaaLoggeInd(email);
+    if (adgang.kode === "fejl") return { fejl: GENERISK };
+    if (adgang.kode === "nej") return { fejl: FORKERT_LOGIN };
+
     const supabase = await createClient();
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await logIndUdenCaptcha(supabase, email, password);
     if (error || !data.user) {
-      if (error?.status === 429) return { fejl: FOR_MANGE_FORSOEG };
+      // Supabase Auths egen grænse (429) svarer som et forkert login: kun
+      // staff-e-mails når hertil, så en særlig tekst ville afsløre dem.
+      if (error?.status === 429) {
+        console.error("logIndAdmin: Supabase Auth rate limit (429)");
+        return { fejl: FORKERT_LOGIN };
+      }
       if (error && error.code !== "invalid_credentials" && error.code !== "user_banned" && error.code !== "email_not_confirmed") {
         console.error("logIndAdmin fejlede:", error.code, error.message);
       }
       return { fejl: FORKERT_LOGIN };
     }
-    await nulstilGraense("admin_login_email_ip", `${email}|${ip}`);
-
+    // Ekstra værn: samme konto som opslaget, og staff set fra brugerens egen
+    // session. Suspenderede får det generiske svar (afslører ikke kontoen).
     const [konto, status] = await Promise.all([hentKontoStatus(data.user.id), minStaffStatus(supabase)]);
-    if (konto.kode !== "ok" || !status?.staff) {
+    if (data.user.id !== adgang.id || konto.kode !== "ok" || !status?.staff) {
       await supabase.auth.signOut({ scope: "local" });
-      if (konto.kode === "suspenderet") return { fejl: konto.besked };
       if (konto.kode === "fejl" || !status) return { fejl: GENERISK };
       return { fejl: FORKERT_LOGIN };
     }
+    // Først nulstilling, når det er en medarbejder: login her er uden CAPTCHA
+    // (logIndUdenCaptcha), så en almindelig bruger må ikke kunne bruge siden
+    // til at gætte adgangskoder hurtigere end loftet.
+    await nulstilGraense("admin_login_email_ip", `${email}|${ip}`);
 
     // Mail ved login fra en ny enhed (som på hovedsitet).
     await registrerLogin({ brugerId: data.user.id, email: data.user.email, accessToken: data.session?.access_token });
@@ -350,9 +430,22 @@ export async function gendanAdmin(
   password: string,
   gendannelseskode: string,
 ): Promise<{ ok: true } | Fejl> {
-  const FORKERT = "E-mail, adgangskode eller gendannelseskode passer ikke.";
   try {
     if (!(await kunAdminVaert())) return { fejl: IKKE_HER };
+    return await medMinimumSvartid(() => gendanAdminTrin(emailInput, password, gendannelseskode));
+  } catch (err) {
+    console.error("gendanAdmin kastede:", err);
+    return { fejl: GENERISK };
+  }
+}
+
+async function gendanAdminTrin(
+  emailInput: string,
+  password: string,
+  gendannelseskode: string,
+): Promise<{ ok: true } | Fejl> {
+  const FORKERT = "E-mail, adgangskode eller gendannelseskode passer ikke.";
+  try {
     const email = renEmail(emailInput);
     const kode = renGendannelseskode(gendannelseskode);
     if (!email || typeof password !== "string" || !password || password.length > 200 || !kode) {
@@ -363,18 +456,26 @@ export async function gendanAdmin(
     const graense = graenseFejl(await tjekGraenserLukket([["admin_gendan_ip", ip], ["admin_gendan_email", email]]));
     if (graense) return { fejl: graense };
 
+    // Som logIndAdmin: kun aktive staff-konti logges ind uden CAPTCHA.
+    const adgang = await staffMaaLoggeInd(email);
+    if (adgang.kode === "fejl") return { fejl: PROEV_IGEN_OM_LIDT };
+    if (adgang.kode === "nej") return { fejl: FORKERT };
+
     const supabase = await createClient();
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await logIndUdenCaptcha(supabase, email, password);
     if (error || !data.user) {
-      if (error?.status === 429) return { fejl: FOR_MANGE_FORSOEG };
+      // Som logIndAdmin: 429 må ikke afsløre, at e-mailen er staff.
+      if (error?.status === 429) {
+        console.error("gendanAdmin: Supabase Auth rate limit (429)");
+        return { fejl: FORKERT };
+      }
       return { fejl: FORKERT };
     }
 
     const [konto, status] = await Promise.all([hentKontoStatus(data.user.id), minStaffStatus(supabase)]);
     const hash = hashGendannelseskode(data.user.id, kode);
-    if (konto.kode !== "ok" || !status?.staff || !hash) {
+    if (data.user.id !== adgang.id || konto.kode !== "ok" || !status?.staff || !hash) {
       await supabase.auth.signOut({ scope: "local" });
-      if (konto.kode === "suspenderet") return { fejl: konto.besked };
       return { fejl: konto.kode === "fejl" || !status ? PROEV_IGEN_OM_LIDT : FORKERT };
     }
 

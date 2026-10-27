@@ -15,10 +15,13 @@ import { FORMULAR_FEJL, KORT, LINK } from "./felter";
 // Navn og enheder hentes højst én gang pr. forespørgsel (begge sektioner
 // viser navnet), og /konto starter dem på forhånd sammen med sine egne
 // opslag (forhaandshentKonto), så sektionerne ikke venter en runde mere.
+// users.navn kan kun læses af brugeren selv via mit_navn() (auth.uid(),
+// 20261102060000) - brugerId er kun cache-nøglen.
 const hentMitNavn = cache(async (brugerId: string) => {
+  void brugerId;
   const supabase = await createClient();
-  const { data } = await supabase.from("users").select("navn").eq("id", brugerId).maybeSingle();
-  return (data?.navn as string | null | undefined) ?? null;
+  const { data } = await supabase.rpc("mit_navn").maybeSingle<{ navn: string | null }>();
+  return data?.navn ?? null;
 });
 
 const hentMineEnheder = cache(async () => {

@@ -49,6 +49,10 @@ export const GRAENSER = {
   // Tjek af nuværende adgangskode (skift adgangskode, slet konto) og
   // ny adgangskode efter nulstilling.
   adgangskode_bruger: { maks: 6, vindueSek: 15 * 60 },
+  // Gem ny adgangskode efter nulstillingslinket - egen pulje, så
+  // nulstillingsmails (nulstil_ip) ikke blokerer selve gemningen. Linket er
+  // allerede beskyttelsen; nøglen er IP + e-mail (CGNAT: mange deler IP).
+  ny_adgangskode_ip_email: { maks: 20, vindueSek: 60 * 60 },
   konto_slet_bruger: { maks: 5, vindueSek: 60 * 60 },
   // POST /api/konto/slet (appen) pr. IP, før tokenet er valideret.
   konto_slet_ip: { maks: 20, vindueSek: 60 * 60 },
@@ -56,7 +60,10 @@ export const GRAENSER = {
   nyt_login_mail: { maks: 5, vindueSek: 60 * 60 },
   // Enheder: fjern enhed / log ud andre steder.
   enheder_bruger: { maks: 30, vindueSek: 15 * 60 },
-  venteliste_ip: { maks: 5, vindueSek: 60 * 60 },
+  // Venteliste: rummeligt IP-loft (CGNAT, arbejdspladser, kampagner) og et
+  // lavt loft pr. e-mail, så samme adresse ikke kan få mails igen og igen.
+  venteliste_ip: { maks: 30, vindueSek: 60 * 60 },
+  venteliste_email: { maks: 3, vindueSek: 60 * 60 },
   bud_bruger: { maks: 20, vindueSek: 60 },
   bud_ip: { maks: 40, vindueSek: 60 },
   // Spørg sælger. Databasen har sine egne grænser pr. bruger
@@ -205,6 +212,10 @@ export const GRAENSER = {
   // desuden sin egen grænse på /adgang (HUSKELISTE.md).
   admin_login_ip: { maks: 20, vindueSek: 15 * 60 },
   admin_login_email_ip: { maks: 5, vindueSek: 15 * 60 },
+  // Pr. e-mail alene (uden IP), så mange IP'er ikke kan gætte løs på samme
+  // konto. Tælles før e-mailen slås op (også for e-mails, der ikke er staff),
+  // og nulstilles ikke ved succes.
+  admin_login_email: { maks: 10, vindueSek: 15 * 60 },
   admin_kode_bruger: { maks: 5, vindueSek: 15 * 60 },
   admin_kode_ip: { maks: 30, vindueSek: 15 * 60 },
   admin_opsaet_bruger: { maks: 10, vindueSek: 60 * 60 },

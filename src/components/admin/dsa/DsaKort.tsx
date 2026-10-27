@@ -58,7 +58,38 @@ export type Anmeldelse = {
   genaabnet_kl: string | null;
   anonymiseret_kl: string | null;
   oprettet_kl: string;
+  // Nye kategorier, anmelderen har føjet til sagen (dsa_anmeldelse_tillaeg,
+  // 20261102110000). Begrundelsen ovenfor er altid anmeldelsen, som den kom.
+  tillaeg?: Tillaeg[];
 };
+
+export type Tillaeg = {
+  id: string;
+  anmeldelse_id: string;
+  kategori: string;
+  sag_kategori_foer: string;
+  begrundelse: string;
+  oprettet_kl: string;
+};
+
+// Tilføjelserne under anmeldelsens begrundelse.
+function Tilfoejelser({ a, lille = false }: { a: Anmeldelse; lille?: boolean }) {
+  const liste = a.tillaeg ?? [];
+  if (liste.length === 0) return null;
+  return (
+    <div className={`mt-2 space-y-2 border-l-2 border-neutral-300 pl-3 ${lille ? "text-xs" : ""}`}>
+      {liste.map((t) => (
+        <div key={t.id}>
+          <p className="text-xs text-neutral-600">
+            Tilføjet af anmelderen {tid(t.oprettet_kl)} · {anmeldKategoriNavn(t.kategori)} · sagens kategori
+            før: {anmeldKategoriNavn(t.sag_kategori_foer)}
+          </p>
+          <p className="mt-0.5 whitespace-pre-wrap break-words text-neutral-800">{t.begrundelse}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export type Afgoerelse = {
   id: string;
@@ -215,6 +246,7 @@ export function AnmeldelseGruppeKort({
                   <Anmelder a={x} navn={navn} />
                 </p>
                 <p className="mt-1 whitespace-pre-wrap break-words text-neutral-800">{x.begrundelse}</p>
+                <Tilfoejelser a={x} />
               </li>
             ))}
           </ul>
@@ -427,6 +459,7 @@ export function KlageKort({
               <p className="mt-1 text-neutral-700">{UDFALD_NAVNE[anm.udfald ?? ""] ?? anm.udfald}</p>
               {anm.svar_til_anmelder && <p className="mt-1 whitespace-pre-wrap break-words text-neutral-700">Svar: {anm.svar_til_anmelder}</p>}
               <p className="mt-1 whitespace-pre-wrap break-words text-xs text-neutral-600">Anmeldelsen: {anm.begrundelse}</p>
+              <Tilfoejelser a={anm} lille />
             </>
           ) : (
             <p className="text-neutral-600">Ikke fundet.</p>

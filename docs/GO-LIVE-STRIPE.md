@@ -115,6 +115,7 @@ Stripe-id'er fra testtilstand virker ikke med live-nøglen. Nulstil (sæt til `n
 
 ### E3. Skift
 - [ ] Vercel → Environment Variables (Filip selv): `STRIPE_SECRET_KEY` (sk_live_…), `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (pk_live_…), `STRIPE_WEBHOOK_SECRET`, `STRIPE_CONNECT_WEBHOOK_SECRET` (live-værdierne fra E1). Begge nøgler skal være live – ellers stopper nye betalinger.
+- [ ] **`FRAGT_LABELS_AKTIV=true` SKAL være sat i Vercel ved lancering** (Filip selv). Uden flaget kan sælgeren hverken lave en fragtlabel eller se købers adresse ved "Levering hjem" - handelssiden beder sælgeren skrive til support. Se `docs/FRAGT.md`, "Go-live (produktion)", punkt 6.
 - [ ] Appen (Expo): live-publishable key.
 - [ ] Til sidst – i samme migration som E2 eller lige efter: `update public.stripe_tilstand set tilstand = 'live', aendret_kl = now(), note = 'Go-live <dato>' where id;` Først nu kalder serveren Stripe med live-nøglen.
 - [ ] Redeploy.

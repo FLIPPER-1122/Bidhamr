@@ -70,7 +70,8 @@ Alle handlinger med `trade_id` slår handlen op først: **404 `ikke_fundet`**, h
 - **`send-pakke`** (sælgeren): billederne uploades først til `pakke-billeder` (`<sælger-id>/<handel-id>/<uuid>.jpg`,
   `upsert: false`). `{}` eller manglende `tracking`/`billeder` giver 400. Fejl fra `trade_marker_sendt` gives som
   `kode` (`allerede_sendt`, `annulleret`, `afhentning`, `billeder_kraeves`, `ugyldige_billeder`, `billede_mangler`,
-  `for_mange_billeder`, `ugyldigt_tracking`). Køberen får "Din pakke er på vej".
+  `for_mange_billeder`, `ugyldigt_tracking`, og `409 indsigelse`, når køberens bank har en åben eller tabt
+  indsigelse - 20261102080000). Køberen får "Din pakke er på vej".
 - **`modtaget`** (køberen): `409 ikke_klar` (ikke sendt), `409 allerede` (dobbelttryk). Sælgeren får "Pakken er
   kommet frem".
 - **`godkend`** (køberen, uigenkaldeligt - vis en bekræftelse): `400 ugyldige_stjerner` / `kommentar_for_lang`

@@ -56,6 +56,12 @@ export default async function Header() {
   // sender tilbage til /firma (og klokken/beskeder spørger serveren via server
   // actions, som firmaet ikke må kalde før lancering).
   const kunFirma = erFirma && foerLancering();
+  // Erhvervssælgeren (rollen 'saelger') må før lancering kun bruge Admin →
+  // Erhverv: gaten afviser server actions på alle andre stier (403). Klokken
+  // og tælleren for beskeder spørger serveren via server actions, så de vises
+  // / kører ikke for sælgeren før lancering (ellers konsolfejl på fx /login,
+  // /glemt-adgangskode og /erhverv).
+  const saelgerFoerLancering = rolle === "saelger" && foerLancering();
   // "Sælgere du følger" i kategorilinjen (kun indloggede private). På
   // 1024-1279 px gives der plads ved at vise kategorierne fra xl.
   const visFoelger = loggetInd && !erFirma;
@@ -73,7 +79,7 @@ export default async function Header() {
   }
 
   return (
-    <UlaesteBeskederProvider startAntal={ulaesteBeskeder} aktiv={loggetInd && !erFirma}>
+    <UlaesteBeskederProvider startAntal={ulaesteBeskeder} aktiv={loggetInd && !erFirma && !saelgerFoerLancering}>
       <a
         href="#indhold"
         className="sr-only z-[60] rounded-lg bg-white px-4 py-3 font-medium text-groen shadow-flyder focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:outline-2 focus:outline-groen"
@@ -152,7 +158,7 @@ export default async function Header() {
               </>
             )}
 
-            {loggetInd && !erFirma && <Klokke startAntal={ulaeste} />}
+            {loggetInd && !erFirma && !saelgerFoerLancering && <Klokke startAntal={ulaeste} />}
 
             {!loggetInd && (
               <Link

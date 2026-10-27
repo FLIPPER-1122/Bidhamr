@@ -92,6 +92,24 @@ async function medBoost(
 
 const FEJL = "Auktionerne kunne ikke hentes. Prøv igen.";
 
+const TOM_SIDE: AuktionsSide = { ok: true, auktioner: [], total: 0, totalType: "praecis", naesteOffset: 0 };
+
+// En søgning, der ligner SQL (fx "' or 1=1 --"), afvises af Supabases
+// Cloudflare foran databasen med en HTML-side (403) - ikke af databasen.
+// Så er der bare ingen resultater (siden viser "Prøv en anden søgning"), i
+// stedet for "Noget gik galt". Kun når der er en søgetekst, OG status er 403,
+// OG svaret er HTML: et 403 fra PostgREST (JSON, fx 42501 "permission denied"
+// efter en ændret grant) er en rigtig fejl, og det samme er en HTML-side med
+// 502/504 (gateway nede eller timeout). De må ikke skjules som 0 resultater -
+// de logges og vises som en fejl.
+export function soegningAfvist(soegetekst: string, status: number, besked: string): boolean {
+  return !!soegetekst && status === 403 && besked.trimStart().startsWith("<");
+}
+
+function logSoegeFejl(hvad: string, status: number, error: { message: string; code?: string }) {
+  console.error(`${hvad} kunne ikke hentes (HTTP ${status}${error.code ? `, ${error.code}` : ""}):`, error.message);
+}
+
 export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<AuktionsSide> {
   const søgetekst = typeof filtre.q === "string" ? filtre.q.trim().slice(0, MAKS_SOEGETEKST) : "";
   const kategori = typeof filtre.kategori === "string" ? filtre.kategori.trim() : "";
@@ -148,12 +166,13 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
   };
 
   if (!center || radiusKm == null) {
-    const { data, count, error } = await grund(KORT_KOLONNER, true).range(
+    const { data, count, error, status } = await grund(KORT_KOLONNER, true).range(
       offset,
       offset + AUKTIONER_PR_SIDE - 1,
     );
+    if (error && soegningAfvist(søgetekst, status, error.message)) return TOM_SIDE;
     if (error) {
-      console.error("Auktioner kunne ikke hentes:", error.message);
+      logSoegeFejl("Auktioner", status, error);
       return { ok: false, fejl: FEJL };
     }
     const rækker = (data ?? []) as unknown as KortRaekke[];
@@ -177,14 +196,15 @@ export async function hentAuktionsside(filtre: AuktionsFiltre): Promise<Auktions
   // 20261008050000). Auktioner uden koordinat kommer derfor ikke med.
   const dLat = (radiusKm / 111) * 1.01;
   const dLng = (radiusKm / (111.32 * Math.cos((center.lat * Math.PI) / 180))) * 1.01;
-  const { data: kandidater, error: kandidatFejl } = await grund(AFSTAND_KOLONNER, false)
+  const { data: kandidater, error: kandidatFejl, status: kandidatStatus } = await grund(AFSTAND_KOLONNER, false)
     .gte("lat", Number((center.lat - dLat).toFixed(5)))
     .lte("lat", Number((center.lat + dLat).toFixed(5)))
     .gte("lng", Number((center.lng - dLng).toFixed(5)))
     .lte("lng", Number((center.lng + dLng).toFixed(5)))
     .limit(MAKS_KANDIDATER);
+  if (kandidatFejl && soegningAfvist(søgetekst, kandidatStatus, kandidatFejl.message)) return TOM_SIDE;
   if (kandidatFejl) {
-    console.error("Auktioner (afstand) kunne ikke hentes:", kandidatFejl.message);
+    logSoegeFejl("Auktioner (afstand)", kandidatStatus, kandidatFejl);
     return { ok: false, fejl: FEJL };
   }
 

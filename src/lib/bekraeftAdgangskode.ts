@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
-import { offentligNoegle } from "@/lib/supabase/noegler";
+import { hemmeligNoegle } from "@/lib/supabase/noeglerServer";
 
 // Tjekker en brugers nuværende adgangskode uden at røre brugerens egne
 // cookies: en midlertidig klient uden lager logger ind og ud igen med det
@@ -12,9 +12,14 @@ export async function bekraeftAdgangskode(
   adgangskode: string,
 ): Promise<"ok" | "forkert" | "for_mange" | "fejl"> {
   if (!email || typeof adgangskode !== "string" || adgangskode.length === 0) return "forkert";
+  // Den hemmelige nøgle: Supabase Auth springer CAPTCHA over for service
+  // role, så tjekket virker også, når CAPTCHA er slået til (docs/SIKKERHED-
+  // AUTH.md). Brugeren er allerede logget ind, og kalderne har egne lofter
+  // (adgangskode_bruger m.fl.). Sessionen er en almindelig brugersession og
+  // logges ud med det samme.
   const klient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    offentligNoegle(),
+    hemmeligNoegle(),
     { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } },
   );
   const { data, error } = await klient.auth.signInWithPassword({ email, password: adgangskode });

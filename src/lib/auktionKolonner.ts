@@ -3,7 +3,9 @@
 // (20261010061000_niels_m03_vinder_id_app_afhaengig.sql). Derfor virker
 // select("*") på auctions ikke fra brugerens klient - brug denne liste.
 // Ny kolonne på auctions? Tilføj den her OG grant select (kolonne) i
-// migrationen.
+// migrationen. idempotens_noegle og forbudt_bekraeftet kan heller ikke læses
+// (20261102060000_sikkerhed_stramning.sql) - en dublet findes med
+// rpc("min_auktion_for_noegle").
 // Kun kolonner, der findes i BÅDE produktion og testdatabasen (prod har
 // også app-kolonnerne vis_antal_bud og is_bundle, test har visninger).
 // Typet som string (ikke en literal), fordi supabase-js ikke kan parse
@@ -34,8 +36,6 @@ export const AUKTION_KOLONNER: string = [
   "varighed_dage",
   "redigeret_kl",
   "spoergsmaal_aktiv",
-  "forbudt_bekraeftet",
-  "idempotens_noegle",
   "visningspris",
   "pauset_kl",
   "pause_resterende",
@@ -79,8 +79,6 @@ export type AuktionRaekke = {
   varighed_dage: number | null;
   redigeret_kl: string;
   spoergsmaal_aktiv: boolean;
-  forbudt_bekraeftet: boolean;
-  idempotens_noegle: string | null;
   visningspris: number | null;
   pauset_kl: string | null;
   pause_resterende: string | null;

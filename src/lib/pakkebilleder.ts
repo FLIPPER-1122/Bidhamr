@@ -11,6 +11,8 @@
 //   supabase.from("pakke_billeder").select("id, trade_id, sti, kategori, oprettet_kl")
 //   supabase.storage.from("pakke-billeder").createSignedUrls(stier, 3600)
 
+import { INDSIGELSE_FEJL } from "@/lib/tekster/handel";
+
 export const PAKKE_BUCKET = "pakke-billeder";
 export const PAKKE_MAKS_BILLEDER = 10;
 
@@ -36,6 +38,8 @@ export const PAKKE_SEND_FEJL: Record<string, string> = {
   afhentning: "Varen skal hentes hos dig – der sendes ingen pakke.",
   allerede_sendt: "Pakken er allerede markeret som sendt.",
   annulleret: "Handlen er annulleret, og du skal ikke sende varen.",
+  // Bankindsigelse (20261102080000_handel_testfund.sql).
+  indsigelse: INDSIGELSE_FEJL,
   billeder_kraeves:
     "Tag mindst ét billede af varen pakket i den åbne kasse og ét af den lukkede kasse med label.",
   ugyldige_billeder: "Et eller flere billeder er ugyldige. Tag dem igen.",

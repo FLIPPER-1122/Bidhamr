@@ -42,7 +42,7 @@ export default function AnmeldFormular({ type, id, hvad, loggetInd, onLuk }: Anm
   // Uden login vises hverken sagsnummer eller link - de kommer kun i
   // kvitteringsmailen (så ingen kan se andres sager via en fremmed e-mail).
   const [kvittering, setKvittering] = useState<
-    { anonym: true; medEmail: boolean } | { anonym: false; sagsnummer: string; statusSti: string; findes: boolean } | null
+    { anonym: true; medEmail: boolean } | { anonym: false; sagsnummer: string; statusSti: string; findes: boolean; opdateret: boolean } | null
   >(null);
   const [sender, startSend] = useTransition();
   // Knappen er slået fra, til siden er hydreret (src/lib/useHydreret.ts).
@@ -76,7 +76,7 @@ export default function AnmeldFormular({ type, id, hvad, loggetInd, onLuk }: Anm
         setKvittering({ anonym: true, medEmail: typeof mail === "string" && mail.trim() !== "" });
         return;
       }
-      setKvittering({ anonym: false, sagsnummer: r.sagsnummer, statusSti: r.statusSti, findes: !!r.findes });
+      setKvittering({ anonym: false, sagsnummer: r.sagsnummer, statusSti: r.statusSti, findes: !!r.findes, opdateret: !!r.opdateret });
     });
   }
 
@@ -100,10 +100,16 @@ export default function AnmeldFormular({ type, id, hvad, loggetInd, onLuk }: Anm
         ) : (
           <>
             <h2 className="text-[20px] leading-tight">
-              {kvittering.findes ? "Du har allerede anmeldt dette" : "Tak for din anmeldelse"}
+              {kvittering.opdateret
+                ? "Tak – vi har tilføjet det til din sag"
+                : kvittering.findes
+                  ? "Du har allerede anmeldt dette"
+                  : "Tak for din anmeldelse"}
             </h2>
             <p className="mt-1.5 text-sm text-tekst-daempet">
-              {kvittering.findes
+              {kvittering.opdateret
+                ? "Din nye begrundelse er føjet til din tidligere anmeldelse."
+                : kvittering.findes
                 ? "Vi er ved at se på din tidligere anmeldelse."
                 : "En medarbejder kigger på det. Du får svar, når vi har taget stilling."}
             </p>

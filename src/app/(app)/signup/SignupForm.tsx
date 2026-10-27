@@ -9,6 +9,8 @@ import AdgangskodeFelt from "@/components/konto/AdgangskodeFelt";
 import { FELT, FELT_FEJL, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
 import { BETINGELSER_STI, PRIVATLIV_STI, VILKAAR_VERSION } from "@/lib/vilkaar";
 import { useHydreret } from "@/lib/useHydreret";
+import Turnstile from "@/components/Turnstile";
+import { CAPTCHA_MANGLER, turnstileAktiv } from "@/lib/turnstile";
 
 type Felt = "fornavn" | "efternavn" | "email" | "password" | "vilkaar";
 
@@ -32,6 +34,10 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
   const hydreret = useHydreret();
   const [fejl, setFejl] = useState<string | null>(null);
   const [fejlFelt, setFejlFelt] = useState<Felt | null>(null);
+
+  // Turnstile (CAPTCHA) - kun når NEXT_PUBLIC_TURNSTILE_SITE_KEY er sat.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaNulstil, setCaptchaNulstil] = useState(0);
 
   const person = { email, navn: [fornavn, efternavn] };
 
@@ -68,6 +74,11 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
       return;
     }
 
+    if (turnstileAktiv() && !captchaToken) {
+      visFejl(CAPTCHA_MANGLER, null);
+      return;
+    }
+
     setLoading(true);
     const svar = await opretKonto({
       fornavn,
@@ -75,8 +86,11 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
       email,
       password,
       vilkaarVersion: VILKAAR_VERSION,
+      captchaToken: captchaToken ?? undefined,
     });
     if ("fejl" in svar) {
+      // Tokenet er brugt - et nyt til næste forsøg.
+      setCaptchaNulstil((n) => n + 1);
       setLoading(false);
       visFejl(svar.fejl, svar.felt ?? null);
       return;
@@ -207,6 +221,8 @@ export default function SignupForm({ kunInviterede = false }: { kunInviterede?: 
                 .
               </p>
             </div>
+
+            <Turnstile handling="opret" onToken={setCaptchaToken} nulstil={captchaNulstil} />
 
             {fejl && fejlFelt !== "password" && (
               <p role="alert" className={FORMULAR_FEJL}>

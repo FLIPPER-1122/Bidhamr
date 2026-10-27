@@ -28,7 +28,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvor meget skal jeg mindst byde over?",
-          svar: "Det afhænger af det højeste bud lige nu. Under 100 kr.: mindst 5 kr. mere. 100-999 kr.: 10 kr. 1.000-4.999 kr.: 50 kr. Fra 5.000 kr.: 100 kr. Det første bud må gerne være lig startprisen.",
+          svar: "Det afhænger af det højeste bud lige nu. Under 100 kr.: mindst 5 kr. mere. 100-999 kr.: 10 kr. 1.000-4.999 kr.: 50 kr. Fra 5.000 kr.: 100 kr. Det første bud må gerne være lig startprisen, dog mindst 3 kr.",
         },
         {
           spoergsmaal: "Hvordan virker automatisk bud?",
