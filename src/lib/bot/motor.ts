@@ -40,6 +40,7 @@ import {
   type BotInput,
   botModel,
   botNoegle,
+  botMaksPrisUsd,
   botPrisUsd,
   loftFejl,
 } from "@/lib/bot/konfig";
@@ -126,6 +127,7 @@ export async function startBotSvar(k: BotKald): Promise<BotStart> {
     p_ip_hash: hash,
     p_kilde: k.kilde,
     p_tekst: k.input.besked,
+    p_maks_svar_usd: botMaksPrisUsd(model),
   });
   if (error) {
     await logDriftFejl({ kilde: "server", sti: "/api/bot", hvor: "bot_ny_besked", fejl: error.message, brugerId: k.brugerId });
@@ -144,7 +146,7 @@ export async function startBotSvar(k: BotKald): Promise<BotStart> {
       fejl: `Døgnloftet er nået (${svar.usd ?? "?"} af ${svar.loft_usd ?? "?"} USD det seneste døgn) - botten holder pause, til forbruget falder. ${new Date().toISOString().slice(0, 10)}`,
     });
   }
-  if (!svar || svar.kode !== "ok" || !svar.samtale_id) return loftFejl(svar?.kode ?? "fejl");
+  if (!svar || svar.kode !== "ok" || !svar.samtale_id) return loftFejl(svar?.kode ?? "fejl", svar?.grund);
   const samtaleId = svar.samtale_id;
 
   const historik = await hentHistorik(samtaleId);

@@ -81,6 +81,7 @@ export default function BotChat({ brugerNoegle, maksTegn }: { brugerNoegle: stri
   const [fejl, setFejl] = useState<string | null>(null);
   const [nySamtale, setNySamtale] = useState(false);
   const [fremhaev, setFremhaev] = useState(false);
+  const [visKontakt, setVisKontakt] = useState(false);
   const [visEmail, setVisEmail] = useState(false);
   const [email, setEmail] = useState("");
   const [overdrager, setOverdrager] = useState(false);
@@ -114,6 +115,7 @@ export default function BotChat({ brugerNoegle, maksTegn }: { brugerNoegle: stri
     setVisEmail(false);
     setEmail("");
     setNySamtale(false);
+    setVisKontakt(false);
     setFejl(null);
     setOverdragFejl(null);
   }, [brugerNoegle]);
@@ -168,6 +170,7 @@ export default function BotChat({ brugerNoegle, maksTegn }: { brugerNoegle: stri
     setFremhaev(false);
     setVisEmail(false);
     setNySamtale(false);
+    setVisKontakt(false);
     setFejl(null);
     setOverdragFejl(null);
   };
@@ -181,6 +184,7 @@ export default function BotChat({ brugerNoegle, maksTegn }: { brugerNoegle: stri
       return;
     }
     setFejl(null);
+    setVisKontakt(false);
     setSender(true);
     setTekst("");
     setBeskeder((b) => [...b, { rolle: "bruger", tekst: besked }, { rolle: "bot", tekst: "" }]);
@@ -204,7 +208,10 @@ export default function BotChat({ brugerNoegle, maksTegn }: { brugerNoegle: stri
         setBeskeder((b) => b.slice(0, -1));
         setFejl(j?.fejl ?? GENERISK);
         if (j?.kode === "ukendt_samtale" || j?.kode === "samtale_fuld") setNySamtale(true);
-        if (j?.kode === "loft_bruger" || j?.kode === "loft_ip" || j?.kode === "loft_alle") setFremhaev(true);
+        if (j?.kode === "loft_bruger" || j?.kode === "loft_ip" || j?.kode === "loft_alle" || j?.kode === "loft_bruger_usd") {
+          setFremhaev(true);
+          setVisKontakt(true);
+        }
         return;
       }
       const laeser = res.body.getReader();
@@ -334,6 +341,14 @@ export default function BotChat({ brugerNoegle, maksTegn }: { brugerNoegle: stri
             {fejl && (
               <p role="alert" className="border border-fejl-kant bg-fejl-bg px-3 py-2 text-sm text-fejl-tekst">
                 {fejl}
+                {visKontakt && (
+                  <>
+                    {" "}
+                    <Link href="/kontakt" className="font-semibold underline">
+                      Gå til kontaktformularen
+                    </Link>
+                  </>
+                )}
                 {nySamtale && (
                   <>
                     {" "}
