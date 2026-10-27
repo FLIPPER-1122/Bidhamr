@@ -1,6 +1,6 @@
 // Kontaktoplysninger i en auktions titel og beskrivelse (TS-spejlet af
 // public.auktion_kontaktinfo_grund). Samme eksempler kører i testblokken
-// sidst i supabase/migrations/20261102190000_kontaktinfo_rettelser2.sql.
+// sidst i supabase/migrations/20261102220000_kontaktinfo_rettelser3.sql.
 import { describe, expect, it } from "vitest";
 import {
   auktionKontaktFejl,
@@ -19,6 +19,31 @@ describe("auktionKontaktGrund - privat sælger", () => {
 describe("auktionKontaktGrund - firma", () => {
   it.each(AUKTION_KONTAKT_EKSEMPLER.map(([t, , f]) => [t, f] as const))("%s -> %s", (tekst, forventet) => {
     expect(auktionKontaktGrund(tekst, true)).toBe(forventet);
+  });
+});
+
+// Samme tjek som testblokken i 20261102220000.
+describe("auktionKontaktGrund - længde og ydeevne", () => {
+  const aar = (fra: number, til: number) =>
+    Array.from({ length: til - fra + 1 }, (_, i) => String(fra + i)).join(" ");
+
+  it("afviser tekster over 2.000 tegn", () => {
+    expect(auktionKontaktGrund("a".repeat(2001), false)).toBe("for_lang");
+    expect(auktionKontaktGrund("a".repeat(2000), false)).toBeNull();
+  });
+
+  it("tjekker højst 50 forskellige mulige telefonnumre", () => {
+    expect(auktionKontaktGrund("2019 2020 ".repeat(200).slice(0, 2000), false)).toBeNull();
+    expect(auktionKontaktGrund(aar(2000, 2060), false)).toBe("telefon");
+    expect(auktionKontaktGrund(aar(2000, 2040), false)).toBeNull();
+  });
+
+  it("er hurtig på 2.000 tegn", () => {
+    const start = performance.now();
+    auktionKontaktGrund("24.12.2025 20.00-22.00 ".repeat(100).slice(0, 2000), false);
+    auktionKontaktGrund("20.00-22.00 ".repeat(200).slice(0, 2000), false);
+    auktionKontaktGrund("str 22 23 24 25 ".repeat(200).slice(0, 2000), false);
+    expect(performance.now() - start).toBeLessThan(2000);
   });
 });
 
