@@ -92,7 +92,7 @@ export async function ProfilSektion({ bruger }: { bruger: User }) {
         </dd>
       </dl>
       <Link href={`/profil/${bruger.id}?fane=indstillinger`} className="btn btn-sekundaer mt-4 w-full sm:w-auto">
-        Ret navn, telefon og profilbillede
+        Ret navn, e-mail, telefon og profilbillede
       </Link>
     </section>
   );
