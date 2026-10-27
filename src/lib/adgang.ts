@@ -17,6 +17,7 @@ import "server-only";
 // adgangskode (afslører ikke, hvem der er medarbejder).
 import { createClient, paaAdminVaert } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logIndUdenCaptcha } from "@/lib/supabase/adgangskodeLogin";
 import {
   FOR_MANGE_FORSOEG,
   PROEV_IGEN_OM_LIDT,
@@ -81,7 +82,7 @@ export async function logIndAdmin(emailInput: string, password: string): Promise
     if (graense) return { fejl: graense };
 
     const supabase = await createClient();
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await logIndUdenCaptcha(supabase, email, password);
     if (error || !data.user) {
       if (error?.status === 429) return { fejl: FOR_MANGE_FORSOEG };
       if (error && error.code !== "invalid_credentials" && error.code !== "user_banned" && error.code !== "email_not_confirmed") {
@@ -89,8 +90,6 @@ export async function logIndAdmin(emailInput: string, password: string): Promise
       }
       return { fejl: FORKERT_LOGIN };
     }
-    await nulstilGraense("admin_login_email_ip", `${email}|${ip}`);
-
     const [konto, status] = await Promise.all([hentKontoStatus(data.user.id), minStaffStatus(supabase)]);
     if (konto.kode !== "ok" || !status?.staff) {
       await supabase.auth.signOut({ scope: "local" });
@@ -98,6 +97,10 @@ export async function logIndAdmin(emailInput: string, password: string): Promise
       if (konto.kode === "fejl" || !status) return { fejl: GENERISK };
       return { fejl: FORKERT_LOGIN };
     }
+    // Først nulstilling, når det er en medarbejder: login her er uden CAPTCHA
+    // (logIndUdenCaptcha), så en almindelig bruger må ikke kunne bruge siden
+    // til at gætte adgangskoder hurtigere end loftet.
+    await nulstilGraense("admin_login_email_ip", `${email}|${ip}`);
 
     // Mail ved login fra en ny enhed (som på hovedsitet).
     await registrerLogin({ brugerId: data.user.id, email: data.user.email, accessToken: data.session?.access_token });
@@ -364,7 +367,7 @@ export async function gendanAdmin(
     if (graense) return { fejl: graense };
 
     const supabase = await createClient();
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await logIndUdenCaptcha(supabase, email, password);
     if (error || !data.user) {
       if (error?.status === 429) return { fejl: FOR_MANGE_FORSOEG };
       return { fejl: FORKERT };

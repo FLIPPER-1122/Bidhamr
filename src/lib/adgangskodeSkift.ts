@@ -17,6 +17,7 @@ import { adgangskodeAendretMail } from "@/lib/mails/konto";
 import { sideUrl } from "@/lib/mails/handel";
 import { renEmail } from "@/lib/kontoOprettelse";
 import { logDriftFejl } from "@/lib/drift";
+import { CAPTCHA_FEJL, erCaptchaFejl, renCaptchaToken } from "@/lib/turnstile";
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const SAMME = "Den nye adgangskode skal være en anden end den nuværende.";
@@ -128,7 +129,10 @@ export async function sendNulstillingsmail(
   klient: SupabaseClient,
   emailInput: unknown,
   ip: string,
-): Promise<{ ok: true } | { fejl: string; kode: "email" | "for_mange" | "ikke_tilgaengelig" }> {
+  // Turnstile-token (docs/SIKKERHED-AUTH.md) - tjekkes af Supabase Auth, når
+  // CAPTCHA er slået til dér.
+  captchaToken?: unknown,
+): Promise<{ ok: true } | { fejl: string; kode: "email" | "for_mange" | "ikke_tilgaengelig" | "captcha" }> {
   const email = renEmail(emailInput);
   if (!email) return { fejl: "Indtast en gyldig e-mail.", kode: "email" };
 
@@ -136,10 +140,14 @@ export async function sendNulstillingsmail(
   const tekst = graenseFejl(graense);
   if (tekst) return { fejl: tekst, kode: graense === "for_mange" ? "for_mange" : "ikke_tilgaengelig" };
 
+  const token = renCaptchaToken(captchaToken);
   const { error } = await klient.auth.resetPasswordForEmail(email, {
     redirectTo: sideUrl("/auth/callback?next=/reset-password"),
+    ...(token ? { captchaToken: token } : {}),
   });
   if (error) {
+    // CAPTCHA-fejl afslører ikke, om e-mailen findes - den vises.
+    if (erCaptchaFejl(error)) return { fejl: CAPTCHA_FEJL, kode: "captcha" };
     // Kun "for mange forsøg" vises. Alle andre fejl giver samme svar som en
     // gennemført afsendelse, så svaret ikke afslører, om e-mailen findes.
     // Fejlen logges i drift uden e-mailadressen.

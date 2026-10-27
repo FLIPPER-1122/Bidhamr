@@ -9,6 +9,14 @@ export function kortNavn(navn: string | null | undefined, erFirma = false): stri
   return `${dele[0]} ${dele[1][0].toUpperCase()}.`;
 }
 
+// Andre brugeres navn læses som users.visningsnavn (20261102060000): databasen
+// har allerede lavet det korte navn ("Kasper K.", firmaer fuldt, "Slettet
+// bruger"). users.navn kan kun læses af brugeren selv (rpc mit_navn) og staff
+// via service role. Tomt = "Anonym" som kortNavn.
+export function visNavn(visningsnavn: string | null | undefined): string {
+  return visningsnavn?.trim() || "Anonym";
+}
+
 // Afslutter en sætning med punktum uden at give dobbelt punktum, når teksten
 // allerede ender på et (fx kortNavn("Kasper Kjær") = "Kasper K.").
 export function medPunktum(tekst: string): string {

@@ -19,6 +19,8 @@ import { registrerLogin } from "@/lib/enheder";
 import { TJEK_EMAIL_COOKIE, tilmeldingAaben } from "@/lib/tilmelding";
 import { logDriftFejl } from "@/lib/drift";
 import { saetAdgangskodeEfterMaillink, sendNulstillingsmail } from "@/lib/adgangskodeSkift";
+import { CAPTCHA_FEJL, erCaptchaFejl, renCaptchaToken } from "@/lib/turnstile";
+import { tjekTurnstile } from "@/lib/turnstileServer";
 import { hentKontoStatus } from "@/lib/kontoStatus";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
 import {
@@ -102,9 +104,13 @@ async function erFirmakonto(supabase: Awaited<ReturnType<typeof createClient>>, 
   return data?.konto_type === "erhverv";
 }
 
+// captchaToken: Turnstile-token fra login-siden (src/components/Turnstile.tsx).
+// Sendes videre til Supabase Auth, som tjekker det, når CAPTCHA er slået til
+// (docs/SIKKERHED-AUTH.md).
 export async function logInd(
   emailInput: string,
   password: string,
+  captchaToken?: string,
 ): Promise<Resultat> {
   const email = renEmail(emailInput);
   if (!email || typeof password !== "string" || password.length === 0) {
@@ -119,9 +125,15 @@ export async function logInd(
   if (graense) return { fejl: graense };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const token = renCaptchaToken(captchaToken);
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+    ...(token ? { options: { captchaToken: token } } : {}),
+  });
   if (!error) await nulstilGraense("login_email_ip", `${email}|${ip}`);
   if (error) {
+    if (erCaptchaFejl(error)) return { fejl: CAPTCHA_FEJL };
     // Supabase svarer kun email_not_confirmed, naar adgangskoden passer.
     // E-mailen gemmes i den httpOnly cookie, saa /tjek-indbakke kan vise den
     // og sende en ny kode.
@@ -170,6 +182,9 @@ export async function opretKonto(input: {
   email: string;
   password: string;
   vilkaarVersion: string;
+  // Turnstile-token (docs/SIKKERHED-AUTH.md). Tjekkes af serveren selv, når
+  // TURNSTILE_SECRET_KEY er sat - generateLink har ingen CAPTCHA.
+  captchaToken?: string;
 }): Promise<
   | { ok: true; bekraeftMail: boolean; beta?: true }
   | { fejl: string; felt?: "email" | "password" | "fornavn" | "efternavn" | "vilkaar" }
@@ -193,6 +208,7 @@ export async function opretKonto(input: {
   const ip = await klientIp();
   const graense = graenseFejl(await tjekGraenserLukket([["opret_ip", ip], ["gensend_email", email]]));
   if (graense) return { fejl: graense };
+  if (!(await tjekTurnstile(input?.captchaToken, ip))) return { fejl: CAPTCHA_FEJL };
 
   // Navn, vilkår og adgangskode venter krypteret i browseren og sættes først,
   // når koden er indtastet (verificerSignupKode) - af den, der har koden.
@@ -289,8 +305,8 @@ export async function verificerSignupKode(
 // "Glemt adgangskode". Samme kode som appens /api/konto/glemt
 // (src/lib/adgangskodeSkift.ts): samme grænser og samme svar, uanset om
 // e-mailen findes.
-export async function nulstilAdgangskode(emailInput: string): Promise<Resultat> {
-  const r = await sendNulstillingsmail(await createClient(), emailInput, await klientIp());
+export async function nulstilAdgangskode(emailInput: string, captchaToken?: string): Promise<Resultat> {
+  const r = await sendNulstillingsmail(await createClient(), emailInput, await klientIp(), captchaToken);
   return "fejl" in r ? { fejl: r.fejl } : { ok: true };
 }
 

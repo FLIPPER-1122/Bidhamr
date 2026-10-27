@@ -7,6 +7,8 @@ import { registrerLogin } from "@/lib/enheder";
 import { TJEK_EMAIL_COOKIE } from "@/lib/tilmelding";
 import { hentKontoStatus } from "@/lib/kontoStatus";
 import { erLinkType } from "@/lib/authLink";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { markerVelkomstBilletBrugt } from "@/lib/erhverv/velkomstBillet";
 
 // Fælles landingspunkt for Supabase auth-links (nulstilling af adgangskode,
 // velkomstlinks til firmakonti, ældre bekræftelseslinks, magic links).
@@ -124,6 +126,12 @@ async function indloes(origin: string, p: LinkParametre) {
       await supabase.auth.signOut({ scope: "local" });
       return tilFejl(origin, status.kode === "suspenderet" ? "konto_suspenderet" : "link_ugyldigt", false);
     }
+  }
+
+  // Velkomstlink til en firmakonto: billetten i mailen er nu brugt og kan
+  // ikke lave flere friske links (src/lib/erhverv/velkomstBillet.ts).
+  if (user && erVelkomstLink(p.type, p.naeste)) {
+    await markerVelkomstBilletBrugt(createAdminClient(), user.id);
   }
 
   // Enheden registreres (første login efter oprettelse giver ingen mail).

@@ -126,6 +126,22 @@ export const MAKS_BILLEDER = 10;
 export const MAKS_TITEL = 120;
 export const MAKS_BESKRIVELSE = 500;
 
+// Loft på nye auktioner for private (auctions_oprettelse_loft,
+// 20261102060000). Firmaer har deres egen kvote og er undtaget.
+export const MAKS_NYE_AUKTIONER_PR_TIME = 30;
+export const MAKS_AKTIVE_AUKTIONER = 200;
+
+// Dansk tekst til loft-fejlene (BHA06/BHA07). null = ikke en loft-fejl.
+export function auktionLoftTekst(kode: string | null | undefined): string | null {
+  if (kode === "BHA06") {
+    return `Du har oprettet mange auktioner på kort tid (højst ${MAKS_NYE_AUKTIONER_PR_TIME} i timen). Vent lidt, og prøv igen – din kladde er gemt.`;
+  }
+  if (kode === "BHA07") {
+    return `Du har ${MAKS_AKTIVE_AUKTIONER} aktive auktioner, som er det højeste antal. Vent, til nogle af dem er slut, og prøv igen – din kladde er gemt.`;
+  }
+  return null;
+}
+
 // crypto.randomUUID() findes kun i sikre kontekster (https eller localhost) –
 // adgang via en LAN-IP over http (fx fra en telefon på samme netværk) ville
 // ellers fejle med en kryptisk TypeError.

@@ -9,6 +9,8 @@ import { logInd } from "@/app/actions/auth";
 import { FELT, FORMULAR_FEJL, LABEL, LINK } from "@/components/konto/felter";
 import { ERHVERV_LOGIN } from "@/lib/tekster/erhverv";
 import { useHydreret } from "@/lib/useHydreret";
+import Turnstile from "@/components/Turnstile";
+import { CAPTCHA_MANGLER, turnstileAktiv } from "@/lib/turnstile";
 
 // betaAaben: tilmeldingen er lukket, men beta-testen er åben - så vises et
 // link til "Opret konto" for inviterede.
@@ -67,17 +69,27 @@ export default function LoginForm({
   // submit sendes af browseren selv (src/lib/useHydreret.ts).
   const hydreret = useHydreret();
 
+  // Turnstile (CAPTCHA) - kun når NEXT_PUBLIC_TURNSTILE_SITE_KEY er sat.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaNulstil, setCaptchaNulstil] = useState(0);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError(null);
     setForkertLogin(false);
+    if (turnstileAktiv() && !captchaToken) {
+      setError(CAPTCHA_MANGLER);
+      return;
+    }
+    setLoading(true);
 
     // Login sker på serveren, så det kan rate-limites og tjekkes for
     // suspension og ny enhed (src/app/actions/auth.ts).
-    const svar = await logInd(email, password);
+    const svar = await logInd(email, password, captchaToken ?? undefined);
 
     if ("fejl" in svar) {
+      // Tokenet er brugt - et nyt til næste forsøg.
+      setCaptchaNulstil((n) => n + 1);
       // Ubekræftet e-mail: serveren har gemt e-mailen i en httpOnly cookie,
       // og koden fra mailen indtastes på /tjek-indbakke (hvor man også kan
       // få en ny kode).
@@ -162,6 +174,8 @@ export default function LoginForm({
                 className={`mt-1.5 ${FELT}`}
               />
             </div>
+
+            <Turnstile handling="login" onToken={setCaptchaToken} nulstil={captchaNulstil} />
 
             {fejlTekst && (
               <p role="alert" className={FORMULAR_FEJL}>
