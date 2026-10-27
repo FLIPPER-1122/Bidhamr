@@ -118,6 +118,10 @@ const OFFENTLIGE_RUTER = [
   "/api/konto/henvisning",
   "/robots.txt",
   "/sitemap.xml",
+  // Universal links (iOS) og App Links (Android) - Apple og Google henter
+  // filerne uden login og uden redirect, også før lancering (src/lib/appLinks.ts).
+  "/.well-known/apple-app-site-association",
+  "/.well-known/assetlinks.json",
   "/dsa",
   "/api/dsa",
   "/api/offentlig",

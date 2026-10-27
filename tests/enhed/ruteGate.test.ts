@@ -72,6 +72,8 @@ const OFFENTLIGE_RUTER: Record<string, Exclude<Klasse, "login" | "admin-vaert" |
   "/dsa/afgoerelse/[id]": "offentlig",
   "/robots.txt": "offentlig",
   "/sitemap.xml": "offentlig",
+  "/.well-known/apple-app-site-association": "offentlig",
+  "/.well-known/assetlinks.json": "offentlig",
   // API-ruter med egen adgangskontrol (token, signatur, cron-hemmelighed ...).
   "/api/waitlist": "offentlig",
   "/api/webhooks/stripe": "offentlig",
