@@ -50,8 +50,8 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
 
   | | Salgspris op til 7.500 kr. | Salgspris over 7.500 kr. |
   |---|---|---|
-  | **Køber** ("Gebyr", BidHamr Beskyttelse altid inkluderet) | 7 % + 5 kr., højst 300 kr. | 3 % + 15 kr., højst 650 kr. |
-  | **Sælger** | 5 % + 5 kr., højst 95 kr. | 2 % + 15 kr., højst 450 kr. |
+  | **Køber** ("Gebyr", BidHamr Beskyttelse altid inkluderet) | 7 % + 5 kr., højst 300 kr. | 300 kr. + 3 % af beløbet over 7.500 kr., højst 650 kr. (glidende, se nedenfor) |
+  | **Sælger** | 5 % + 5 kr., højst 95 kr. | 95 kr. + 2 % af beløbet over 7.500 kr., højst 450 kr. (glidende, se nedenfor) |
 
   - Procenten regnes af slutbuddet (salgsprisen). Grænsen ligger ved præcis 7.500,00 kr. (til og med = første kolonne). Beløb rundes til hele øre.
   - **Glidende overgang over 7.500 kr. (Filip, 27. okt. 2026 – erstatter "3 % + 15 kr." og "2 % + 15 kr." i anden kolonne):** over 7.500 kr. er gebyret det lave trins loft **plus en procent af beløbet over 7.500 kr.**, så den samlede pris aldrig falder, når buddet stiger: **køber 300 kr. + 3 % af (pris − 7.500), højst 650 kr.**; **sælger 95 kr. + 2 % af (pris − 7.500), højst 450 kr.** Eksempler: 10.000 kr. → køber 375 / sælger 145; 15.000 → 525 / 245; 20.000 → 650 (loft) / 345; 25.000 → 650 / 445 (sælgers loft på 450 kr. nås først over beløbsloftet). Gælder den private prismodel; firmaers model (erhverv2) er uændret.
