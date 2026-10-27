@@ -27,8 +27,10 @@ export default function OpretFirmakonto({
   const [v, setV] = useState<FirmaVaerdier>(start);
   const [loginEmail, setLoginEmail] = useState(startLogin);
   const [pakkeId, setPakkeId] = useState(pakker.length === 1 ? pakker[0].id : "");
-  // Introrabat efter den gratis måned: forvalgt 50 % i 6 måneder (kan slås fra).
-  const [medIntro, setMedIntro] = useState(true);
+  // Introrabat efter den gratis måned: kun til firmaer, Filip selv har rakt
+  // ud til (ROADMAP-BESLUTNINGER) - derfor slået FRA som standard. Slås den
+  // til, er 50 % i 6 måneder udfyldt.
+  const [medIntro, setMedIntro] = useState(false);
   const [introProcent, setIntroProcent] = useState(String(INTRO_STANDARD.procent));
   const [introMaaneder, setIntroMaaneder] = useState(String(INTRO_STANDARD.maaneder));
   const [cvrBesked, setCvrBesked] = useState<{ tekst: string; ok: boolean } | null>(null);
@@ -45,7 +47,7 @@ export default function OpretFirmakonto({
   // TODO indhold-agenten: fejlteksten.
   function tjekFelter(): boolean {
     const f: Partial<Record<keyof FirmaVaerdier, string>> = {};
-    if (!POSTNUMMER.test(v.postnummer.trim())) f.postnummer = "Postnummeret skal have 4 cifre.";
+    if (!POSTNUMMER.test(v.postnummer.trim())) f.postnummer = "Postnummeret skal være 4 cifre fra 1000 til 9999.";
     setFeltFejl(f);
     if (f.postnummer) {
       document.getElementById("opret-postnummer")?.focus();
@@ -110,6 +112,22 @@ export default function OpretFirmakonto({
       im >= INTRO_GRAENSER.maanederMin &&
       im <= INTRO_GRAENSER.maanederMaks);
   const klar = !!pakkeId && EMAIL.test(loginEmail.trim()) && introGyldig;
+  const valgtPakke = pakker.find((p) => p.id === pakkeId) ?? null;
+  const opsummering = valgtPakke
+    ? A.opret.pakkeOpsummering(
+        valgtPakke.navn,
+        valgtPakke.maanedspris != null ? krTekst(valgtPakke.maanedspris) : null,
+        medIntro && introGyldig
+          ? {
+              procent: ip,
+              maaneder: im,
+              pris: valgtPakke.maanedspris != null ? krTekst((valgtPakke.maanedspris * (100 - ip)) / 100) : null,
+            }
+          : null,
+      )
+    : medIntro
+      ? A.opret.introOpsummering(ip, im)
+      : A.opret.udenIntro;
 
   return (
     <div className="space-y-5">
@@ -227,7 +245,7 @@ export default function OpretFirmakonto({
           </div>
         )}
         <p className={`mt-3 text-[13px] ${introGyldig ? "text-tekst-daempet" : "font-medium text-fejl-tekst"}`} role={introGyldig ? undefined : "alert"}>
-          {!introGyldig ? A.opret.introUgyldig : medIntro ? A.opret.introOpsummering(ip, im) : A.opret.udenIntro}
+          {!introGyldig ? A.opret.introUgyldig : opsummering}
         </p>
       </fieldset>
 
@@ -235,7 +253,7 @@ export default function OpretFirmakonto({
         triggerLabel={A.opret.knapOpret}
         triggerClassName="btn btn-primaer btn-stor w-full sm:w-auto disabled:opacity-50"
         title={X.bekraeftOpretTitel}
-        description={`${X.bekraeftOpret(loginEmail.trim())} ${medIntro ? A.opret.introOpsummering(ip, im) : A.opret.udenIntro}`}
+        description={`${opsummering} ${X.bekraeftOpret(loginEmail.trim())}`}
         confirmLabel={tidligere ? X.cvrTidligere.knap : A.opret.knapOpret}
         confirmDisabled={!klar}
         foerAabning={() => {
@@ -267,6 +285,15 @@ export default function OpretFirmakonto({
       </BekraeftDialog>
     </div>
   );
+}
+
+// 999 -> "999 kr.", 499.5 -> "499,50 kr."
+function krTekst(beloeb: number): string {
+  const heltal = Number.isInteger(beloeb);
+  return `${beloeb.toLocaleString("da-DK", {
+    minimumFractionDigits: heltal ? 0 : 2,
+    maximumFractionDigits: heltal ? 0 : 2,
+  })} kr.`;
 }
 
 function CvrTidligere({ firmaer }: { firmaer: CvrTidligereFirma[] }) {

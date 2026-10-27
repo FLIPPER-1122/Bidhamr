@@ -368,6 +368,8 @@ export const ADMIN_FIRMA = {
   regninger: {
     titel: "Regninger fra BidHamr",
     ingen: "Ingen regninger endnu.",
+    // 0 kr.-regninger vises nedtonet bag denne knap (firmaet ser dem ikke).
+    visNul: (antal: number) => `Vis 0 kr.-regninger (${antal})`,
     kolonne: { dato: "Dato", tekst: "Tekst", beloeb: "Beløb inkl. moms", status: "Status" },
     abonnement: (fra: string | null, til: string | null) => (fra && til ? `Abonnement ${fra} – ${til}` : "Abonnement"),
     opgradering: "Opgradering af pakke",

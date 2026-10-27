@@ -149,7 +149,10 @@ export const ERHVERV_SIDE = {
 
 export const ERHVERV_FORMULAR = {
   titel: "Fortæl os om dit firma",
-  intro: "Udfyld felterne herunder. Så kontakter vi dig hurtigst muligt. Felter med \"(valgfri)\" kan du springe over.",
+  intro: "Udfyld felterne herunder. Så kontakter vi dig hurtigst muligt.",
+  // "(valgfri)" står samlet (whitespace-nowrap), så " ikke står alene på en linje.
+  introValgfriFoer: "Felter med",
+  introValgfriEfter: "kan du springe over.",
   valgfri: "(valgfri)",
 
   felter: {
@@ -222,7 +225,9 @@ export const ERHVERV_FORMULAR = {
       "Vi kan ikke finde et aktivt dansk firma med det CVR-nummer. Tjek, at du har skrevet det rigtigt.",
     emailUgyldig: "Den e-mail ser forkert ud. Tjek, at den er skrevet rigtigt, fx navn@firma.dk.",
     telefonUgyldigt: "Telefonnummeret ser forkert ud. Skriv 8 cifre, fx 12 34 56 78.",
-    postnummerUgyldigt: "Postnummeret skal være 4 cifre.",
+    postnummerUgyldigt: "Postnummeret skal være 4 cifre fra 1000 til 9999.",
+    // Tidsfælden: formularen blev sendt få sekunder efter, den blev vist.
+    forHurtigt: "Formularen blev sendt meget hurtigt. Tryk på \"Send formularen\" igen.",
     forLang: "Teksten er for lang. Gør den lidt kortere.",
     antalUgyldigt: "Skriv et tal, fx 20 – eller lad feltet stå tomt.",
     forMangeForsoeg: "Du har sendt formularen mange gange på kort tid. Vent lidt, og prøv igen senere.",
@@ -424,7 +429,7 @@ export const ADMIN_ERHVERV = {
 
   henvendelser: {
     titel: "Henvendelser",
-    forklaring: "Formularer fra /erhverv. Nyeste øverst.",
+    forklaring: "Firmaer, der har udfyldt formularen på erhvervssiden. Nyeste øverst.",
     status: {
       ny: "Ny",
       igang: "I gang",
@@ -463,13 +468,28 @@ export const ADMIN_ERHVERV = {
     introTitel: "Introrabat",
     introSlaa: "Giv introrabat efter den gratis måned",
     introHjaelp:
-      "Kun til firmaer, BidHamr selv har kontaktet. Standard er 50 % i 6 måneder (måned 2-7 til halv pris).",
+      "Kun til firmaer, BidHamr selv har kontaktet. Slå den til, så er 50 % i 6 måneder udfyldt (måned 2-7 til halv pris).",
     introProcent: "Rabat i procent (1-100)",
     introMaaneder: "Antal måneder (1-24)",
     introUgyldig: "Skriv hele tal: 1-100 % og 1-24 måneder.",
     introOpsummering: (procent: number, maaneder: number) =>
       `Måned 1 er gratis. Derefter ${procent} % rabat i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}. Så betaler firmaet pakkens almindelige pris.`,
     udenIntro: "Måned 1 er gratis. Derefter betaler firmaet pakkens almindelige pris.",
+    // Bekræftelsen: pakke og pris, fx "Butik – 999 kr./md. + moms. Måned 1 er
+    // gratis. Derefter 50 % rabat i 6 måneder (499,50 kr./md. + moms), så
+    // 999 kr./md. + moms."
+    pakkeOpsummering: (
+      pakke: string,
+      pris: string | null,
+      intro: { procent: number; maaneder: number; pris: string | null } | null,
+    ) => {
+      const prisMd = pris ? `${pris}/md. + moms` : "pris ikke sat";
+      const start = `${pakke} – ${prisMd}. Måned 1 er gratis.`;
+      if (!intro) return `${start} Derefter ${prisMd}.`;
+      const md = intro.maaneder === 1 ? "1 måned" : `${intro.maaneder} måneder`;
+      const introPris = intro.pris ? ` (${intro.pris}/md. + moms)` : "";
+      return `${start} Derefter ${intro.procent} % rabat i ${md}${introPris}, så ${prisMd}.`;
+    },
     cvrTjekket: "CVR tjekket: aktivt dansk firma.",
     knapOpret: "Opret og send velkomstmail",
     oprettet: (email: string) => `Firmakontoen er oprettet. Velkomstmailen er sendt til ${email}.`,
@@ -613,6 +633,7 @@ export const FIRMA_OVERSIGT_EKSTRA = {
   },
   kanIkkeOpretteIkkeAktiv: "Du kan ikke oprette auktioner, før din pakke er sat i gang.",
   kanIkkeOpretteBetal: "Betal for din pakke under Abonnement. Så kan du oprette auktioner.",
+  kanIkkeOpretteGratis: "Start din gratis måned under Abonnement. Så kan du oprette auktioner.",
   pakkePause: "Dit abonnement er sat på pause. Du kan ikke oprette nye auktioner. Skriv til os, så hjælper vi dig.",
   pakkeOpsagt: "Dit abonnement er opsagt. Skriv til os, hvis du vil sælge igen.",
   ingenPakke: "Du har ingen pakke endnu. Vi kontakter dig.",
@@ -758,6 +779,13 @@ export const FIRMA_UDBETALINGSKONTO = {
   knapSender: "Sender dig videre …",
   hjaelp: "Har du brug for hjælp? Skriv til",
   tilbage: "Tilbage til Firma oversigt",
+  // Opgave under "Venter på dig" på Overblik (/firma), når firmaet ikke har
+  // en færdig udbetalingskonto.
+  opgave: "Tilføj din bankkonto, så du kan oprette auktioner og få penge udbetalt.",
+  opgaveFaerdig: "Gør din bankkonto færdig, så du kan oprette auktioner og få penge udbetalt.",
+  opgaveTid: "Det er gratis og tager ca. 5 minutter.",
+  // Under den slåede-fra "Opret en auktion"-knap.
+  kanIkkeOprette: "Tilføj din bankkonto først. Se \"Venter på dig\" øverst på siden.",
 } as const;
 
 // Diskret link på /coming-soon (siden /erhverv er offentlig før lancering).
@@ -1028,6 +1056,17 @@ export const ADMIN_ERHVERV_BETALING = {
   titel: "Betaling (Stripe)",
   ingenAbonnement: "Firmaet har ikke betalt for sin pakke endnu (intet abonnement i Stripe).",
   stripeStatus: "Status i Stripe",
+  // Stripes abonnementsstatus på dansk (ukendte vises som de er).
+  stripeStatusNavn: {
+    trialing: "Gratis periode",
+    active: "Aktiv",
+    past_due: "Betaling mangler",
+    canceled: "Opsagt",
+    incomplete: "Ikke gennemført",
+    incomplete_expired: "Ikke gennemført (udløbet)",
+    unpaid: "Ubetalt",
+    paused: "På pause",
+  } as Record<string, string>,
   betaltTil: "Betalt til",
   opsigesFra: (dato: string) => `Abonnementet er opsagt og stopper ${dato}.`,
   knapOpsig: "Opsig abonnement",

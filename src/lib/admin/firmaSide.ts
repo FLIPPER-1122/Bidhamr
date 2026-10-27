@@ -91,6 +91,9 @@ export type FirmaUgensButik = {
   uger: UgeCelle[];
   bookinger: UgensBooking[];
   priser: Record<string, UgePris>;
+  // Alle ledige uger fra den igangværende og op til staff_maks_uger_frem (52)
+  // uger frem - til "Book Ugens butik". Kalenderen viser kun de første 8.
+  ledige: { uge_start: string; uge_nr: number; aar: number; pris: UgePris | null }[];
   rabat: { procent: number; antal: number; brugt: number } | null;
   // Pakkens rabat og firmaets egen (tilsidesætter pakkens; null = følger pakken).
   rabatIndstilling: {
@@ -112,6 +115,24 @@ const BOOKING_KOLONNER =
   "annulleret_kl, note, kraever_opmaerksomhed, opmaerksomhed_tekst, oprettet_kl";
 
 export const UGER_I_KALENDER = 8;
+// Som staff_maks_uger_frem i ugens_butik_indstillinger (standard 52).
+const STAFF_UGER_FREM_STANDARD = 52;
+const HOLDER_STATUS = ["reserveret", "behandles", "betalt", "manuel"];
+
+// "2026-11-02" + n uger -> "2026-11-16".
+function plusUger(iso: string, n: number): string {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 7 * n);
+  return d.toISOString().slice(0, 10);
+}
+
+// ISO-uge og -år (som to_char(.., 'IW') og 'IYYY' i databasen).
+function isoUge(iso: string): { nr: number; aar: number } {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const aar = d.getUTCFullYear();
+  return { nr: Math.ceil(((d.getTime() - Date.UTC(aar, 0, 1)) / 86400000 + 1) / 7), aar };
+}
 
 export async function hentFirmaUgensButik(
   admin: Admin,
@@ -147,19 +168,68 @@ export async function hentFirmaUgensButik(
   const nr = nrITraek(alleUger);
   const uger = alleUger.map((u, i) => ({ ...u, nr_i_traek: nr[i] })).slice(0, UGER_I_KALENDER);
 
-  // Pris for hver ledig uge (rabatten tælles pr. kalenderår) og årets rabat.
-  const ledige = uger.filter((u) => !u.booking_id);
+  // Staff kan booke op til staff_maks_uger_frem uger frem (ROADMAP-
+  // BESLUTNINGER: 52). ugens_butik_admin giver kun maks_uger_frem (12) uger,
+  // så de optagne uger længere fremme læses direkte (samme statusser som
+  // RPC'en). Databasen (ugens_butik_staff_book) tjekker det endelige.
+  const [indstilling, optagetSvar] = await Promise.all([
+    admin
+      .from("ugens_butik_indstillinger")
+      .select("staff_maks_uger_frem")
+      .eq("id", true)
+      .maybeSingle<{ staff_maks_uger_frem: number }>(),
+    admin
+      .from("ugens_butik_bookinger")
+      .select("uge_start")
+      .in("status", HOLDER_STATUS)
+      .gte("uge_start", o.denne_uge)
+      .lte("uge_start", plusUger(o.denne_uge, 104))
+      .returns<{ uge_start: string }[]>(),
+  ]);
+  const ugerFrem = Number(indstilling.data?.staff_maks_uger_frem ?? STAFF_UGER_FREM_STANDARD);
+  const optaget = new Set((optagetSvar.data ?? []).map((b) => b.uge_start.slice(0, 10)));
+  for (const u of alleUger) if (u.booking_id) optaget.add(u.uge_start);
+  const ledigeStart: string[] = [];
+  if (!optagetSvar.error) {
+    for (let i = 0; i <= ugerFrem; i++) {
+      const uge = plusUger(o.denne_uge, i);
+      if (!optaget.has(uge)) ledigeStart.push(uge);
+    }
+  } else {
+    console.error("Ugens butik (optagne uger):", optagetSvar.error.message);
+    // Uden de optagne uger: kun RPC'ens ledige uger.
+    for (const u of alleUger) if (!u.booking_id) ledigeStart.push(u.uge_start);
+  }
+
+  // Prisen afhænger kun af kalenderåret (ugens_butik_pris_for: rabatten
+  // tælles pr. kalenderår), så den hentes én gang pr. år.
+  const aarFoersteUge = new Map<number, string>();
+  for (const uge of ledigeStart) {
+    const aar = Number(uge.slice(0, 4));
+    if (!aarFoersteUge.has(aar)) aarFoersteUge.set(aar, uge);
+  }
+  const aarListe = [...aarFoersteUge.entries()];
   const [prisSvar, rabatSvar] = await Promise.all([
-    Promise.all(ledige.map((u) => admin.rpc("ugens_butik_pris_for", { p_firma: firmaId, p_uge: u.uge_start }))),
+    Promise.all(aarListe.map(([, uge]) => admin.rpc("ugens_butik_pris_for", { p_firma: firmaId, p_uge: uge }))),
     admin.rpc("ugens_butik_rabat", { p_firma: firmaId, p_uge: o.denne_uge }),
   ]);
-  const priser: Record<string, UgePris> = {};
-  ledige.forEach((u, i) => {
+  const prisPrAar = new Map<number, UgePris>();
+  aarListe.forEach(([aar], i) => {
     const r = prisSvar[i];
     const raekke = (Array.isArray(r.data) ? r.data[0] : r.data) as { inkl_oere?: number; rabat_procent?: number } | null;
     if (!r.error && raekke?.inkl_oere != null) {
-      priser[u.uge_start] = { inkl_oere: Number(raekke.inkl_oere), rabat_procent: Number(raekke.rabat_procent ?? 0) };
+      prisPrAar.set(aar, { inkl_oere: Number(raekke.inkl_oere), rabat_procent: Number(raekke.rabat_procent ?? 0) });
     }
+  });
+  const prisFor = (uge: string) => prisPrAar.get(Number(uge.slice(0, 4))) ?? null;
+  const priser: Record<string, UgePris> = {};
+  for (const u of uger) {
+    const p = !u.booking_id ? prisFor(u.uge_start) : null;
+    if (p) priser[u.uge_start] = p;
+  }
+  const ledige = ledigeStart.map((uge) => {
+    const { nr, aar } = isoUge(uge);
+    return { uge_start: uge, uge_nr: nr, aar, pris: prisFor(uge) };
   });
   const rabatRaekke = (Array.isArray(rabatSvar.data) ? rabatSvar.data[0] : rabatSvar.data) as
     | { procent?: number; antal?: number; brugt?: number }
@@ -182,6 +252,7 @@ export async function hentFirmaUgensButik(
     uger,
     bookinger: bookinger.data ?? [],
     priser,
+    ledige,
     rabat:
       !rabatSvar.error && rabatRaekke
         ? { procent: Number(rabatRaekke.procent ?? 0), antal: Number(rabatRaekke.antal ?? 0), brugt: Number(rabatRaekke.brugt ?? 0) }

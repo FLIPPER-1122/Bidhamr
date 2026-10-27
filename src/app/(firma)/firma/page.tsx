@@ -10,10 +10,14 @@ import {
   FIRMA_OVERSIGT_EKSTRA as X,
   FIRMA_BETALING,
   FIRMA_FREMHAEV_KNAP as FV,
+  FIRMA_ABONNEMENT as FA,
+  FIRMA_UDBETALINGSKONTO as U,
 } from "@/lib/tekster/erhverv";
 import { kr, krFraOere } from "@/lib/erhverv/visning";
 import { hentMineEkstraFragtRegninger } from "@/app/actions/ekstraFragt";
 import EkstraFragtBjaelke from "@/components/ekstraFragt/EkstraFragtBjaelke";
+import BankkontoOpgave from "@/components/firma/BankkontoOpgave";
+import { hentUdbetalingskontostatus } from "@/lib/erhverv/udbetalingskonto";
 
 // Overblik (/firma): nøgletal og "Venter på dig" med store knapper direkte
 // til handlingen. Resten har hver sin side i menuen (layout.tsx).
@@ -22,11 +26,18 @@ import EkstraFragtBjaelke from "@/components/ekstraFragt/EkstraFragtBjaelke";
 export const metadata = { title: D.overblik.titel };
 
 export default async function FirmaOverblik() {
-  const [{ oversigt: o }, ekstraFragt] = await Promise.all([kraevFirma("/firma"), hentMineEkstraFragtRegninger()]);
+  const [{ bruger, oversigt: o }, ekstraFragt] = await Promise.all([kraevFirma("/firma"), hentMineEkstraFragtRegninger()]);
   const lukket = foerLancering();
   const k = o.ugekvote;
-  const opret = opretStatus(o, lukket);
   const venter = o.venter_paa_dig;
+  // Uden færdig udbetalingskonto (bankkonto) kan firmaet hverken oprette
+  // auktioner eller få penge udbetalt - det står øverst under "Venter på dig".
+  const konto = await hentUdbetalingskontostatus(bruger.id);
+  const kontoMangler = konto === "mangler" || konto === "ufaerdig";
+  const opret0 = opretStatus(o, lukket);
+  const opret = opret0.kan && kontoMangler ? { kan: false, forklaring: U.kanIkkeOprette } : opret0;
+  // Ny firmakonto med gratis periode: "Start din gratis måned" i stedet for "Betal".
+  const gratisStart = (o.abonnement?.gratis_maaneder_ved_start ?? 0) > 0;
 
   return (
     <FirmaSide titel={D.overblik.titel} intro={D.overblik.intro}>
@@ -36,13 +47,18 @@ export default async function FirmaOverblik() {
       {!abonnementAktivt(o) && <Advarsel titel={T.ikkeAktiv.titel} tekst={ikkeAktivTekst(o)} />}
       {o.firma.abonnement_status === "afventer_betaling" && (
         <Link href="/firma/abonnement" className={`${E_KNAP_PRIMAER} w-full sm:w-auto`}>
-          {FIRMA_BETALING.knapBetal}
+          {gratisStart ? FA.gratisStartTitel : FIRMA_BETALING.knapBetal}
         </Link>
       )}
 
       <Kort id="venter" titel={T.venter.titel} forklaring={T.venter.forklaring}>
+        {kontoMangler && !lukket && (
+          <div className={venter.length > 0 ? "mb-4" : ""}>
+            <BankkontoOpgave harKonto={konto === "ufaerdig"} />
+          </div>
+        )}
         {venter.length === 0 ? (
-          <p className={E_TEKST}>{T.venter.tom}</p>
+          kontoMangler && !lukket ? null : <p className={E_TEKST}>{T.venter.tom}</p>
         ) : (
           <ul className="space-y-4">
             {venter.map((v) => {

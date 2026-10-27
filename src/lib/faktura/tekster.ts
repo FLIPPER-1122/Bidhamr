@@ -15,8 +15,8 @@ export const FAKTURA_TEKST = {
   // abonnementet (Stripe) står i kortet over; her er Dinero-fakturaerne -
   // Ugens butik (og sælgergebyret fra ældre handler).
   firmaIntro:
-    "Her finder I BidHamrs fakturaer på Ugens butik – med momsen vist for sig og jeres CVR-nummer. Regningerne på abonnementet står ovenfor. I betaler intet gebyr af jeres salg, og fakturaen på selve varen sender I selv til køberen.",
-  firmaTom: "Når I køber Ugens butik, kommer fakturaen her.",
+    "Her finder du BidHamrs fakturaer på Ugens butik – med momsen vist for sig og dit CVR-nummer. Regningerne på abonnementet står ovenfor. Du betaler intet gebyr af dit salg, og fakturaen på selve varen sender du selv til køberen.",
+  firmaTom: "Når du køber Ugens butik, kommer fakturaen her.",
   paaVej: "Fakturaen er på vej. Den er normalt klar om få minutter.",
   hentPdf: "Hent faktura (PDF)",
   hentKreditnotaPdf: "Hent kreditnota (PDF)",

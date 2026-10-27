@@ -60,7 +60,8 @@ export const ERHVERV_GRAENSER = {
 } as const;
 
 export const CVR = /^[0-9]{8}$/;
-export const POSTNUMMER = /^[0-9]{4}$/;
+// Danske postnumre er 1000-9999 (0123 er ikke et postnummer).
+export const POSTNUMMER = /^[1-9][0-9]{3}$/;
 export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 // "12 34 56 78" / "DK12345678" -> "12345678". null, hvis det ikke er 8 cifre.
