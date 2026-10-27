@@ -55,6 +55,7 @@ function stripeFejl(b: Extract<BetalingsStatus, { status: "fejl" }>): SkiftPakke
   // tilbage, og det nye gælder. Sig det ærligt i stedet for "ikke ændret".
   if (b.laasOvertaget) return { fejl: FIRMA_OVERSIGT_EKSTRA.pakkeskiftLaasOvertaget, kode: "i_gang" };
   if (b.betalFoerst) return { fejl: FIRMA_OVERSIGT_EKSTRA.pakkeskiftBetalFoerst, kode: "betal_foerst" };
+  if (b.besked && b.rulletTilbage) return { fejl: b.besked, kode: "stripe_fejl" };
   return { fejl: b.rulletTilbage ? FIRMA_OVERSIGT_EKSTRA.pakkeskiftFejl : FIRMA_OVERSIGT_EKSTRA.opgraderingBetalingFejl, kode: "stripe_fejl" };
 }
 

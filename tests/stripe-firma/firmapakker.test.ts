@@ -77,10 +77,13 @@ import {
   firmaPris,
   koerAbonnementSynk,
   synkKundeStripe,
+  skiftPrisAdmin,
+  frigivPakkeskiftLaas,
+  udloebetOpgradering,
 } from "@/lib/erhverv/betaling";
 import { skiftPakkeForBruger } from "@/lib/erhverv/pakkeskift";
 import { introPasser, plusMaaneder } from "@/lib/erhverv/abonnementRegler";
-import { ADMIN_FIRMA_ABONNEMENT } from "@/lib/tekster/erhverv";
+import { ADMIN_FIRMA_ABONNEMENT, FIRMA_ABONNEMENT } from "@/lib/tekster/erhverv";
 
 const FIRMA = "26849ab7-6678-47b7-a8bd-4d618dfdf9f3";
 const SAELGERROLLE = "11111111-1111-4111-8111-000000000008";
@@ -1321,4 +1324,250 @@ describe("regel for måned 1 (20261102070000)", () => {
       .limit(1);
     expect(log2?.length).toBe(1);
   }, 300_000);
+});
+
+// =============================================================================
+// Sjette del: rettelser til reglen for måned 1 (20261102150000)
+// =============================================================================
+// R1. Særpris udelukker velkomstfordelen: Start uden gratis måned, Butik uden
+//     50 % - særprisen fra første betaling.
+// R2. Skift op fra Starts gratis måned med et afvist kort (4000000000000341):
+//     abonnementet er stadig 'trialing' på Start med en ventende ændring; den
+//     mislykkede betaling er IKKE en mislykket abonnementsbetaling; når den
+//     ventende ændring udløber (pending_update_expired), annulleres faktura og
+//     skift, og 50 %-kuponen bliver ikke hængende.
+// R3. Samme med et 3D Secure-kort (4000002500003155): firmaet sendes til
+//     fakturasiden; chefens pakkeskift i admin annullerer den ventende faktura
+//     (ventende ændring væk), og skiftet sker uden betaling i den gratis periode.
+// R4. Introrabat aftalt, men ikke sat på abonnementet: skiftet venter (ingen
+//     dobbelt rabat). Når den er sat på: kun introrabatten (30 %), ingen 50 %.
+// R5. CVR-historik: ændres CVR'et på et firma, der har haft abonnement, tæller
+//     det gamle CVR stadig som "har haft abonnement før".
+describe("rettelser til reglen for måned 1 (20261102150000)", () => {
+  afterAll(async () => {
+    if (subId) await stripe.subscriptions.cancel(subId).catch(() => {});
+    if (ur) await stripe.testHelpers.testClocks.del(ur.id).catch(() => {});
+    await nulstilFirma(START);
+    await db.from("firmaer").update({ stripe_customer_id: null, intro_procent: null, intro_maaneder: null, intro_fra: null, intro_status: null, intro_noegle: null, intro_coupon_id: null, intro_til: null }).eq("id", FIRMA);
+  }, 120_000);
+
+  // Start med velkomstmåneden (som Checkout), på dag 10.
+  async function startIGratisMaaned(navn: string): Promise<number> {
+    await nulstilFirma(START, { intro_procent: null, intro_maaneder: null, intro_fra: null, intro_status: null, intro_noegle: null, intro_til: null });
+    await nytUr(navn);
+    const s = await nySession();
+    expect(s.metadata).toMatchObject({ maaned1: "gratis" });
+    await abonnementSomCheckout(s, START);
+    await spol(t0 + 3600);
+    await spejlAlt();
+    const t1 = t0 + 10 * 86_400;
+    await spol(t1);
+    return t1;
+  }
+
+  // Beløb ekskl. moms på BETALTE fakturaer med et beløb (annullerede tæller ikke).
+  async function betalt(): Promise<number[]> {
+    return (await fakturaer()).filter((x) => x.status === "paid" && x.total > 0).map((x) => x.total_excluding_tax ?? -1);
+  }
+
+  async function nytKort(pm: string): Promise<void> {
+    const kort = await stripe.paymentMethods.attach(pm, { customer: kunde });
+    await stripe.customers.update(kunde, { invoice_settings: { default_payment_method: kort.id } });
+  }
+
+  async function senesteSkift(pakke: string): Promise<{ id: string; status: string; stripe_invoice_id: string | null }> {
+    const { data, error } = await db
+      .from("firma_pakkeskift")
+      .select("id, status, stripe_invoice_id")
+      .eq("firma_id", FIRMA)
+      .eq("til_pakke_id", pakke)
+      .order("oprettet_kl", { ascending: false })
+      .limit(1)
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  it("R1. særpris: ingen gratis Start-måned og ingen 50 % på Butik - særprisen fra første betaling", async () => {
+    for (const [pakke, saerpris] of [
+      [START, 39_900],
+      [BUTIK, 79_900],
+    ] as const) {
+      await nulstilFirma(pakke, {
+        saerpris_oere: saerpris,
+        saerpris_pakke_id: pakke,
+        saerpris_aftale: "Stripe-test: særpris",
+        intro_procent: null,
+        intro_maaneder: null,
+        intro_fra: null,
+        intro_status: null,
+        intro_noegle: null,
+        intro_til: null,
+      });
+      await nytUr(`BidHamr maaned1 saerpris ${pakke.slice(-1)}`);
+      expect(await rpc("erhverv_maaned1", { p_firma: FIRMA })).toBe("ingen");
+      const json = await rpc("erhverv_firma_abonnement_json", { p_firma: FIRMA });
+      expect(json).toMatchObject({ maaned1: "ingen", gratis_maaneder_ved_start: 0, pris: saerpris / 100 });
+      const s = await nySession();
+      expect(s.metadata).toMatchObject({ maaned1: "ingen", gratis_maaneder: "0" });
+      expect(kuponer(s)).toEqual([]);
+      expect(s.amount_subtotal).toBe(saerpris);
+      expect(s.total_details?.amount_discount ?? 0).toBe(0);
+      await stripe.testHelpers.testClocks.del(ur.id).catch(() => {});
+    }
+  }, 300_000);
+
+  it("R2. afvist kort (4000000000000341) ved skift op fra Starts gratis måned: Start beholdes gratis; udløbet ændring annullerer faktura og skift", async () => {
+    const t1 = await startIGratisMaaned("BidHamr maaned1 afvist");
+    await nytKort("pm_card_chargeCustomerFail");
+    await nulstilSkiftGraense();
+    const svar = await skiftPakkeForBruger(brugerId, PRO);
+    expect(svar).toMatchObject({ ok: true, kode: "betal_forskellen" });
+
+    let sub = await stripe.subscriptions.retrieve(subId, { expand: ["latest_invoice"] });
+    expect(sub.status).toBe("trialing");
+    expect(sub.pending_update).not.toBeNull();
+    expect(sub.items.data[0].price.metadata.pakke_id).toBe(START);
+    expect(sub.discounts).toEqual([]);
+    const faktura = sub.latest_invoice as Stripe.Invoice;
+    expect(faktura.status).toBe("open");
+    expect(faktura.billing_reason).toBe("subscription_update");
+    expect(faktura.total_excluding_tax).toBe(PRO_OERE / 2);
+    const skift = await senesteSkift(PRO);
+    expect(skift).toMatchObject({ status: "afventer_betaling", stripe_invoice_id: faktura.id });
+
+    // invoice.payment_failed: ikke en mislykket abonnementsbetaling.
+    expect(await synkFaktura(faktura, "payment_failed")).toBe("spejlet");
+    expect(await firma()).toMatchObject({ pakke_id: START, abonnement_status: "aktiv", betaling_mislykket_kl: null });
+
+    // Den ventende ændring udløber (23 timer): Stripe annullerer fakturaen.
+    await spol(t1 + 24 * 3600);
+    sub = await stripe.subscriptions.retrieve(subId);
+    expect(sub.pending_update).toBeNull();
+    expect((await stripe.invoices.retrieve(faktura.id!)).status).toBe("void");
+    // Webhooks: customer.subscription.pending_update_expired og invoice.voided
+    // (test clock'ets hændelser kan også nå testserverens webhook, som bruger
+    // samme database - så er skiftet allerede annulleret: 'intet_skift').
+    expect(await udloebetOpgradering(sub)).toMatch(/^(udloebet:|intet_skift$)/);
+    expect(await synkFaktura(await stripe.invoices.retrieve(faktura.id!), null)).toMatch(/^void/);
+    expect((await senesteSkift(PRO)).status).toBe("annulleret");
+    const { data: regning } = await db.from("firma_regninger").select("status").eq("stripe_invoice_id", faktura.id!).single();
+    expect(regning?.status).toBe("annulleret");
+    sub = await stripe.subscriptions.retrieve(subId);
+    expect(sub.status).toBe("trialing");
+    expect(sub.items.data[0].price.metadata.pakke_id).toBe(START);
+    expect(sub.discounts).toEqual([]);
+    expect(sub.metadata.skift_id ?? "").toBe("");
+    expect(await firma()).toMatchObject({ pakke_id: START, abonnement_status: "aktiv", stripe_abonnement_status: "trialing" });
+
+    // Fornyelsen efter den gratis måned: fuld Start-pris (ingen 50 %-kupon hængende).
+    await nytKort("pm_card_visa");
+    await spol(plusMaaneder(t0, 1) + 7200); // fakturaen udstedes og betales ca. 1 time efter fornyelsen
+    expect(await betalt()).toEqual([START_OERE]);
+  }, 400_000);
+
+  it("R3. 3D Secure-kort (4000002500003155): fakturasiden; chefens pakkeskift annullerer den ventende faktura og skifter uden betaling", async () => {
+    await startIGratisMaaned("BidHamr maaned1 3ds");
+    await nytKort("pm_card_authenticationRequiredOnSetup");
+    await nulstilSkiftGraense();
+    const svar = await skiftPakkeForBruger(brugerId, PRO);
+    expect(svar).toMatchObject({ ok: true, kode: "betal_forskellen" });
+    if ("url" in svar) expect(svar.url).toMatch(/^https:\/\/invoice\.stripe\.com\//);
+    let sub = await stripe.subscriptions.retrieve(subId, { expand: ["latest_invoice"] });
+    expect(sub.status).toBe("trialing");
+    expect(sub.pending_update).not.toBeNull();
+    const faktura = sub.latest_invoice as Stripe.Invoice;
+    expect(faktura.status).toBe("open");
+    const betaling = await stripe.invoicePayments.list({ invoice: faktura.id!, limit: 1 });
+    const pi = betaling.data[0]?.payment.payment_intent;
+    const piStatus = pi ? (await stripe.paymentIntents.retrieve(typeof pi === "string" ? pi : pi.id)).status : null;
+    expect(piStatus).toBe("requires_action");
+
+    // Chefen skifter til Butik i admin (som skiftFirmaPakkeAdmin).
+    const admin = await skiftPrisAdmin(FIRMA, BUTIK);
+    expect(admin).toMatchObject({ status: "ok", annulleredeFakturaer: 1 });
+    try {
+      expect(await rpc("erhverv_firma_opdater", { p_staff: SAELGERROLLE, p_firma: FIRMA, p_pakke: BUTIK, p_note: "Stripe-test" })).toMatchObject({ kode: "ok" });
+    } finally {
+      if (admin.status === "ok") await frigivPakkeskiftLaas(FIRMA, admin.laas);
+    }
+    expect((await stripe.invoices.retrieve(faktura.id!)).status).toBe("void");
+    sub = await stripe.subscriptions.retrieve(subId);
+    expect(sub.pending_update).toBeNull();
+    expect(sub.status).toBe("trialing");
+    expect(sub.items.data[0].price.metadata.pakke_id).toBe(BUTIK);
+    expect(sub.discounts).toEqual([]);
+    expect((await senesteSkift(PRO)).status).toBe("annulleret");
+    expect(await firma()).toMatchObject({ pakke_id: BUTIK, abonnement_status: "aktiv" });
+    // Ingen betaling i den gratis periode.
+    expect(await betalt()).toEqual([]);
+  }, 400_000);
+
+  it("R4. introrabat aftalt, men ikke på abonnementet: skiftet venter; derefter kun introrabatten (30 %), ingen 50 %", async () => {
+    await startIGratisMaaned("BidHamr maaned1 intro-skift");
+    expect(
+      await rpc("erhverv_firma_intro_gem", {
+        p_staff: SAELGERROLLE,
+        p_firma: FIRMA,
+        p_procent: 30,
+        p_maaneder: 3,
+        p_fra: "efter_gratis",
+        p_begrundelse: "Stripe-test: introrabat i den gratis måned",
+      }),
+    ).toMatchObject({ kode: "ok" });
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, PRO)).toEqual({ fejl: FIRMA_ABONNEMENT.skiftVenterRabat, kode: "stripe_fejl" });
+    let sub = await stripe.subscriptions.retrieve(subId);
+    expect(sub).toMatchObject({ status: "trialing", pending_update: null });
+    expect(sub.items.data[0].price.metadata.pakke_id).toBe(START);
+    expect((await firma()).pakke_id).toBe(START);
+
+    expect(await introTilStripe(FIRMA)).toMatchObject({ status: "ok" });
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, PRO)).toMatchObject({ ok: true, kode: "opgraderet" });
+    sub = await stripe.subscriptions.retrieve(subId, { expand: ["discounts", "discounts.source.coupon"] });
+    expect(sub.status).toBe("active");
+    const kuponIder = sub.discounts.map((d) => (typeof d === "string" ? d : ((d.source.coupon as Stripe.Coupon)?.id ?? "")));
+    expect(kuponIder.some((k) => k.startsWith("bidhamr_intro_30_"))).toBe(true);
+    expect(kuponIder).not.toContain("bidhamr_velkomst_50_once");
+    expect(await beloeb()).toEqual([Math.round(PRO_OERE * 0.7)]);
+  }, 400_000);
+
+  it("R5. CVR-historik: det gamle CVR på et firma med abonnement tæller stadig som 'har haft abonnement før'", async () => {
+    const f = await firma();
+    expect(f.stripe_subscription_id).toBeTruthy();
+    const gammelt = String(f.cvr);
+    const nyt = "87654328";
+    const ANDET = "1501ba4c-5c26-4626-abc4-5e1d1c8e3348";
+    const { data: andet } = await db
+      .from("firmaer")
+      .select("cvr, proeve_maaneder, abonnement_status, stripe_subscription_id, proeve_givet_kl")
+      .eq("id", ANDET)
+      .single();
+    expect(andet).toMatchObject({ abonnement_status: "afventer_betaling", stripe_subscription_id: null, proeve_givet_kl: null });
+    try {
+      expect(await rpc("erhverv_firma_opdater", { p_staff: SAELGERROLLE, p_firma: FIRMA, p_cvr: nyt })).toMatchObject({ kode: "ok", velkomst_fjernet: false });
+      const { data: h } = await db
+        .from("firma_cvr_historik")
+        .select("havde_abonnement")
+        .eq("firma_id", FIRMA)
+        .eq("cvr", gammelt)
+        .eq("nyt_cvr", nyt)
+        .order("aendret_kl", { ascending: false })
+        .limit(1)
+        .single();
+      expect(h).toMatchObject({ havde_abonnement: true });
+      // Et andet firma (ikke startet) får det gamle CVR: velkomstfordelen fjernes.
+      await db.from("firmaer").update({ proeve_maaneder: 1 }).eq("id", ANDET);
+      expect(await rpc("erhverv_firma_opdater", { p_staff: SAELGERROLLE, p_firma: ANDET, p_cvr: gammelt })).toMatchObject({ kode: "ok", velkomst_fjernet: true });
+      expect(await rpc("erhverv_maaned1", { p_firma: ANDET })).toBe("ingen");
+    } finally {
+      await rpc("erhverv_firma_opdater", { p_staff: SAELGERROLLE, p_firma: ANDET, p_cvr: String(andet!.cvr) });
+      await db.from("firmaer").update({ proeve_maaneder: andet!.proeve_maaneder }).eq("id", ANDET);
+      await rpc("erhverv_firma_opdater", { p_staff: SAELGERROLLE, p_firma: FIRMA, p_cvr: gammelt });
+    }
+    // Historikken kan ikke slettes af service role (handelsdata).
+    const { error: sletFejl } = await db.from("firma_cvr_historik").delete().eq("firma_id", FIRMA);
+    expect(sletFejl).not.toBeNull();
+  }, 120_000);
 });

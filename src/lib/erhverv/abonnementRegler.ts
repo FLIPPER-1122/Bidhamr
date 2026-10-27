@@ -228,9 +228,35 @@ export const VELKOMST_RABAT_PROCENT = 50;
 // hvis migrationen 20261102070000 ikke er kørt endnu.
 export const START_PAKKE_ID = "7e57a000-0000-4000-8000-000000000001";
 
-export function maaned1Regel(input: { pakke: PakkeMaaned1; velkomst: boolean; introGaelder: boolean }): Maaned1 {
-  if (!input.velkomst || input.introGaelder) return "ingen";
+// Særpris udelukker også velkomstfordelen (Filip, 27. okt. 2026): særprisen
+// gælder fra første betaling - ingen gratis måned og ingen 50 %
+// (erhverv_maaned1, 20261102150000).
+export function maaned1Regel(input: {
+  pakke: PakkeMaaned1;
+  velkomst: boolean;
+  introGaelder: boolean;
+  saerprisGaelder: boolean;
+}): Maaned1 {
+  if (!input.velkomst || input.introGaelder || input.saerprisGaelder) return "ingen";
   return input.pakke;
+}
+
+// Rabatten på første betaling ved et skift op fra Starts gratis velkomstmåned
+// til Butik/Pro (opgraderFraVelkomst): særpris -> 0 (ingen fordel, og
+// særprisen bortfalder ved pakkeskiftet); en introrabat på abonnementet ->
+// dens procent (den bliver liggende i stedet for 50 %); ellers 50 %.
+export function velkomstSkiftRabat(input: { saerprisGaelder: boolean; introProcent: number | null }): number {
+  if (input.saerprisGaelder) return 0;
+  if (input.introProcent != null) return input.introProcent;
+  return VELKOMST_RABAT_PROCENT;
+}
+
+// Beløbet ekskl. og inkl. moms i hele øre (moms 25 %, afrundet til nærmeste
+// øre som i Stripe) for en månedspris i kroner med rabat i procent.
+export function oereMedRabat(maanedsprisKr: number, rabatProcent: number): { ekskl: number; inkl: number } {
+  const fuld = Math.round(maanedsprisKr * 100);
+  const ekskl = fuld - Math.round((fuld * rabatProcent) / 100);
+  return { ekskl, inkl: ekskl + Math.round((ekskl * 25) / 100) };
 }
 
 // Hvad Checkout skal gøre: gratis måneder (trial) og om engangskuponen på 50 %

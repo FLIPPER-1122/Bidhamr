@@ -1390,8 +1390,17 @@ export const FIRMA_ABONNEMENT = {
     "Du er i din gratis periode. Den nye pakke gælder med det samme, og du betaler ikke noget nu. Når den gratis periode slutter, betaler du den nye pakkes pris.",
   bekraeftNedgraderGratisJa: "Ja, skift pakke nu",
   // Fra Starts gratis måned til Butik/Pro: ikke gratis (Filip, 27. okt. 2026).
-  bekraeftOpgraderFraGratisMaaned: (navn: string) =>
-    `Din gratis måned slutter, når du skifter. I dag betaler du halv pris for din første måned med ${navn}. Fra næste måned betaler du pakkens almindelige pris.`,
+  // Fx "999,50 kr. + moms (1.249,38 kr.)".
+  beloebMedMoms: (ekskl: string, inkl: string) => `${ekskl} + moms (${inkl})`,
+  // beloeb fx "999,50 kr. + moms (1.249,38 kr.)"; rabatProcent: 50 (velkomst),
+  // introrabattens procent eller 0 (særpris - ingen velkomstrabat).
+  bekraeftOpgraderFraGratisMaaned: (navn: string, beloeb: string, rabatProcent: number) =>
+    `Din gratis måned slutter, når du skifter. I dag betaler du ${beloeb} for din første måned med ${navn}${
+      rabatProcent === 50 ? " (halv pris)" : rabatProcent > 0 ? ` (${rabatProcent} % rabat)` : ""
+    }. Fra næste måned betaler du ${rabatProcent > 0 && rabatProcent !== 50 ? "pakkens pris med din rabat, så længe den gælder" : "pakkens almindelige pris"}.`,
+  // Skift op fra den gratis måned, mens en aftalt introrabat er ved at blive
+  // sat på abonnementet (opgraderFraVelkomst venter).
+  skiftVenterRabat: "Din rabat er ved at blive sat op. Prøv at skifte pakke igen om lidt. Der er ikke trukket nogen penge.",
   knapSkiftNu: "Skift til denne pakke",
 } as const;
 
