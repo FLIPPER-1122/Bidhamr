@@ -1,6 +1,6 @@
 # BidHamr – Roadmap mod lancering
 
-**Mål: hjemmeside og app er teknisk færdige inden udgangen af 2026.** Hele 2027 går til marketing og møder. Lancering juni 2027.
+**Mål: hjemmeside og app er teknisk færdige inden udgangen af 2026.** Januar–februar 2027 går til marketing, møder og sidste test. **Lancering 1. marts 2027** (Filip, 27. okt. 2026).
 Faserne tages i rækkefølge. Fase 6 afhænger af CVR-nummer og advokat og kan først lukkes, når de er på plads.
 
 Bygget ud fra `ROADMAP-BESLUTNINGER.md`. Agenterne tager altid det øverste åbne punkt i den aktive fase.

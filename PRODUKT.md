@@ -80,4 +80,4 @@ Designsystemet står i `DESIGN.md`. Retningen er valgt: skovgrøn som brandfarve
 
 ## Tidsplan
 
-Hjemmeside og app skal være teknisk færdige inden udgangen af 2026. Hele 2027 går til marketing og møder. **Lancering juni 2027.** Rækkefølgen står i `ROADMAP.md`.
+Hjemmeside og app skal være teknisk færdige inden udgangen af 2026. Januar–februar 2027 går til marketing, møder og sidste test. **Lancering 1. marts 2027.** Rækkefølgen står i `ROADMAP.md`.

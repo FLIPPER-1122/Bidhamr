@@ -112,7 +112,7 @@ Brugeren får besked når:
 - Bygges samlet **før** staff-chatten og sagerne, så de kan bruge det.
 
 ## 7. Lancering og jura
-- **Mål for lancering: juni 2027.**
+- **Lancering: 1. marts 2027** (Filip, 27. okt. 2026 – rykket frem fra juni 2027; DAO-kontrakten gælder fra samme dato).
 - Cookie-banner skal laves.
 - **Brugerbetingelser (Filip, 10. okt. 2026):** Fluebenet ved oprettelse af konto bliver. Logget-ind brugere, der ikke har accepteret den aktuelle version, får et blokerende vindue lige efter cookie-banneret (kan læse betingelser/privatliv og logge ud). En ny version kræver ny accept. Ikke for besøgende uden konto.
 - **MitID virker på bidhamr.dk i Iduras testmiljø (10. okt. 2026).** Før lancering skal Idura sættes til produktion (se HUSKELISTE.md).
