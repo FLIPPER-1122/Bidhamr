@@ -655,3 +655,8 @@ Erstatter "Firmaet sender selv fakturaen på varen fra sit eget regnskabsprogram
 - **Rettelser:** en sendt faktura kan ikke ændres. Kun en kreditnota fra firmaet kan rette den (samme knapper: se + send).
 - Fakturaer opbevares i 5 år (bogføringsloven) og slettes aldrig.
 - Skal bekræftes af advokat og revisor (jura/noter-til-advokat.md).
+- **Oplysninger til fakturaen indsamles ved oprettelse (Filip, 27. okt. 2026):**
+  - **Firmaer** udfylder i erhvervsformularen alt, der skal stå på firmaets faktura: firmanavn, CVR, adresse, postnummer, by, e-mail og telefon. Mangler noget, tilføjes det.
+  - **Private** udfylder, når de opretter en konto, det der skal stå om kunden på en faktura: fornavn, efternavn, adresse (vej og nr.), postnummer og by, ud over e-mail. Det gælder både på hjemmesiden og i appen.
+  - Eksisterende brugere uden adresse bliver bedt om den, før de byder første gang eller betaler første gang.
+  - Adressen kan rettes under Min konto. På fakturaen bruges navnet fra MitID, når brugeren er verificeret.
