@@ -25,11 +25,14 @@ export const HENVISNING_TEKST = {
   regler: (point: number, maks: number) => [
     `Du får ${point} boost-point for hver ven, der opretter en ny konto via dit link og bekræfter sig med MitID.`,
     `Du kan få point for højst ${maks} venner pr. kalendermåned (${point * maks} point).`,
+    "Du skal selv være bekræftet med MitID for at få point. En ven, der bekræfter sig, før du har gjort det, giver ikke point.",
     "Kun nye konti tæller. Du kan ikke henvise dig selv, og samme person giver kun point én gang.",
     "Pointene kan bruges til at booste dine auktioner.",
   ],
   foerLancering: "Du kan dele dit link nu, men der gives først point, når BidHamr åbner.",
   spaerret: "Din konto kan ikke få point lige nu. Kontakt BidHamr, hvis du har spørgsmål.",
+  // Henviseren skal selv være MitID-verificeret (review 27. okt. 2026).
+  ikkeVerificeret: "Bekræft dig med MitID for at få point. Venner, der bekræfter sig, før du har gjort det, giver ikke point.",
   kunPrivate: "Henvis en ven er kun for private. Firmakonti kan ikke få boost-point.",
   fejl: "Vi kunne ikke hente dit link lige nu. Prøv igen om lidt.",
 
@@ -44,7 +47,13 @@ export const HENVISNING_TEKST = {
     foer_lancering: "Før BidHamr åbnede",
     samme_person: "Ingen point (din egen MitID)",
     tidligere_konto: "Ingen point (havde en konto før)",
+    henviser_uverificeret: "Ingen point (du var ikke bekræftet med MitID)",
   } satisfies Record<HenvisningStatus, string>,
+
+  // Opret konto: feltet med koden fra vennens link (?ven=KODE).
+  signupFelt: "Henvisningskode",
+  signupHjaelp: "Har en ven sendt dig et link, står vennens kode her. Du kan rette eller slette den.",
+  signupKodeUgyldig: "Henvisningskoden er ikke gyldig. Ret den, eller slet den.",
 
   // Kort på Min konto.
   kortTekst: "Del dit link og få boost-point",

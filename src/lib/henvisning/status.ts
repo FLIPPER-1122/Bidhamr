@@ -16,7 +16,10 @@ export type HenvisningStatus =
   | "spaerret"
   | "foer_lancering"
   | "samme_person"
-  | "tidligere_konto";
+  | "tidligere_konto"
+  // Henviseren var ikke selv MitID-verificeret, da vennen blev det
+  // (20261102270000_henvis_rettelser.sql).
+  | "henviser_uverificeret";
 
 export type HenvistVen = {
   navn: string;
@@ -35,6 +38,8 @@ export type MinHenvisning =
       // Fuldt link, fx https://bidhamr.dk/?ven=KODE (tilføjet her).
       url: string;
       kan_faa_point: boolean;
+      // Henviseren har selv en aktiv MitID-verificering (kræves for point).
+      mitid_verificeret: boolean;
       grund: "spaerret" | null;
       optjening_aaben: boolean;
       point_pr_ven: number;
@@ -60,5 +65,10 @@ export async function hentMinHenvisning(supabase: SupabaseClient): Promise<MinHe
   if (!d || typeof d !== "object") return null;
   if (d.kan_henvise !== true) return { kan_henvise: false, grund: "erhverv" };
   const sti = typeof d.sti === "string" ? d.sti : "";
-  return { ...(d as Omit<Extract<MinHenvisning, { kan_henvise: true }>, "url">), url: `${sideUrl()}${sti}` };
+  return {
+    ...(d as Omit<Extract<MinHenvisning, { kan_henvise: true }>, "url">),
+    // Ældre databaser (før 20261102270000) sender ikke feltet: vis ingen boks.
+    mitid_verificeret: d.mitid_verificeret !== false,
+    url: `${sideUrl()}${sti}`,
+  };
 }

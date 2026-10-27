@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import HenvisningLink from "@/components/henvisning/HenvisningLink";
 import { cookies } from "next/headers";
 import { TJEK_EMAIL_COOKIE } from "@/lib/tilmelding";
+import { renHenvisningskode } from "@/lib/henvisning/kode";
 import KodeForm from "./KodeForm";
 
 export const metadata: Metadata = { title: "Indtast koden", robots: { index: false, follow: false } };
@@ -19,12 +20,15 @@ function BrevIkon() {
 // 6-cifrede kode fra bekræftelsesmailen her. E-mailen kommer fra en
 // httpOnly cookie (sat af opretKonto/logInd/gensendBekraeftelse) - aldrig
 // fra URL'en. ?fejl= kommer fra gamle bekræftelseslinks via /auth/callback.
+// ?ven=KODE (Henvis en ven) kommer fra opret konto og sendes med, når koden
+// fra mailen indtastes - intet gemmes i browseren.
 export default async function IndtastKodeSide({
   searchParams,
 }: {
-  searchParams: Promise<{ fejl?: string; fra?: string }>;
+  searchParams: Promise<{ fejl?: string; fra?: string; ven?: string | string[] }>;
 }) {
-  const { fejl, fra } = await searchParams;
+  const { fejl, fra, ven } = await searchParams;
+  const henvisningskode = renHenvisningskode(Array.isArray(ven) ? ven[0] : ven);
   const email = (await cookies()).get(TJEK_EMAIL_COOKIE)?.value ?? null;
   const linkFejl = fejl === "link_udloebet" || fejl === "link_ugyldigt" ? fejl : null;
   const fraLogin = fra === "login";
@@ -78,7 +82,11 @@ export default async function IndtastKodeSide({
         )}
 
         <div className="mt-6">
-          <KodeForm kendtEmail={email} startVentetid={!!email && !fraLogin && !linkFejl} />
+          <KodeForm
+            kendtEmail={email}
+            startVentetid={!!email && !fraLogin && !linkFejl}
+            henvisningskode={henvisningskode}
+          />
         </div>
 
         <div className="mt-6 rounded-xl bg-groen-lys p-4 text-sm text-groen-mork">
@@ -92,15 +100,15 @@ export default async function IndtastKodeSide({
 
         <p className="mt-6 text-center text-sm text-tekst-svag">
           Forkert e-mail?{" "}
-          <Link href="/signup" className="font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
+          <HenvisningLink href="/signup" className="font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
             Opret kontoen igen
-          </Link>
+          </HenvisningLink>
         </p>
         <p className="mt-3 text-center text-sm text-tekst-svag">
           Har du allerede bekræftet?{" "}
-          <Link href="/login" className="font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
+          <HenvisningLink href="/login" className="font-medium text-groen hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen">
             Log ind
-          </Link>
+          </HenvisningLink>
         </p>
       </div>
     </main>

@@ -386,8 +386,9 @@ export async function bekraeftKode(
     ip: string;
     adgangskode: string | null;
     profil: SignupProfil | null;
-    // Henvis en ven: koden fra linket (hjemmesidens cookie bh_ven eller
-    // appens felt henvisningskode). Knyttes kun til en NY konto - databasen
+    // Henvis en ven: koden fra linket (hjemmesidens felt "Henvisningskode",
+    // sendt med fra "Indtast koden" - ingen cookie - eller appens felt
+    // henvisningskode). Knyttes kun til en NY konto - databasen
     // afgør det (henvisning_knyt). Fejl stopper aldrig bekræftelsen.
     henvisningskode?: string | null;
   },
