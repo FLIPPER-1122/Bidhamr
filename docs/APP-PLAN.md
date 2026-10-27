@@ -476,6 +476,7 @@ WebBrowser.openAuthSessionAsync(url, "bidhamr://mitid")
 | `BHA01` | "Tilføj mellem 1 og 10 billeder, uploadet til BidHamr." |
 | `BHA02` / `BHA03` | "Vælg en kategori." / "Vælg varens stand." |
 | `BHA04` / `BHA05` | Titel / beskrivelse for lang |
+| `BHA08` | Kontaktoplysninger i titel/beskrivelse (insert og `rediger_auktion`). `details` = `{ felt, grund, erhverv }`. Privat: "Skriv ikke telefonnummer, e-mail eller links i beskrivelsen/titlen. Køber og sælger skal tale sammen via BidHamr." Firmaer må skrive links (teksten: `auktionKontaktTekst` i `src/lib/auktionKontaktinfo.ts`). Kan tjekkes i forvejen med `rpc("auktion_kontaktinfo_grund", { p_tekst, p_erhverv })` |
 | `BHF01` | Ordet hører under forbudte varer (teksten fra databasen) |
 | `BHT01` | Over 15 kg – kun afhentning |
 | `BHT02` / `BHT03` / `BHT04` / `BHT05` | Vægten passer ikke / mangler / er ugyldig / ukendt størrelse |

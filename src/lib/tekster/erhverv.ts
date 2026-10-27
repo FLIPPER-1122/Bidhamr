@@ -48,9 +48,10 @@ export const ERHVERV_SIDE = {
     },
     {
       // Ingen priser på den offentlige side - kun at der er et abonnement,
-      // intet gebyr af salget og en gratis første måned (Filip, 26. okt. 2026).
+      // intet gebyr af salget og velkomstrabatten i måned 1 (Filip, 27. okt.
+      // 2026: Start gratis, Butik og Pro halv pris).
       titel: "Intet gebyr af dit salg",
-      tekst: "Du betaler et fast abonnement hver måned og får hele buddet for dine varer. Den første måned er gratis.",
+      tekst: "Du betaler et fast abonnement hver måned og får hele buddet for dine varer. Start: første måned gratis. Butik og Pro: første måned til halv pris.",
     },
     {
       titel: "Bliv set på forsiden",
@@ -110,7 +111,7 @@ export const ERHVERV_SIDE = {
     },
     {
       spoergsmaal: "Hvad koster det?",
-      svar: "Dit firma betaler et fast abonnement hver måned. Der er intet gebyr af dine salg – du får hele buddet. Den første måned er gratis. Prisen afhænger af, hvor mange auktioner du vil have, og den får du, når vi har talt sammen. Udfyld formularen, så kontakter vi dig.",
+      svar: "Dit firma betaler et fast abonnement hver måned. Der er intet gebyr af dine salg – du får hele buddet. Start: første måned gratis. Butik og Pro: første måned til halv pris. Prisen afhænger af, hvor mange auktioner du vil have, og den får du, når vi har talt sammen. Udfyld formularen, så kontakter vi dig.",
     },
     {
       spoergsmaal: "Hvor mange auktioner kan jeg have?",
@@ -465,43 +466,47 @@ export const ADMIN_ERHVERV = {
       "Opretter en ny, separat konto med firmaets e-mail og sender velkomstmailen (link til at vælge adgangskode). En evt. privat konto berøres ikke.",
     feltEmail: "Firmaets e-mail (login)",
     feltPakke: "Pakke",
-    feltPakkeHjaelp: "Den pakke, der er aftalt med firmaet. Alle nye firmaer får 1 måned gratis.",
+    feltPakkeHjaelp: "Den pakke, der er aftalt med firmaet. Start: første måned gratis. Butik og Pro: første måned til halv pris.",
     pakkeValg: (navn: string, auktioner: string, pris: string | null) =>
       `${navn} – ${auktioner}${pris ? ` – ${pris} pr. md. ekskl. moms` : ""}`,
     introTitel: "Introrabat",
-    introSlaa: "Giv introrabat efter den gratis måned",
+    introSlaa: "Giv introrabat (i stedet for velkomstrabatten)",
     introHjaelp:
-      "Kun til firmaer, BidHamr selv har kontaktet. Slå den til, så er 50 % i 6 måneder udfyldt (måned 2-7 til halv pris).",
+      "Kun til firmaer, BidHamr selv har kontaktet. Slå den til, så er 50 % i 6 måneder udfyldt (måned 1-6 til halv pris). Der er ingen gratis måned oveni.",
     introProcent: "Rabat i procent (1-100)",
     introMaaneder: "Antal måneder (1-24)",
     introUgyldig: "Skriv hele tal: 1-100 % og 1-24 måneder.",
     introOpsummering: (procent: number, maaneder: number) =>
-      `Måned 1 er gratis. Derefter ${procent} % rabat i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}. Så betaler firmaet pakkens almindelige pris.`,
-    udenIntro: "Måned 1 er gratis. Derefter betaler firmaet pakkens almindelige pris.",
-    // Bekræftelsen: pakke og pris, fx "Butik – 999 kr./md. + moms. Måned 1 er
-    // gratis. Derefter 50 % rabat i 6 måneder (499,50 kr./md. + moms), så
-    // 999 kr./md. + moms."
-    // gratis: "ny" = nyt CVR (1 gratis måned), "ingen" = CVR'et har haft et
-    // abonnement før (ingen gratis måned), "saeraftale" = 1 gratis måned som
-    // særaftale (Filip, 27. okt. 2026).
+      `${procent} % rabat i ${maaneder === 1 ? "måned 1" : `måned 1-${maaneder}`}. Ingen gratis måned. Så betaler firmaet pakkens almindelige pris.`,
+    udenIntro: "Start: første måned gratis. Butik og Pro: første måned til halv pris. Derefter betaler firmaet pakkens almindelige pris.",
+    // Bekræftelsen: pakke og pris efter reglen for måned 1 (Filip, 27. okt.
+    // 2026), fx "Butik – 999 kr./md. + moms. Første måned til halv pris
+    // (499,50 kr. + moms). Derefter 999 kr./md. + moms."
+    // gratis: "ny" = nyt CVR (velkomstrabat), "ingen" = CVR'et har haft et
+    // abonnement før (ingen velkomstrabat), "saeraftale" = velkomstrabat som
+    // særaftale. maaned1: pakkens regel ('gratis' = Start, 'halv' = Butik/Pro).
+    // En introrabat gælder fra måned 1 i stedet for velkomstrabatten.
     pakkeOpsummering: (
       pakke: string,
       pris: string | null,
       intro: { procent: number; maaneder: number; pris: string | null } | null,
       gratis: "ny" | "ingen" | "saeraftale" = "ny",
+      maaned1: "gratis" | "halv" = "halv",
+      halvPris: string | null = null,
     ) => {
       const prisMd = pris ? `${pris}/md. + moms` : "pris ikke sat";
-      const md = intro ? (intro.maaneder === 1 ? "1 måned" : `${intro.maaneder} måneder`) : "";
-      const introPris = intro?.pris ? ` (${intro.pris}/md. + moms)` : "";
-      if (gratis === "ingen") {
-        const foerste = intro ? (intro.pris ? `${intro.pris}/md. + moms` : `${intro.procent} % rabat`) : prisMd;
-        const start = `${pakke} – ${prisMd}. Ingen gratis måned. Første betaling: ${foerste}, når firmaet starter abonnementet.`;
-        if (!intro) return start;
-        return `${start} ${intro.procent} % rabat i ${md}${introPris}, så ${prisMd}.`;
+      if (intro) {
+        const mdr = intro.maaneder === 1 ? "måned 1" : `måned 1-${intro.maaneder}`;
+        const introPris = intro.pris ? ` (${intro.pris}/md. + moms)` : "";
+        return `${pakke} – ${prisMd}. Introrabat ${intro.procent} % i ${mdr}${introPris}. Ingen gratis måned. Derefter ${prisMd}.`;
       }
-      const start = `${pakke} – ${prisMd}. ${gratis === "saeraftale" ? "1 gratis måned (særaftale)." : "Måned 1 er gratis."}`;
-      if (!intro) return `${start} Derefter ${prisMd}.`;
-      return `${start} Derefter ${intro.procent} % rabat i ${md}${introPris}, så ${prisMd}.`;
+      if (gratis === "ingen") {
+        return `${pakke} – ${prisMd}. Ingen velkomstrabat i måned 1. Første betaling: ${prisMd}, når firmaet starter abonnementet.`;
+      }
+      const saer = gratis === "saeraftale" ? " (særaftale)" : "";
+      if (maaned1 === "gratis") return `${pakke} – ${prisMd}. Første måned er gratis${saer}. Derefter ${prisMd}.`;
+      const halv = halvPris ? ` (${halvPris} + moms)` : "";
+      return `${pakke} – ${prisMd}. Første måned til halv pris${halv}${saer}. Derefter ${prisMd}.`;
     },
     cvrTjekket: "CVR tjekket: aktivt dansk firma.",
     knapOpret: "Opret og send velkomstmail",
@@ -735,16 +740,18 @@ export const ADMIN_ERHVERV_EKSTRA = {
     titel: "CVR'et har haft et abonnement før",
     tekst:
       "Firmaet har haft en firmakonto hos BidHamr før. Tjek oplysningerne herunder, før du opretter kontoen. Der er ikke oprettet noget endnu.",
-    // Filip, 27. okt. 2026: et tidligere CVR får ingen gratis måned - kun som særaftale.
+    // Filip, 27. okt. 2026: et tidligere CVR får ingen velkomstrabat i måned 1
+    // (hverken gratis eller halv pris) - kun som særaftale.
     ingenGratis:
-      "Firmaet får ingen gratis måned, fordi CVR'et har haft abonnement før. Første betaling trækkes, når firmaet starter abonnementet.",
-    saeraftaleSlaa: "Giv alligevel 1 gratis måned (særaftale)",
-    saeraftaleHjaelp: "Kun efter aftale. Begrundelsen gemmes i loggen med dit navn.",
+      "Firmaet får ingen velkomstrabat i måned 1, fordi CVR'et har haft abonnement før. Første betaling er fuld pris og trækkes, når firmaet starter abonnementet.",
+    saeraftaleSlaa: "Giv alligevel velkomstrabatten for måned 1 (særaftale)",
+    saeraftaleHjaelp:
+      "Kun efter aftale. Start: første måned gratis. Butik og Pro: første måned til halv pris. Begrundelsen gemmes i loggen med dit navn.",
     saeraftaleBegrundelse: "Begrundelse for særaftalen (5-500 tegn)",
     saeraftalePladsholder: "Fx aftalt med Filip 27/10: firmaet har været lukket i 2 år",
     saeraftaleUgyldig: "Skriv en begrundelse på 5-500 tegn.",
-    resultatIngen: "Ingen gratis måned",
-    resultatSaeraftale: "1 gratis måned (særaftale)",
+    resultatIngen: "Ingen velkomstrabat i måned 1",
+    resultatSaeraftale: "Velkomstrabat for måned 1 (særaftale)",
     status: "Status",
     start: "Startet",
     opsagt: "Opsagt",
@@ -1033,8 +1040,9 @@ export const FIRMA_BETALING = {
   betalTekst: (pakke: string, pris: string) =>
     `Du har pakken ${pakke}. Du betaler ${pris} om måneden + moms. Når du har betalt, kan du oprette auktioner.`,
   betalTekstUdenPris: "Når du har betalt for din pakke, kan du oprette auktioner.",
-  // 1 måned gratis for alle nye firmaer + evt. introrabat (50 % i 6 måneder
-  // efter den gratis måned, sat manuelt i admin) - Filip, 26. okt. 2026.
+  // Regel for måned 1 (Filip, 27. okt. 2026): Start første måned gratis,
+  // Butik og Pro første måned til halv pris; introrabat (50 % i måned 1-6,
+  // sat manuelt i admin) i stedet for velkomstrabatten.
   // Nye nøgler: skal kobles på i Firma oversigt -> Abonnement.
   gratisMaaned: (dato: string) => `Din første måned er gratis. Du betaler første gang den ${dato}.`,
   introrabat: (procent: number, til: string) =>
@@ -1138,7 +1146,8 @@ export const FIRMA_PAKKER = {
   ugensButikRabat: (procent: number, antal: number) =>
     `${procent} % rabat på Ugens butik ${antal === 1 ? "den første gang" : `de første ${antal} gange`} hvert år`,
   prisPrMaaned: (kr: string) => `${kr} om måneden + moms`,
-  gratisMaaned: "1 måned gratis",
+  // Velkomstrabatten i måned 1 efter pakken (erhverv_pakker.maaned1).
+  maaned1: { gratis: "Første måned gratis", halv: "Første måned til halv pris" } as Record<string, string>,
   gratisTil: (dato: string) => `Gratis til og med ${dato}`,
   introrabat: (procent: number, maaneder: number) =>
     `${procent} % rabat i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}`,
@@ -1216,7 +1225,7 @@ export const FIRMA_ABONNEMENT_MAIL = {
     overskrift: "I har fået introrabat",
     tekst: (firmanavn: string, procent: number, maaneder: number, efterGratis: boolean) => [
       `Hej ${firmanavn}.`,
-      `I får ${procent} % rabat på jeres pakke i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}${efterGratis ? " efter jeres gratis periode" : ""}.`,
+      `I får ${procent} % rabat på jeres pakke i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}${efterGratis ? " fra jeres første betaling" : ""}.`,
       "Rabatten trækkes automatisk fra på jeres regninger. Derefter betaler I pakkens almindelige pris.",
     ],
     fjernetEmne: "Jeres introrabat hos BidHamr er stoppet",
@@ -1364,7 +1373,10 @@ export const FIRMA_ABONNEMENT = {
   saerpris: (pris: string, normal: string) =>
     `Du har en aftalt pris: ${pris} om måneden + moms. Pakkens almindelige pris er ${normal} om måneden + moms.`,
   introPlanlagt: (procent: number, maaneder: number, efterGratis: boolean) =>
-    `Du får ${procent} % rabat i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}${efterGratis ? " efter din gratis periode" : ""}. Derefter betaler du pakkens almindelige pris.`,
+    `Du får ${procent} % rabat i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}${efterGratis ? " fra din første betaling" : ""}. Derefter betaler du pakkens almindelige pris.`,
+  // Butik/Pro: første måned til halv pris (Filip, 27. okt. 2026).
+  halvPrisIDag: (ekskl: string, inkl: string) => `I dag betaler du ${ekskl} + moms (${inkl} i alt) for din første måned`,
+  halvPrisTekst: (fuld: string) => `Din første måned koster halv pris. Fra næste måned betaler du ${fuld}.`,
   introPris: (pris: string) => `Med rabatten betaler du ${pris} om måneden + moms.`,
   kortTitel: "Dit betalingskort",
   kort: (kort: string, udloeb: string) => `${kort}, udløber ${udloeb}`,
@@ -1377,6 +1389,9 @@ export const FIRMA_ABONNEMENT = {
   bekraeftNedgraderGratis:
     "Du er i din gratis periode. Den nye pakke gælder med det samme, og du betaler ikke noget nu. Når den gratis periode slutter, betaler du den nye pakkes pris.",
   bekraeftNedgraderGratisJa: "Ja, skift pakke nu",
+  // Fra Starts gratis måned til Butik/Pro: ikke gratis (Filip, 27. okt. 2026).
+  bekraeftOpgraderFraGratisMaaned: (navn: string) =>
+    `Din gratis måned slutter, når du skifter. I dag betaler du halv pris for din første måned med ${navn}. Fra næste måned betaler du pakkens almindelige pris.`,
   knapSkiftNu: "Skift til denne pakke",
 } as const;
 

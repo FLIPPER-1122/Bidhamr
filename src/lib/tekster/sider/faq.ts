@@ -199,6 +199,10 @@ export const FAQ_SIDE: Tekstside = {
           svar: "Pengene bliver frigivet til dig, når køberen har godkendt varen, eller når køberen ikke har oprettet en sag inden for 48 timer. Ved afhentning bliver de frigivet, så snart du har tastet køberens kode. Vores betalingspartner Stripe sender pengene til din bankkonto hver 14. dag. Har du solgt flere ting i den periode, kommer de samlet i én udbetaling.",
         },
         {
+          spoergsmaal: "Må jeg skrive mit telefonnummer i auktionen?",
+          svar: "Nej. Telefonnumre, e-mails, links og MobilePay- eller bankoplysninger må ikke stå i titlen eller beskrivelsen. Køber og sælger skal tale sammen via BidHamr, så I begge er beskyttet. Firmaer må gerne linke til deres hjemmeside, men telefon og e-mail står på firmasiden og ikke i auktionen.",
+        },
+        {
           spoergsmaal: "Kan jeg rette eller annullere min auktion?",
           svar: "Ja, så længe der ikke er bud på den. Når det første bud er kommet, er auktionen låst: du kan ikke ændre noget, tilføje noget eller annullere den. Er der et problem med varen, så kontakt BidHamr.",
         },
@@ -262,7 +266,7 @@ export const FAQ_SIDE: Tekstside = {
         {
           // Ingen priser her - de står kun i Firma oversigt (ROADMAP-BESLUTNINGER "Erhvervskonti").
           spoergsmaal: "Hvad koster det at sælge som firma?",
-          svar: "Dit firma betaler et fast abonnement hver måned. Der er intet gebyr af salget, så I får hele buddet. Den første måned er gratis. Prisen afhænger af, hvor mange auktioner I vil have om måneden, og den aftaler vi med jer.",
+          svar: "Dit firma betaler et fast abonnement hver måned. Der er intet gebyr af salget, så I får hele buddet. Start: første måned gratis. Butik og Pro: første måned til halv pris. Prisen afhænger af, hvor mange auktioner I vil have om måneden, og den aftaler vi med jer.",
         },
         {
           spoergsmaal: "Hvad skal mit firma sørge for over for køberne?",
@@ -329,6 +333,10 @@ export const FAQ_SIDE: Tekstside = {
         {
           spoergsmaal: "Hvad sker der ved svindel?",
           svar: "Svindler en køber eller sælger, lukkes kontoen permanent.",
+        },
+        {
+          spoergsmaal: "Hvordan skifter jeg min e-mail?",
+          svar: "Gå til Min konto, tryk på \"Ret navn, e-mail, telefon og profilbillede\", og tryk så på \"Skift e-mail\". I appen finder du det under Konto → Indstillinger. Skriv den nye e-mail og din nuværende adgangskode, og tryk på \"Send kode\". Vi sender en kode til den nye adresse. Når du har skrevet koden, er din e-mail skiftet, og du logger ind med den nye adresse. Du bliver logget ud på dine andre enheder, og din tidligere adresse får en mail om skiftet. Er din konto suspenderet eller lukket, kan du ikke skifte e-mail. Medarbejdere hos BidHamr skifter ikke selv – de kontakter chefen.",
         },
       ],
     },

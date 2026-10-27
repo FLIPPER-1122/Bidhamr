@@ -97,6 +97,8 @@ export type ErhvervPakke = {
   fast_kontaktperson: boolean;
   ugens_butik_rabat_procent: number;
   ugens_butik_rabat_antal: number;
+  // Velkomstfordelen i måned 1 (20261102070000): Start 'gratis', Butik/Pro 'halv'.
+  maaned1?: "gratis" | "halv";
   aktiv: boolean;
   arkiveret: boolean;
 };
@@ -150,6 +152,10 @@ export type FirmaAbonnement = {
   saerpris: number | null;
   gratis_til: string | null;
   gratis_maaneder_ved_start: number;
+  // Velkomstfordelen, når firmaet starter (20261102070000): 'gratis' (Start:
+  // første måned gratis), 'halv' (Butik/Pro: første måned til halv pris) eller
+  // 'ingen'. null/udeladt, når abonnementet er startet.
+  maaned1?: "gratis" | "halv" | "ingen" | null;
   gratis_brugt: boolean;
   introrabat: {
     procent: number;

@@ -54,6 +54,13 @@ export const GRAENSER = {
   // allerede beskyttelsen; nøglen er IP + e-mail (CGNAT: mange deler IP).
   ny_adgangskode_ip_email: { maks: 20, vindueSek: 60 * 60 },
   konto_slet_bruger: { maks: 5, vindueSek: 60 * 60 },
+  // Skift af e-mail (src/lib/emailSkift.ts): anmodninger (hver kan sende en
+  // kodemail) pr. bruger og pr. ny adresse (mod mailbomber til fremmede), og
+  // kodeforsøg pr. bruger (databasen har desuden 5 pr. kode). Kodeforsøgene
+  // nulstilles ved et gennemført skift.
+  email_skift_bruger: { maks: 5, vindueSek: 60 * 60 },
+  email_skift_ny_email: { maks: 3, vindueSek: 60 * 60 },
+  email_skift_kode_bruger: { maks: 10, vindueSek: 15 * 60 },
   // POST /api/konto/slet (appen) pr. IP, før tokenet er valideret.
   konto_slet_ip: { maks: 20, vindueSek: 60 * 60 },
   // "Nyt login"-mails pr. bruger (registrerLogin).

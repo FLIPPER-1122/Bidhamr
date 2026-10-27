@@ -38,8 +38,10 @@ import { forbudtBesked } from "@/lib/forbudteVarer";
 import { ERHVERV_FEJL, ERHVERV_GRAENSER, erhvervFejlTekst } from "@/lib/erhverv/regler";
 import { udbetalingskontoFejltekst } from "@/lib/betaling/frossetServer";
 import { sletFjernedeBilleder } from "@/lib/auktionBilledOprydning";
+import { auktionKontaktFejl, type AuktionKontaktFelt } from "@/lib/auktionKontaktinfo";
 
-type Fejl = { fejl: string; mitid?: true };
+// felt: kontaktoplysninger (BHA08) - fejlen vises ved feltet.
+type Fejl = { fejl: string; mitid?: true; felt?: AuktionKontaktFelt };
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LAAST = AUKTION_LAAST;
@@ -165,6 +167,9 @@ export async function redigerAuktion(
     });
     if (error) {
       if (erAuktionLaastFejl(error)) return { fejl: LAAST };
+      // Kontaktoplysninger i titel/beskrivelse (BHA08, auctions_zzz_kontaktinfo).
+      const kontakt = auktionKontaktFejl(error);
+      if (kontakt) return { fejl: kontakt.tekst, felt: kontakt.felt };
       const erhvervTekst = erhvervFejlTekst(error.message, error.code);
       if (erhvervTekst) return { fejl: erhvervTekst };
       const loftTekst = beloebForHoejtTekst(error);

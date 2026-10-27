@@ -61,6 +61,47 @@ export function adgangskodeAendretMail(input: { tidspunkt: Date }) {
   };
 }
 
+// Koden til den NYE adresse ved skift af e-mail (src/lib/emailSkift.ts).
+export function emailSkiftKodeMail(input: { kode: string; nyEmail: string }) {
+  return {
+    subject: `${input.kode} er din kode til at skifte e-mail`,
+    ...bygMail({
+      preheader: "Din kode til at skifte e-mail på BidHamr. Den gælder i 15 minutter.",
+      overskriftHtml: "Bekræft din nye e-mail",
+      afsnitHtml: [
+        "Skriv koden herunder på BidHamr for at bruge denne adresse på din konto. Koden gælder i 15 minutter.",
+        "Har du ikke bedt om at skifte e-mail, kan du se bort fra mailen. Så sker der ingenting.",
+      ],
+      info: [
+        { noegle: "Din kode", vaerdiHtml: escapeHtml(input.kode), fremhaev: true },
+        { noegle: "Ny e-mail", vaerdiHtml: escapeHtml(input.nyEmail) },
+      ],
+      aarsag: `Du får denne mail, fordi nogen vil skifte e-mailen på en BidHamr-konto til ${input.nyEmail}. Del aldrig koden med andre – BidHamr spørger dig aldrig om den.`,
+    }),
+  };
+}
+
+// Til den GAMLE adresse, når e-mailen er skiftet.
+export function emailAendretMail(input: { tidspunkt: Date; nyEmail: string }) {
+  return {
+    subject: "Din e-mail er ændret",
+    ...bygMail({
+      preheader: `Din BidHamr-konto bruger nu ${input.nyEmail}.`,
+      overskriftHtml: "Din e-mail er ændret",
+      afsnitHtml: [
+        `Din e-mail er ændret til <strong>${escapeHtml(input.nyEmail)}</strong>. Fremover logger du ind med den nye adresse, og alle mails fra BidHamr går dertil. Du er logget ud alle andre steder.`,
+        "<strong>Var det ikke dig?</strong> Skriv til support@bidhamr.dk med det samme, så hjælper vi dig med at få kontoen tilbage.",
+      ],
+      info: [
+        { noegle: "Tidspunkt", vaerdiHtml: escapeHtml(mailTidspunkt(input.tidspunkt)) },
+        { noegle: "Ny e-mail", vaerdiHtml: escapeHtml(input.nyEmail) },
+      ],
+      knap: { tekst: "Skriv til support", url: "mailto:support@bidhamr.dk?subject=Min%20e-mail%20er%20%C3%A6ndret" },
+      aarsag: "Du får denne mail på din tidligere adresse, fordi e-mailen på din BidHamr-konto er ændret. Sikkerhedsmails kan ikke slås fra.",
+    }),
+  };
+}
+
 export function kontoSlettetMail() {
   return {
     subject: "Din konto er slettet",
