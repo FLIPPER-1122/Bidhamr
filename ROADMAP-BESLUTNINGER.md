@@ -53,6 +53,7 @@ Truffet sammen med Filip, 24. september 2026. Bruges som grundlag for ROADMAP.md
   | **Sælger** | 5 % + 5 kr., højst 95 kr. | 2 % + 15 kr., højst 450 kr. |
 
   - Procenten regnes af slutbuddet (salgsprisen). Grænsen ligger ved præcis 7.500,00 kr. (til og med = første kolonne). Beløb rundes til hele øre.
+  - **Glidende overgang over 7.500 kr. (Filip, 27. okt. 2026 – erstatter "3 % + 15 kr." og "2 % + 15 kr." i anden kolonne):** over 7.500 kr. er gebyret det lave trins loft **plus en procent af beløbet over 7.500 kr.**, så den samlede pris aldrig falder, når buddet stiger: **køber 300 kr. + 3 % af (pris − 7.500), højst 650 kr.**; **sælger 95 kr. + 2 % af (pris − 7.500), højst 450 kr.** Eksempler: 10.000 kr. → køber 375 / sælger 145; 15.000 → 525 / 245; 20.000 → 650 (loft) / 345; 25.000 → 650 / 450. Gælder den private prismodel; firmaers model (erhverv2) er uændret.
   - **Højeste tilladte bud/startpris/maksimum: 25.000 kr.** (ned fra 500.000 kr.) – lofterne er beregnet, så BidHamr aldrig går i minus op til 25.000 kr., heller ikke ved kreditkort (Stripe 2,8 %). Hæves buddet senere, skal lofterne genberegnes.
   - **Fragt for køber (pakkeshop): Lille 42 kr., Mellem 52 kr., Stor 67 kr.** (inkl. moms). Levering til døren som før (genberegnes ved ny DAO-aftale).
   - **Udbetaling til sælgers bank hver 14. dag – også for firmaer (Filip, 26. okt. 2026)** (samler flere handler i én udbetaling for at spare Stripes 5 kr. pr. udbetaling).
@@ -112,6 +113,8 @@ Brugeren får besked når:
 - Bygges samlet **før** staff-chatten og sagerne, så de kan bruge det.
 
 ## 7. Lancering og jura
+- **Suspension (Filip, 27. okt. 2026):** også en medarbejder må suspendere en konto, inkl. permanent suspension. Alt logges med navn. (Lukning/sletning af konti følger de eksisterende regler.)
+- **Skift af e-mail (Filip, 27. okt. 2026):** brugeren skal selv kunne skifte e-mail under Indstillinger (bygges – med bekræftelse på den nye adresse og besked til den gamle).
 - **Lancering: 1. marts 2027** (Filip, 27. okt. 2026 – rykket frem fra juni 2027; DAO-kontrakten gælder fra samme dato).
 - Cookie-banner skal laves.
 - **Brugerbetingelser (Filip, 10. okt. 2026):** Fluebenet ved oprettelse af konto bliver. Logget-ind brugere, der ikke har accepteret den aktuelle version, får et blokerende vindue lige efter cookie-banneret (kan læse betingelser/privatliv og logge ud). En ny version kræver ny accept. Ikke for besøgende uden konto.
