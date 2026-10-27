@@ -32,6 +32,7 @@ import {
   frigivPakkeskiftLaas,
   givGratisPeriodeStripe,
   introTilStripe,
+  lukAabneCheckout,
   refunderRegningStripe,
   saetSaerprisStripe,
   saetSaerprisTilbage,
@@ -246,6 +247,10 @@ export async function givFirmaGratisPeriode(input: {
       }
       throw err;
     }
+    // Uden abonnement: en åben Checkout-session med det gamle antal lukkes,
+    // så firmaet betaler med en ny (20261102030000). Gennemfører firmaet den
+    // gamle alligevel, lægges månederne på ved start (afstemGratisVedStart).
+    if (!iStripe) await lukAabneCheckout(firmaId);
     const sendt = await sendMail(
       f,
       { emne: M.gratis.emne, overskrift: M.gratis.overskrift, afsnit: M.gratis.tekst(f.firmanavn, maaneder, dato(til)) },
@@ -302,6 +307,8 @@ export async function saetFirmaIntrorabat(input: {
       ),
     );
     const stripeSvar = await introTilStripe(firmaId);
+    // Uden abonnement: en åben Checkout-session med den gamle aftale lukkes.
+    if (stripeSvar.status === "ingen_stripe") await lukAabneCheckout(firmaId);
     let besked: string;
     if (stripeSvar.status === "ok") besked = T.intro.sat(procent, maaneder, true);
     else if (stripeSvar.status === "ingen_stripe") besked = T.intro.sat(procent, maaneder, false);
@@ -351,6 +358,7 @@ export async function fjernFirmaIntrorabat(input: {
         klik,
       ),
     );
+    if (stripeSvar.status === "ingen_stripe") await lukAabneCheckout(firmaId);
     const sendt = await sendMail(
       f,
       { emne: M.intro.fjernetEmne, overskrift: M.intro.fjernetOverskrift, afsnit: M.intro.fjernetTekst(f.firmanavn) },
@@ -419,6 +427,7 @@ export async function saetFirmaSaerpris(input: {
     } finally {
       if (stripeSvar.status === "ok") await frigivPakkeskiftLaas(firmaId, stripeSvar.laas);
     }
+    if (stripeSvar.status === "ingen_stripe") await lukAabneCheckout(firmaId);
     const p = await pakke(admin, f.pakke_id);
     const sendt = await sendMail(
       f,

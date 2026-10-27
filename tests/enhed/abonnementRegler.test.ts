@@ -6,8 +6,10 @@
 import { describe, expect, it } from "vitest";
 import {
   gyldigBegrundelse,
+  INTRO_MARGIN_SEK,
   introKuponMaaneder,
   introKuponMaanederCheckout,
+  introPasser,
   introResterende,
   nyGratisSlut,
   plusMaaneder,
@@ -39,6 +41,15 @@ describe("plusMaaneder (som Stripe)", () => {
 });
 
 describe("introrabat: præcis N betalte fakturaer efter den gratis måned", () => {
+  // K skal findes (ikke null) og give præcis N for et hvilket som helst
+  // tidspunkt i vinduet [nu, nu + margin], hvor Stripe sætter discount.start.
+  function praecis(nu: number, naeste: number, n: number, k: number | null, margin = INTRO_MARGIN_SEK) {
+    expect(k).not.toBeNull();
+    for (const st of [nu, nu + 1, nu + Math.floor(margin / 2), nu + margin]) {
+      expect(rabatFakturaer(st, k!, naeste)).toEqual(Array.from({ length: n }, (_, i) => i));
+    }
+  }
+
   it("standard: 1 måned gratis + 50 % i 6 måneder (måned 2-7 halv pris)", () => {
     const oprettet = sek("2026-10-27T09:00:00Z");
     const trialEnd = plusMaaneder(oprettet, 1);
@@ -46,7 +57,7 @@ describe("introrabat: præcis N betalte fakturaer efter den gratis måned", () =
     const nu = oprettet + 5;
     const k = introKuponMaaneder({ nuSek: nu, naesteFakturaSek: trialEnd, maaneder: 6, fra: "efter_gratis" });
     expect(k).toBe(6);
-    expect(rabatFakturaer(nu, k, trialEnd)).toEqual([0, 1, 2, 3, 4, 5]);
+    praecis(nu, trialEnd, 6, k);
   });
 
   it("3 gratis måneder + 50 % i 6: kuponen dækker de gratis måneder og 6 betalte", () => {
@@ -55,7 +66,7 @@ describe("introrabat: præcis N betalte fakturaer efter den gratis måned", () =
     const nu = oprettet + 60;
     const k = introKuponMaaneder({ nuSek: nu, naesteFakturaSek: trialEnd, maaneder: 6, fra: "efter_gratis" });
     expect(k).toBe(8);
-    expect(rabatFakturaer(nu, k, trialEnd)).toEqual([0, 1, 2, 3, 4, 5]);
+    praecis(nu, trialEnd, 6, k);
   });
 
   it("sat midt i en betalt periode: de næste N fakturaer", () => {
@@ -63,7 +74,7 @@ describe("introrabat: præcis N betalte fakturaer efter den gratis måned", () =
     const nu = sek("2026-10-30T12:00:00Z");
     const k = introKuponMaaneder({ nuSek: nu, naesteFakturaSek: naeste, maaneder: 4, fra: "efter_gratis" });
     expect(k).toBe(4);
-    expect(rabatFakturaer(nu, k, naeste)).toEqual([0, 1, 2, 3]);
+    praecis(nu, naeste, 4, k);
   });
 
   it("'straks' tæller fra nu (gratis måneder bruger af rabatten)", () => {
@@ -72,52 +83,155 @@ describe("introrabat: præcis N betalte fakturaer efter den gratis måned", () =
     const trialEnd = plusMaaneder(oprettet, 3);
     const k = introKuponMaaneder({ nuSek: oprettet + 5, naesteFakturaSek: trialEnd, maaneder: 6, fra: "straks" });
     expect(k).toBe(6);
-    expect(rabatFakturaer(oprettet + 5, k, trialEnd)).toEqual([0, 1, 2, 3]);
+    expect(rabatFakturaer(oprettet + 5, k!, trialEnd)).toEqual([0, 1, 2, 3]);
   });
 
-  it("månedens sidste dage giver stadig præcis N", () => {
-    for (const start of ["2027-01-31T23:00:00Z", "2027-03-30T10:00:00Z", "2026-12-31T12:00:00Z"]) {
-      const oprettet = sek(start);
-      const trialEnd = plusMaaneder(oprettet, 1);
-      const nu = oprettet + 3;
-      const k = introKuponMaaneder({ nuSek: nu, naesteFakturaSek: trialEnd, maaneder: 6, fra: "efter_gratis" });
-      expect(rabatFakturaer(nu, k, trialEnd)).toHaveLength(6);
+  it("sat den 31. med fakturaer den 28. (feb.): aldrig N+1 (fejl i den gamle beregning)", () => {
+    // Gammel regel: K = 3 -> rabat 28. feb., 28. mar. OG 28. apr. (3 i stedet for 2).
+    const nu = sek("2027-01-31T10:00:00Z");
+    const naeste = sek("2027-02-28T12:00:00Z");
+    const k = introKuponMaaneder({ nuSek: nu, naesteFakturaSek: naeste, maaneder: 2, fra: "efter_gratis" });
+    expect(k).toBe(2);
+    praecis(nu, naeste, 2, k);
+  });
+
+  it("start + K vokser ikke altid med start (29. jan. 23:47 vs. 30. jan. 00:47 + 1 md.)", () => {
+    const nu = sek("2026-01-29T23:47:15Z");
+    const naeste = sek("2026-01-31T20:25:43Z");
+    const k = introKuponMaaneder({ nuSek: nu, naesteFakturaSek: naeste, maaneder: 1, fra: "efter_gratis", marginSek: 3600 });
+    // Fra 29. jan. 23:47 ville K = 1 give 2 fakturaer (31. jan. og 28. feb.).
+    if (k != null) praecis(nu, naeste, 1, k, 3600);
+    else expect(k).toBeNull();
+  });
+
+  it("ved månedsskifte findes der ikke altid et K: null (aldrig N-1 eller N+1), og det passer igen inden for et døgn", () => {
+    // Fakturaer den 30. (28. feb.) kl. 23; kuponen sat den 31. kl. 01.
+    const naeste = sek("2026-09-30T23:00:00Z");
+    const nu = sek("2026-08-31T01:00:00Z");
+    expect(introKuponMaaneder({ nuSek: nu, naesteFakturaSek: naeste, maaneder: 6, fra: "efter_gratis" })).toBeNull();
+    let t = nu;
+    while (introKuponMaaneder({ nuSek: t, naesteFakturaSek: naeste, maaneder: 6, fra: "efter_gratis" }) == null) t += 300;
+    expect(t - nu).toBeLessThan(86_400);
+    praecis(t, naeste, 6, introKuponMaaneder({ nuSek: t, naesteFakturaSek: naeste, maaneder: 6, fra: "efter_gratis" }));
+  });
+
+  it("kanttilfælde: den 31., den 30., februar, skudår og sommertid giver præcis N eller null", () => {
+    const tider = [
+      "2027-01-31T23:00:00Z", // 31. jan. -> feb. (ikke skudår)
+      "2028-01-31T23:00:00Z", // skudår: 29. feb.
+      "2028-01-30T22:30:00Z",
+      "2028-02-29T12:00:00Z", // skuddag
+      "2026-03-30T10:00:00Z",
+      "2026-03-31T23:59:59Z",
+      "2026-08-30T23:00:00Z", // Checkout 30. aug. kl. 23
+      "2026-08-31T01:00:00Z",
+      "2026-12-31T12:00:00Z",
+      "2026-03-29T00:30:00Z", // sommertid starter (dansk tid 01:30 -> 03:30)
+      "2026-03-29T01:30:00Z",
+      "2026-10-25T00:30:00Z", // sommertid slutter
+      "2026-10-25T01:30:00Z",
+    ];
+    for (const start of tider) {
+      for (const gratis of [1, 2, 3]) {
+        for (const n of [1, 2, 6, 12]) {
+          const oprettet = sek(start);
+          const trialEnd = plusMaaneder(oprettet, gratis);
+          for (const forsinkelse of [3, 3600, 7200, 86_399]) {
+            const nu = oprettet + forsinkelse;
+            const k = introKuponMaaneder({ nuSek: nu, naesteFakturaSek: trialEnd, maaneder: n, fra: "efter_gratis" });
+            if (k != null) praecis(nu, trialEnd, n, k);
+          }
+        }
+      }
     }
+  });
+
+  it("tilfældige tidspunkter: K giver altid præcis N i hele vinduet (eller null)", () => {
+    let x = 12345;
+    const tilfaeldig = () => {
+      x = (x * 1103515245 + 12345) % 2147483648;
+      return x / 2147483648;
+    };
+    const base = sek("2026-01-01T00:00:00Z");
+    let nuller = 0;
+    for (let i = 0; i < 3000; i++) {
+      const nu = base + Math.floor(tilfaeldig() * 3 * 365 * 86_400);
+      const naeste = nu + 600 + Math.floor(tilfaeldig() * 90 * 86_400);
+      const n = 1 + Math.floor(tilfaeldig() * 12);
+      const k = introKuponMaaneder({ nuSek: nu, naesteFakturaSek: naeste, maaneder: n, fra: "efter_gratis" });
+      if (k == null) nuller++;
+      else praecis(nu, naeste, n, k);
+    }
+    expect(nuller).toBeLessThan(30);
   });
 
   it("resterende rabat-fakturaer og flytning ved en ny gratis periode", () => {
     const oprettet = sek("2026-10-27T09:00:00Z");
     const trialEnd = plusMaaneder(oprettet, 1);
     const nu = oprettet + 5;
-    const k = introKuponMaaneder({ nuSek: nu, naesteFakturaSek: trialEnd, maaneder: 6, fra: "efter_gratis" });
+    const k = introKuponMaaneder({ nuSek: nu, naesteFakturaSek: trialEnd, maaneder: 6, fra: "efter_gratis" })!;
     const rabatSlut = plusMaaneder(nu, k);
     expect(introResterende({ naesteFakturaSek: trialEnd, rabatSlutSek: rabatSlut })).toBe(6);
+    expect(introPasser({ naesteFakturaSek: trialEnd, rabatSlutSek: rabatSlut, maaneder: 6 })).toBe(true);
     // To betalte fakturaer senere (næste faktura = trialEnd + 2 md.) er der 4 tilbage.
     expect(introResterende({ naesteFakturaSek: plusMaaneder(trialEnd, 2), rabatSlutSek: rabatSlut })).toBe(4);
     // Staff giver +2 gratis måneder midt i: kuponen sættes på igen med de 4.
     const senere = plusMaaneder(trialEnd, 1) + 86400 * 10;
     const nyNaeste = plusMaaneder(plusMaaneder(trialEnd, 2), 2);
     const k2 = introKuponMaaneder({ nuSek: senere, naesteFakturaSek: nyNaeste, maaneder: 4, fra: "efter_gratis" });
-    expect(rabatFakturaer(senere, k2, nyNaeste)).toEqual([0, 1, 2, 3]);
+    praecis(senere, nyNaeste, 4, k2);
     expect(introResterende({ naesteFakturaSek: trialEnd, rabatSlutSek: null })).toBe(0);
   });
 });
 
 describe("introkupon allerede i Checkout", () => {
-  it("abonnementet oprettes op til 24 timer efter sessionen: stadig præcis N betalte fakturaer", () => {
+  it("abonnementet oprettes inden for en time: præcis N betalte fakturaer", () => {
     for (const [nu, gratis, n] of [
       ["2026-10-27T10:00:00Z", 1, 6],
       ["2026-01-31T23:30:00Z", 1, 6],
       ["2026-03-15T08:00:00Z", 3, 2],
       ["2026-12-31T12:00:00Z", 2, 1],
+      ["2028-01-31T22:00:00Z", 1, 6],
     ] as const) {
       const nuSek = sek(nu);
       const trialEnd = plusMaaneder(nuSek, gratis);
       const k = introKuponMaanederCheckout({ nuSek, trialEndSek: trialEnd, maaneder: n, fra: "efter_gratis" });
-      for (const forsinkelse of [1, 3600, 86_399]) {
-        expect(rabatFakturaer(nuSek + forsinkelse, k, trialEnd)).toEqual(Array.from({ length: n }, (_, i) => i));
+      expect(k).not.toBeNull();
+      for (const forsinkelse of [1, 600, 3600]) {
+        expect(rabatFakturaer(nuSek + forsinkelse, k!, trialEnd)).toEqual(Array.from({ length: n }, (_, i) => i));
       }
     }
+  });
+
+  it("Checkout 30. aug. kl. 23, abonnementet oprettet 31. aug. kl. 01: spejlingen opdager det og sætter rabatten på igen", () => {
+    const nuSek = sek("2026-08-30T23:00:00Z");
+    const trialEnd = plusMaaneder(nuSek, 1); // 30. sep. kl. 23
+    const n = 6;
+    const k = introKuponMaanederCheckout({ nuSek, trialEndSek: trialEnd, maaneder: n, fra: "efter_gratis" });
+    // Abonnementet oprettes to timer senere - efter Checkout-vinduet.
+    const oprettet = sek("2026-08-31T01:00:00Z");
+    if (k != null) {
+      // Kuponen fra Checkout tæller fra oprettelsen. Rammer den ikke præcis N,
+      // ser spejlingen det (introPasser) ...
+      const passer = introPasser({ naesteFakturaSek: trialEnd, rabatSlutSek: plusMaaneder(oprettet, k), maaneder: n });
+      expect(passer).toBe(rabatFakturaer(oprettet, k, trialEnd).length === n);
+    }
+    // ... og sætter den på igen fra et tidspunkt, hvor det kan gøres præcist
+    // (her ikke før 31. aug. sidst på dagen) - aldrig N-1 eller N+1.
+    let t = oprettet;
+    let k2: number | null = null;
+    while ((k2 = introKuponMaaneder({ nuSek: t, naesteFakturaSek: trialEnd, maaneder: n, fra: "efter_gratis" })) == null) t += 300;
+    expect(t).toBeLessThan(trialEnd);
+    expect(rabatFakturaer(t, k2, trialEnd)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it("introPasser: N-1 og N+1 opdages", () => {
+    const trialEnd = sek("2026-09-30T23:00:00Z");
+    // 31. aug. 01:00 + 6 md. = 28. feb. 01:00: rabatten slutter før 6. faktura (28. feb. 23:00).
+    expect(introPasser({ naesteFakturaSek: trialEnd, rabatSlutSek: plusMaaneder(sek("2026-08-31T01:00:00Z"), 6), maaneder: 6 })).toBe(false);
+    // + 7 md. = 31. mar. 01:00: også 7. faktura (30. mar. 23:00) får rabat.
+    expect(introPasser({ naesteFakturaSek: trialEnd, rabatSlutSek: plusMaaneder(sek("2026-08-31T01:00:00Z"), 7), maaneder: 6 })).toBe(false);
+    expect(introPasser({ naesteFakturaSek: trialEnd, rabatSlutSek: plusMaaneder(sek("2026-09-01T01:00:00Z"), 6), maaneder: 6 })).toBe(true);
   });
 
   it("uden gratis periode og ved 'straks' tæller den fra oprettelsen", () => {

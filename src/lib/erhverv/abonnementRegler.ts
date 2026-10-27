@@ -32,55 +32,111 @@ export function plusMaaneder(sek: number, maaneder: number): number {
 // En kupon med duration 'repeating' gælder alle fakturaer i de
 // duration_in_months måneder, der starter, når kuponen sættes på (Stripe:
 // docs.stripe.com/billing/subscriptions/coupons#coupon-duration) - også
-// fakturaer i en gratis periode. For at give rabat på præcis N BETALTE
-// fakturaer fra den næste faktura (naesteFaktura = trial_end eller
-// current_period_end) skal kuponens periode [nu, nu + K måneder) indeholde
-// naesteFaktura + 0..N-1 måneder, men ikke naesteFaktura + N måneder:
-//   K = m + N - 1, hvor m er det mindste antal måneder, så nu + m > naesteFaktura.
-// Kuponen sættes aldrig på præcis samme sekund som en faktura (nu ligger
-// altid mellem to fakturaer), så ingen faktura ligger på grænsen.
-// fra 'straks': rabatten tæller fra nu (en gratis periode bruger af den).
+// fakturaer i en gratis periode. Rabatten slutter ved start + K
+// kalendermåneder (discount.end), og en faktura får rabat, hvis den kommer før
+// slutningen. Fakturaerne kommer ved naesteFaktura + 0, 1, 2 ... måneder
+// (regnet fra naesteFaktura - Stripes billing cycle anchor - ikke fra den
+// forrige faktura). For præcis N BETALTE fakturaer med rabat skal
+//   naesteFaktura + (N-1) måneder  <  start + K måneder  <  naesteFaktura + N måneder.
+// Kuponen sættes på et sted i [nuSek, nuSek + marginSek] (Stripe sætter
+// discount.start et øjeblik efter kaldet; i Checkout oprettes abonnementet
+// senere end sessionen), og begge uligheder skal holde for HELE vinduet. NB:
+// start + K måneder vokser ikke altid med start - 29. jan. 23:47 + 1 måned er
+// 28. feb. 23:47, men 30. jan. 00:47 + 1 måned er 28. feb. 00:47 (månedens
+// sidste dag). Inden for samme døgn vokser den, så vinduets endepunkter og
+// hvert døgnskifte i vinduet tjekkes. K er det mindste tal, der opfylder den
+// første ulighed for alle punkterne.
+//
+// Ved månedsskifte findes der ikke altid et K: kuponen tæller fra en anden
+// dag i måneden end fakturaerne, og når fx start er den 31. og fakturaerne
+// kommer den 30., springer start + K måneder over en hel fakturamåned (28.
+// feb. 01:00 -> 31. mar. 01:00, mens fakturaerne er 28. feb. 23:00 og 30.
+// mar. 23:00). Så svares null: kuponen kan ikke give præcis N lige nu, og den
+// sættes på lidt senere (betalings-cron'en prøver igen hvert 5. minut - inden
+// for et døgn passer det igen). Der gives aldrig N+1 eller N-1.
+//
+// fra 'straks': rabatten tæller fra nu (en gratis periode bruger af den) - K = N.
+// Margin, når kuponen sættes på med et API-kald nu (discount.start ligger
+// sekunder efter). Bagefter tjekkes Stripes faktiske discount.end alligevel.
+export const INTRO_MARGIN_SEK = 300;
+// Margin i Checkout: abonnementet oprettes typisk inden for en time.
+export const INTRO_MARGIN_CHECKOUT_SEK = 3600;
+
+// De tidspunkter i [fra, til], hvor start + K måneder er mindst og størst:
+// endepunkterne og hvert døgnskifte (UTC) - sidste sekund før og første efter.
+function vinduesPunkter(fra: number, til: number): number[] {
+  const punkter = [fra, til];
+  let midnat = Math.floor(fra / 86_400) * 86_400 + 86_400;
+  while (midnat <= til) {
+    punkter.push(midnat - 1, midnat);
+    midnat += 86_400;
+  }
+  return punkter;
+}
+
 export function introKuponMaaneder(input: {
   nuSek: number;
   naesteFakturaSek: number;
   maaneder: number;
   fra: IntroFra;
-}): number {
+  marginSek?: number;
+}): number | null {
   const { nuSek, naesteFakturaSek, maaneder, fra } = input;
+  const margin = input.marginSek ?? INTRO_MARGIN_SEK;
   if (!Number.isInteger(maaneder) || maaneder < 1) throw new Error("Ugyldigt antal måneder");
+  if (!Number.isInteger(margin) || margin < 0 || margin > 86_400) throw new Error("Ugyldig margin");
   if (fra === "straks" || naesteFakturaSek <= nuSek) return maaneder;
-  let m = 1;
-  while (plusMaaneder(nuSek, m) <= naesteFakturaSek) {
-    m++;
-    if (m > 400) throw new Error("Næste faktura ligger for langt ude");
+  // Kan næste faktura komme, før kuponen er sat på? Så kan den ikke styres.
+  if (naesteFakturaSek <= nuSek + margin) return null;
+  const sidsteMedRabat = plusMaaneder(naesteFakturaSek, maaneder - 1);
+  const foersteUden = plusMaaneder(naesteFakturaSek, maaneder);
+  const punkter = vinduesPunkter(nuSek, nuSek + margin);
+  const slut = (k: number) => punkter.map((p) => plusMaaneder(p, k));
+  let k = 1;
+  while (Math.min(...slut(k)) <= sidsteMedRabat) {
+    k++;
+    if (k > 400) throw new Error("Næste faktura ligger for langt ude");
   }
-  return m + maaneder - 1;
+  if (Math.max(...slut(k)) >= foersteUden) return null;
+  return k;
 }
 
 // Introkuponen sat på allerede i Stripe Checkout (så Checkout viser den
 // rigtige pris efter den gratis periode). Kuponens måneder tæller fra, når
 // ABONNEMENTET oprettes (når firmaet gennemfører Checkout) - det er efter
 // sessionen (nuSek) og højst ~24 timer senere (sessionens levetid), mens
-// trialEnd er låst i sessionen. Med m = det mindste antal måneder, så
-// nuSek + m >= trialEnd, dækker K = m + N - 1 præcis N betalte fakturaer
-// (trialEnd + 0..N-1 måneder), når abonnementet oprettes i (nuSek, nuSek + 1
-// måned). Uden gratis periode (første faktura ved oprettelsen) eller 'straks'
-// er K = N.
+// trialEnd er låst i sessionen. Først prøves et K, der passer for hele døgnet;
+// ellers et, der passer, hvis abonnementet oprettes inden for en time (det
+// almindelige). Gennemfører firmaet senere, så rabatten ikke længere rammer
+// præcis N betalte fakturaer (fx Checkout 30. aug. kl. 23 og abonnementet
+// oprettet 31. aug. kl. 01), opdager spejlingen det (introPasser) og sætter
+// kuponen på igen fra abonnementets faktiske tidspunkt. null: intet K passer
+// - Checkout laves uden kupon, og webhooken/cron'en sætter den på.
+// Uden gratis periode (første faktura ved oprettelsen) eller 'straks': K = N.
 export function introKuponMaanederCheckout(input: {
   nuSek: number;
   trialEndSek: number | null;
   maaneder: number;
   fra: IntroFra;
-}): number {
+}): number | null {
   const { nuSek, trialEndSek, maaneder, fra } = input;
   if (!Number.isInteger(maaneder) || maaneder < 1) throw new Error("Ugyldigt antal måneder");
   if (fra === "straks" || trialEndSek == null || trialEndSek <= nuSek) return maaneder;
-  let m = 1;
-  while (plusMaaneder(nuSek, m) < trialEndSek) {
-    m++;
-    if (m > 400) throw new Error("Gratis periode for lang");
-  }
-  return m + maaneder - 1;
+  // Abonnementet oprettes tidligst sekundet EFTER sessionen (trialEnd er
+  // nuSek + gratis måneder, så start = nuSek ville ramme en faktura præcis på
+  // rabattens slutdato).
+  const fra1 = nuSek + 1;
+  return (
+    introKuponMaaneder({ nuSek: fra1, naesteFakturaSek: trialEndSek, maaneder, fra, marginSek: 86_400 }) ??
+    introKuponMaaneder({ nuSek: fra1, naesteFakturaSek: trialEndSek, maaneder, fra, marginSek: INTRO_MARGIN_CHECKOUT_SEK })
+  );
+}
+
+// Giver en introrabat, der allerede ligger på abonnementet (fx fra Checkout),
+// præcis N betalte fakturaer med rabat fra naesteFaktura? (Stripes faktiske
+// discount.end, ikke en beregning.)
+export function introPasser(input: { naesteFakturaSek: number; rabatSlutSek: number | null; maaneder: number }): boolean {
+  return introResterende({ naesteFakturaSek: input.naesteFakturaSek, rabatSlutSek: input.rabatSlutSek }) === input.maaneder;
 }
 
 // Hvor mange BETALTE fakturaer har en kørende introrabat tilbage? Fakturaerne
