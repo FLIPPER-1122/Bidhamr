@@ -418,16 +418,18 @@ export function tolkVelkomstVisning(v: unknown): { ok: true; visning: string | n
 }
 
 // Er et skift til pakken et skift op fra Starts gratis velkomstmåned, som
-// koster pakkens pris med rabat nu (opgraderFraVelkomst)? Samme regel som
-// siden (PakkeValg.fraVelkomst): firmaet er i velkomstmåneden, pakken er
-// større, er ikke gratis i måned 1 og har en pris.
+// går til opgraderFraVelkomst? SAMME regel som serveren (skiftIGratisPeriode:
+// databasen kalder det en opgradering, og pakken er ikke gratis i måned 1 -
+// pakkensMaaned1) og siden (PakkeValg.fraVelkomst). Prisen indgår IKKE:
+// serveren kræver visning, også når pakken ingen pris har - ellers ville
+// appen få "ingen visning" i GET'en og visning_mangler i POST'en (en løkke).
+// En pakke uden pris giver i stedet kanSkifte false (velkomstSkiftTilbud).
 export function erVelkomstSkiftTil(input: {
   iVelkomstMaaned: boolean;
   stoerre: boolean;
   maaned1: string | null | undefined;
-  maanedsprisKr: number | null;
 }): boolean {
-  return input.iVelkomstMaaned && input.stoerre && input.maaned1 !== "gratis" && input.maanedsprisKr != null;
+  return input.iVelkomstMaaned && input.stoerre && input.maaned1 !== "gratis";
 }
 
 // Hvad appen får vist før et skift op fra den gratis måned (GET
@@ -438,11 +440,18 @@ export type VelkomstSkiftTilbud = {
   visning: string;
   rabat: VelkomstSkiftRabat | null;
   beloeb: { eksklOere: number; inklOere: number } | null;
-  // false ved ret_rabat: serveren afviser skiftet (vis ingen knap).
+  // false ved ret_rabat og ved en pakke uden pris: serveren afviser skiftet
+  // (vis ingen knap).
   kanSkifte: boolean;
 };
 
-export function velkomstSkiftTilbud(u: VelkomstSkiftUdfald, maanedsprisKr: number): VelkomstSkiftTilbud {
+export function velkomstSkiftTilbud(u: VelkomstSkiftUdfald, maanedsprisKr: number | null): VelkomstSkiftTilbud {
+  // Uden pris kan serveren ikke skifte (firmaPris: PrisIkkeSat): intet beløb
+  // og ingen knap - men samme visning, så GET og POST er enige om, at det er
+  // et skift op fra den gratis måned.
+  if (maanedsprisKr == null) {
+    return { udfald: u.udfald, visning: velkomstVisning(u), rabat: null, beloeb: null, kanSkifte: false };
+  }
   if (u.udfald !== "skift") {
     return { udfald: u.udfald, visning: velkomstVisning(u), rabat: null, beloeb: null, kanSkifte: u.udfald === "venter" };
   }

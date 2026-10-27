@@ -1448,6 +1448,9 @@ export const FIRMA_ABONNEMENT = {
   //  - ret_rabat: skiftet kan ikke gennemføres lige nu
   knapSaetRabatOp: "Sæt min rabat op",
   bekraeftOpgraderRetRabat:"Vi skal lige rette din rabat, før du kan skifte pakke. Kontakt os, eller prøv igen senere.",
+  //  - pakken har ingen pris endnu: skiftet kan ikke gennemføres lige nu
+  bekraeftOpgraderPrisIkkeSat:
+    "Prisen på pakken aftales med BidHamr, så du kan ikke vælge den her endnu. Skriv til erhverv@bidhamr.dk.",
   knapSkiftNu: "Skift til denne pakke",
 } as const;
 

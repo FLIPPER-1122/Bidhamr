@@ -26,9 +26,14 @@ import { velkomstSkiftForPakke } from "@/lib/erhverv/betaling";
 //              | { slags: "intro", procent, til: "31. marts 2027" | null, maaneder }
 //              | { slags: "saerpris", procent: 0 } | null,
 //         beloeb: { eksklOere, inklOere } | null   (det, der trækkes i dag; kun ved "skift"),
-//         kanSkifte: boolean                      (false ved ret_rabat - vis ingen knap),
+//         kanSkifte: boolean                      (false ved ret_rabat, og når pakken
+//                                                  ingen pris har - vis ingen knap),
 //         tekst: "<bekræftelsen på dansk>", knap: "<knaptekst>" | "" }
-//   400 { fejl, kode: "ugyldig_pakke" }  401 ikke_logget_ind  403 ikke_tilladt (ikke firmakonto)
+//   "Skift op" afgøres med databasens rang (erhverv_pakke_rang; en arkiveret
+//   nuværende pakke er mindst) - samme regel som POST'en, så velkomstSkift:
+//   false aldrig efterfølges af 409 visning_mangler.
+//   400 { fejl, kode: "ugyldig_pakke" }  (ukendt, inaktiv eller arkiveret pakke - som POST'en)
+//   401 ikke_logget_ind  403 ikke_tilladt (ikke firmakonto)
 //   429 { fejl, kode: "for_mange" }      500 { fejl, kode: "fejl" } (fx Stripe nede - vis ikke et beløb)
 //
 // POST /api/firma/skift-pakke
@@ -38,8 +43,10 @@ import { velkomstSkiftForPakke } from "@/lib/erhverv/betaling";
 //   visning: feltet "visning" fra GET'en. KRÆVET ved et skift op fra Starts
 //   gratis måned (velkomstSkift: true) - mangler den, afvises skiftet (409
 //   visning_mangler), før noget ændres. Er rabatten ændret siden GET'en,
-//   afvises skiftet (409 pris_aendret), før noget trækkes. Er den sendt, men
-//   ugyldig: 400 ugyldig_visning. Ved andre skift ignoreres den.
+//   afvises skiftet (409 pris_aendret), før noget trækkes. Ved andre skift
+//   bruges den ikke - men den tjekkes ALTID: en sendt, ugyldig visning giver
+//   400 ugyldig_visning ved alle skift, før noget ændres (også hjemmesiden).
+//   Send den derfor kun, når GET'en gav velkomstSkift: true.
 //
 // Svar (JSON) - samme felter som hjemmesiden:
 //   200 { ok: true, kode: "opgraderet" | "opgradering_afventer_betaling" |

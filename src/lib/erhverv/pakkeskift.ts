@@ -78,7 +78,8 @@ export function stripeFejl(b: Extract<BetalingsStatus, { status: "fejl" }>): Ski
 // /api/firma/skift-pakke?til=<pakke>). Er rabatten ændret imens, afvises
 // skiftet, før noget trækkes. Mangler den ved et skift op fra den gratis
 // måned, afvises skiftet (visning_mangler). En sendt, men ugyldig værdi
-// afvises med det samme (ugyldig_visning) - den bliver aldrig stille til null.
+// afvises med det samme (ugyldig_visning) - ved ALLE skift, også når den ikke
+// bruges, og før databasen ændres. Den bliver aldrig stille til null.
 export async function skiftPakkeForBruger(brugerId: string, pakkeId: unknown, visning?: unknown): Promise<SkiftPakkeSvar> {
   if (typeof pakkeId !== "string" || !UUID.test(pakkeId)) return { fejl: "Vælg en pakke.", kode: "ugyldig_pakke" };
   const tolket = tolkVelkomstVisning(visning);
