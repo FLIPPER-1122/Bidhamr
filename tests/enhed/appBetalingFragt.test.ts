@@ -172,6 +172,8 @@ describe("proxyen", () => {
       "/api/bud/app",
       "/api/auktion/app/fjern-billeder",
       "/api/konto/adgangskode",
+      "/api/konto/email",
+      "/api/konto/email/bekraeft",
       "/api/konto/glemt",
       "/api/konto/data",
     ]) {

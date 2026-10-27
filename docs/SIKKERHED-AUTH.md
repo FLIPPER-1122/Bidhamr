@@ -73,6 +73,16 @@ Supabase-dashboardet for projektet → **Authentication**:
 4. **Sign In / Providers → Email**: "Minimum password length" 10 (som
    hjemmesiden), "Password requirements" efter behov.
 5. "Allow new users to sign up" forbliver **slået fra** (som i dag).
+6. **Sign In / Providers → Email**: "Confirm email" skal være **slået til**
+   (som i dag), og "Secure email change" skal være **slået til** (Supabase'
+   standard). Skift af e-mail går ikke via Supabase' eget flow, men via
+   serveren (`src/lib/emailSkift.ts`, kode til den nye adresse + admin-API).
+   Databasen afviser Supabase' eget e-mail-skift (`updateUser({ email })`)
+   med en trigger (`20261102120000_skift_email.sql`). De to indstillinger er
+   ekstra værn, hvis triggeren en dag mangler: med "Confirm email" slået fra
+   ville `updateUser({ email })` skifte adressen med det samme uden kode, og
+   med "Secure email change" slået fra skulle kun den nye adresse bekræfte.
+   Skabelonen "Change Email Address" bruges ikke.
 
 ### 4. Test efter at det er slået til
 

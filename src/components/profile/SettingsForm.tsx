@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import AvatarUpload from "@/components/profile/AvatarUpload";
+import SkiftEmail from "@/components/konto/SkiftEmail";
 import { useHydreret } from "@/lib/useHydreret";
 
 // Samme rensning som ved oprettelse (renNavn i actions/auth.ts).
@@ -122,19 +123,10 @@ export default function SettingsForm({
         </div>
       </div>
 
+      {/* Egen formular (kode til den nye adresse) - ikke en del af "Gem ændringer". */}
+      <SkiftEmail email={email} />
+
       <form onSubmit={handleSubmit} method="post" className="space-y-4" noValidate>
-      <div>
-        <label htmlFor="email" className="block text-sm font-medium text-tekst">
-          E-mail
-        </label>
-        <input
-          id="email"
-          type="email"
-          value={email}
-          disabled
-          className="mt-1.5 w-full h-11 rounded-xl border border-transparent bg-groen-lys px-4 text-[15px] text-tekst-daempet"
-        />
-      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>

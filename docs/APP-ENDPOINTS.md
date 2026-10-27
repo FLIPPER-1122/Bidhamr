@@ -11,6 +11,7 @@ på hjemmesiden:
 | `/api/handel/app/andenchance-*`, `genopsaet` | `src/lib/andenchance.ts` (`hentAndenchanceStatus`, `sendAndenchanceTilbud`, `svarAndenchance`, `genopsaetAuktion`) |
 | `/api/bud/app` | `src/lib/bud/afgivBud.ts` (`afgivBud`, `saetMaksimum`) |
 | `/api/konto/adgangskode`, `/api/konto/glemt` | `src/lib/adgangskodeSkift.ts` (`skiftAdgangskode`, `nulstilAdgangskode`) |
+| `/api/konto/email`, `/api/konto/email/bekraeft` | `src/lib/emailSkift.ts` (`sendEmailSkiftKode`, `bekraeftEmailSkift`) |
 | `/api/konto/data` | `src/lib/mineDataFil.ts` (`/konto/data`) |
 | `/api/auktion/app/fjern-billeder` | `src/lib/auktionBilledOprydning.ts` (`redigerAuktion`) |
 
@@ -122,6 +123,26 @@ Alle handlinger med `trade_id` slår handlen op først: **404 `ikke_fundet`**, h
 almindelig, ikke e-mail eller navn). Den nuværende adgangskode tjekkes, andre enheder logges ud (denne enhed beholder
 sin session), og brugeren får en sikkerhedsmail. Fejl: `400 adgangskode` / `samme_adgangskode`, `403
 forkert_adgangskode`, `403 genlog_ind` (log ud og ind igen), `429 for_mange`.
+
+## POST /api/konto/email og /api/konto/email/bekraeft (skift af e-mail)
+
+Samme kode som Indstillinger på hjemmesiden (`src/lib/emailSkift.ts`, migration `20261102120000_skift_email.sql`).
+Appen må **aldrig** kalde `supabase.auth.updateUser({ email })` - databasen afviser det altid (værn mod overtagelse
+via en stjålet session).
+
+1. `POST /api/konto/email` `{ ny_email, adgangskode }` → `200 { ok, besked }`. Svaret er **det samme**, uanset om
+   adressen er ledig eller i brug (så sendes ingen kode). Vis `besked` og kode-skærmen. Fejl: `400 email` /
+   `samme_email`, `403 forkert_adgangskode`, `403 staff` (medarbejdere skifter ikke selv - de kontakter chefen),
+   `403 suspenderet` / `lukket` / `slettet`, `429 for_mange`, `503 ikke_tilgaengelig`.
+2. `POST /api/konto/email/bekraeft` `{ kode }` (6 cifre, mellemrum fjernes) → `200 { ok, email }`. E-mailen er
+   skiftet, andre enheder er logget ud, og den gamle adresse har fået en mail. Kald
+   `supabase.auth.refreshSession()`, så tokenet har den nye e-mail. Fejl: `400 kode_forkert` (prøv igen),
+   `400 kode_udloebet` (brugt, udløbet efter 15 min. eller 5 forkerte - bed om en ny kode via trin 1),
+   `409 optaget` (adressen blev taget, før koden blev brugt), `403 staff` / `suspenderet` / `lukket` / `slettet`,
+   `429 for_mange`.
+
+Grænser: `konto_app_ip`, `adgangskode_bruger` (deles med skift af adgangskode og sletning), `email_skift_bruger`
+(5/time), `email_skift_ny_email` (3/time pr. ny adresse) og `email_skift_kode_bruger` (10/15 min).
 
 ## POST /api/konto/glemt
 

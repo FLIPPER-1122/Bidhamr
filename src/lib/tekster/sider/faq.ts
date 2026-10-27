@@ -330,6 +330,10 @@ export const FAQ_SIDE: Tekstside = {
           spoergsmaal: "Hvad sker der ved svindel?",
           svar: "Svindler en køber eller sælger, lukkes kontoen permanent.",
         },
+        {
+          spoergsmaal: "Hvordan skifter jeg min e-mail?",
+          svar: "Gå til Min konto, tryk på \"Ret navn, e-mail, telefon og profilbillede\", og tryk så på \"Skift e-mail\". I appen finder du det under Konto → Indstillinger. Skriv den nye e-mail og din nuværende adgangskode, og tryk på \"Send kode\". Vi sender en kode til den nye adresse. Når du har skrevet koden, er din e-mail skiftet, og du logger ind med den nye adresse. Du bliver logget ud på dine andre enheder, og din tidligere adresse får en mail om skiftet. Er din konto suspenderet eller lukket, kan du ikke skifte e-mail. Medarbejdere hos BidHamr skifter ikke selv – de kontakter chefen.",
+        },
       ],
     },
     {

@@ -27,7 +27,7 @@ import {
   saelgerUbetaltAnnulleretMail,
 } from "@/lib/mails/handel";
 import { velkomstMail } from "@/lib/mails/venteliste";
-import { adgangskodeAendretMail, kontoSlettetMail, nytLoginMail } from "@/lib/mails/konto";
+import { adgangskodeAendretMail, emailAendretMail, emailSkiftKodeMail, kontoSlettetMail, nytLoginMail } from "@/lib/mails/konto";
 
 export type MailEksempel = {
   id: string;
@@ -47,6 +47,8 @@ export function mailEksempler(): MailEksempel[] {
   return [
     { id: "nyt-login", navn: "Konto: nyt login fra ny enhed", mail: nytLoginMail({ tidspunkt: new Date(), enhed: "Chrome på Windows" }) },
     { id: "adgangskode-aendret", navn: "Konto: adgangskoden er ændret", mail: adgangskodeAendretMail({ tidspunkt: new Date() }) },
+    { id: "email-skift-kode", navn: "Konto: kode til ny e-mail", mail: emailSkiftKodeMail({ kode: "482913", nyEmail: "ida.ny@example.dk" }) },
+    { id: "email-aendret", navn: "Konto: din e-mail er ændret (til den gamle adresse)", mail: emailAendretMail({ tidspunkt: new Date(), nyEmail: "ida.ny@example.dk" }) },
     { id: "konto-slettet", navn: "Konto: din konto er slettet", mail: kontoSlettetMail() },
     { id: "koeber-vandt", navn: "Køber: du vandt", mail: koeberVandtMail(TITEL, 128_950, TRADE, om48()) },
     { id: "koeber-vandt-betalt", navn: "Køber: vandt og har allerede betalt", mail: koeberVandtBetaltMail(TITEL, 128_950, TRADE) },
