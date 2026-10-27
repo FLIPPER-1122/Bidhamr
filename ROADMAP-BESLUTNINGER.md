@@ -664,3 +664,11 @@ Erstatter "Firmaet sender selv fakturaen på varen fra sit eget regnskabsprogram
   - **Svindel** (tom pakke, aldrig sendt): køberen får kun **buddet** tilbage, som i dag.
   - **Erstatning ved bortkommet pakke:** fragtfirmaets erstatning udbetales til BidHamr (DAO-reglen) og sendes videre til **sælgeren**, ligesom ved transportskade.
   - **Billedkrav:** ved **tom pakke** kræves kun billede af pakken og labelen, ikke af indholdet. Ved "pakken er smidt ud" kræves billede af varen og en forklaring.
+
+## Dokumentation til politiet (Filip, 27. okt. 2026)
+- Staff kan på en sag i admin lave en samlet PDF, "Dokumentation til politiet". Den kan bruges, når fx en pakke kommer tom frem, og sælgeren mener, at køberen har taget varen ud. Det er den, der har haft tabet, der anmelder via politi.dk: sælgeren som borger, eller BidHamr med MitID Erhverv.
+- **To udgaver:**
+  - **"Til sælger"** indeholder kun det, sælgeren i forvejen har adgang til: handlen, beløb, datoer, sporing og vægt, billederne fra sagen, chatten og købers navn og leveringsadresse. Ingen MitID-oplysninger, ingen e-mail og intet telefonnummer.
+  - **"Til politiet"** er den fulde udgave med MitID-verificering (navn og fødselsdato), e-mail og log. Den udleveres kun til politiet, når de beder om det, eller når BidHamr selv anmelder. Kun chefen kan lave den.
+- Hver udlevering logges (hvem, hvornår, hvilken udgave, til hvem).
+- Skal bekræftes af advokaten (jura/noter-til-advokat.md).
