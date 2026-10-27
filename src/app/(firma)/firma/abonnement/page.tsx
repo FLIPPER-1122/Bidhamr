@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { kraevFirma } from "@/lib/erhverv/firmaData";
 import { hentFirmaOversigt } from "@/app/actions/erhverv";
-import { bekraeftCheckout, erVelkomstGratisPeriode } from "@/lib/erhverv/betaling";
+import { bekraeftCheckout, velkomstSkiftVisning } from "@/lib/erhverv/betaling";
 import { logDriftFejl } from "@/lib/drift";
 import PakkeValg, { PakkeInfo } from "@/components/erhverv/PakkeValg";
 import StripeKnap from "@/components/erhverv/StripeKnap";
@@ -14,7 +14,7 @@ import {
   FIRMA_OVERSIGT_EKSTRA as X,
 } from "@/lib/tekster/erhverv";
 import { kr, krFraOere, langDato } from "@/lib/erhverv/visning";
-import { plusMaaneder, VELKOMST_RABAT_PROCENT, velkomstSkiftRabat } from "@/lib/erhverv/abonnementRegler";
+import { plusMaaneder, VELKOMST_RABAT_PROCENT } from "@/lib/erhverv/abonnementRegler";
 import type { FirmaOversigt } from "@/lib/erhverv/regler";
 
 // Abonnement: betaling (Stripe Billing), nuværende pakke og alle andre
@@ -120,19 +120,13 @@ export default async function FirmaAbonnement({
       : halvPris && pris != null
         ? (pris * (100 - VELKOMST_RABAT_PROCENT)) / 100
         : pris;
-  // Starts gratis velkomstmåned: et skift op til Butik/Pro koster halv pris
-  // nu (ikke gratis). En gratis periode fra BidHamr (særaftale) er gratis.
-  const velkomstGratis = !!gratisTil && (await erVelkomstGratisPeriode(bruger.id));
-  // Rabatten på første betaling ved det skift og dens slags (samme regel som
-  // opgraderFraVelkomst): særpris 0 %, en introrabat dens procent til dens
-  // slutdato, ellers velkomstens 50 % (kun måned 1).
-  const velkomstRabat = velkomstSkiftRabat({
-    saerprisGaelder: ab?.saerpris != null,
-    intro:
-      intro && (introKoerer || introPlanlagt)
-        ? { procent: intro.procent, til: introKoerer && intro.til ? langDato(intro.til) : null, maaneder: intro.maaneder }
-        : null,
-  });
+  // Starts gratis velkomstmåned: et skift op til Butik/Pro koster pakkens pris
+  // med rabat nu (ikke gratis). En gratis periode fra BidHamr (særaftale) er
+  // gratis. velkomstSkiftVisning bruger SAMME regel som serveren, når der
+  // trykkes (opgraderFraVelkomst), ud fra rabatterne på abonnementet i Stripe -
+  // så beløbet, der vises, er beløbet, der trækkes (og skiftet sender det
+  // viste med, så serveren afviser, hvis rabatten er ændret imens).
+  const velkomst = gratisTil ? await velkomstSkiftVisning(bruger.id) : { velkomstGratis: false as const };
   const pauseFra = f.betaling_mislykket_kl
     ? new Date(new Date(f.betaling_mislykket_kl).getTime() + 7 * 24 * 3600 * 1000).toISOString()
     : null;
@@ -283,8 +277,7 @@ export default async function FirmaAbonnement({
             kanSkifte={f.abonnement_status === "aktiv" && !f.opsiges_fra}
             afventerId={o.afventende_opgradering?.id ?? null}
             iGratisPeriode={!!gratisTil}
-            velkomstGratis={velkomstGratis}
-            velkomstRabat={velkomstRabat}
+            velkomstSkift={velkomst.velkomstGratis ? velkomst.udfald : null}
           />
           {f.abonnement_status !== "aktiv" && <p className={`mt-4 ${E_TEKST_DAEMPET}`}>{T.abonnement.betalingIkkeSatOpSkift}</p>}
         </Kort>

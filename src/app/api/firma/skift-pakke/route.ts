@@ -13,7 +13,10 @@ import { skiftPakkeForBruger } from "@/lib/erhverv/pakkeskift";
 // POST /api/firma/skift-pakke
 //   Authorization: Bearer <Supabase access token>
 //   Content-Type: application/json
-//   { "pakkeId": "<uuid>" }
+//   { "pakkeId": "<uuid>", "visning"?: "velkomst:50" | "intro:30" | "saerpris:0" | "venter" | "ret_rabat" }
+//   visning (valgfri): hvad appen viste ved et skift op fra Starts gratis
+//   måned - er rabatten ændret imens, afvises skiftet (409 stripe_fejl), før
+//   noget trækkes. Uden den tjekkes det ikke.
 //
 // Svar (JSON) - samme felter som hjemmesiden:
 //   200 { ok: true, kode: "opgraderet" | "opgradering_afventer_betaling" |
@@ -102,7 +105,7 @@ export async function POST(req: NextRequest) {
   if (laengde !== null && !(/^\d{1,6}$/.test(laengde) && Number(laengde) <= MAKS_KROP)) {
     return svar(413, { fejl: "Ugyldig forespørgsel.", kode: "ugyldig" });
   }
-  let krop: { pakkeId?: unknown };
+  let krop: { pakkeId?: unknown; visning?: unknown };
   try {
     const raa = await laesBegraenset(req, MAKS_KROP);
     if (raa === null) return svar(413, { fejl: "Ugyldig forespørgsel.", kode: "ugyldig" });
@@ -120,7 +123,7 @@ export async function POST(req: NextRequest) {
   if (brugerFejl || !bruger) return svar(401, IKKE_LOGGET_IND);
 
   try {
-    const res = await skiftPakkeForBruger(bruger.id, krop.pakkeId);
+    const res = await skiftPakkeForBruger(bruger.id, krop.pakkeId, krop.visning);
     if ("ok" in res) return svar(200, res);
     const status =
       res.kode === "ugyldig_pakke" ? 400

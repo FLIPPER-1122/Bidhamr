@@ -605,7 +605,7 @@ Indsnævrer "Intet to-trins-login" fra 7. okt. 2026: **brugere har stadig intet 
 
 ## Nye funktioner før lancering (Filip, 27. okt. 2026)
 Alle fire skal være færdige før lanceringen, på både hjemmesiden og i appen.
-1. **AI-hjælp til auktionen:** sælgeren tager billeder, og BidHamr foreslår titel, kategori, beskrivelse og pakkestørrelse. Sælgeren retter forslaget og godkender selv; intet oprettes automatisk. Forslaget skal overholde kontaktinfo-reglen (BHA08) og de andre regler for indhold. Det kører via Claude API (Anthropic) bag en env-nøgle.
+1. ~~**AI-hjælp til auktionen**~~ **Fravalgt (Filip, 27. okt. 2026: "det giver for meget bøvl").** Oprindeligt: sælgeren tager billeder, og BidHamr foreslår titel, kategori, beskrivelse og pakkestørrelse. Sælgeren retter forslaget og godkender selv; intet oprettes automatisk. Forslaget skal overholde kontaktinfo-reglen (BHA08) og de andre regler for indhold. Det kører via Claude API (Anthropic) bag en env-nøgle.
 2. **BidHamr-bot:** en chat på hjemmesiden og i appen, hvor brugeren kan skrive til "BidHamr-bot".
    - Den svarer på spørgsmål om regler, gebyrer, fragt, betaling og BidHamr Beskyttelse ud fra hjælpesider og FAQ.
    - For indloggede brugere kan den læse status på brugerens **egne** handler, auktioner og bud.
@@ -620,5 +620,10 @@ Alle fire skal være færdige før lanceringen, på både hjemmesiden og i appen
    - Pointene registreres i den eksisterende point-historik.
 4. **Del auktion:** en tydelig Del-knap (Messenger, SMS, Facebook, kopiér link, og systemets delingsmenu i appen) og et pænt billede i linket (Open Graph).
 5. **Påmindelse før en auktion slutter:** for favoritter og auktioner, man har budt på, fx "slutter om 1 time – du fører ikke længere". Brugeren kan slå den fra under notifikationer.
+
+- **Modeller (Filip, 27. okt. 2026):**
+  - Botten bruger den billige model `claude-haiku-5-5` (env `BIDHAMR_BOT_MODEL`).
+  - Begge kan skiftes uden ny kode.
+- **Ansvarsforbehold for botten (Filip, 27. okt. 2026):** dens svar er vejledende, og det er reglerne og handelsbetingelserne, der gælder.
 
 Tips til gode billeder er fravalgt (Filip, 27. okt. 2026).

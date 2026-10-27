@@ -13,7 +13,7 @@ import { kaldOffentligHandling } from "@/lib/offentligHandling";
 import { FIRMA_ABONNEMENT as FA, FIRMA_OVERSIGT, FIRMA_OVERSIGT_EKSTRA as X, FIRMA_PAKKER } from "@/lib/tekster/erhverv";
 import { erStoerrePakke, type ErhvervPakke } from "@/lib/erhverv/regler";
 import { kr, krFraOere } from "@/lib/erhverv/visning";
-import { oereMedRabat, VELKOMST_RABAT_PROCENT, type VelkomstSkiftRabat } from "@/lib/erhverv/abonnementRegler";
+import { oereMedRabat, velkomstVisning, type VelkomstSkiftUdfald } from "@/lib/erhverv/abonnementRegler";
 import { E_KNAP_PRIMAER, E_KNAP_SEKUNDAER, E_TEKST, E_TEKST_DAEMPET } from "@/components/erhverv/stil";
 import { erStripeAdresse } from "@/components/erhverv/StripeKnap";
 
@@ -45,8 +45,7 @@ export default function PakkeValg({
   kanSkifte,
   afventerId,
   iGratisPeriode = false,
-  velkomstGratis = false,
-  velkomstRabat = { slags: "velkomst", procent: VELKOMST_RABAT_PROCENT },
+  velkomstSkift = null,
 }: {
   nuvaerende: ErhvervPakke;
   andre: ErhvervPakke[];
@@ -59,11 +58,12 @@ export default function PakkeValg({
   // I den gratis periode gælder et pakkeskift med det samme uden betaling.
   iGratisPeriode?: boolean;
   // Den gratis periode er kun Starts velkomstmåned: et skift op til en pakke
-  // med halv pris i måned 1 (Butik/Pro) koster 50 % nu (Filip, 27. okt. 2026).
-  velkomstGratis?: boolean;
-  // Rabatten på den første betaling ved det skift og dens slags
-  // (velkomstSkiftRabat: velkomst 50 %, introrabattens procent eller særpris 0 %).
-  velkomstRabat?: VelkomstSkiftRabat;
+  // med halv pris i måned 1 (Butik/Pro) koster pakkens pris med rabat nu
+  // (Filip, 27. okt. 2026). Hvad skiftet gør (velkomstSkiftVisning - samme
+  // regel som serveren): skift med en rabat (beløbet vises), venter (rabatten
+  // sættes op først, intet trækkes) eller ret_rabat (kan ikke skifte nu).
+  // null: ikke Starts velkomstmåned.
+  velkomstSkift?: VelkomstSkiftUdfald | null;
 }) {
   const router = useRouter();
   const [aaben, setAaben] = useState<string | null>(null);
@@ -71,11 +71,17 @@ export default function PakkeValg({
   const [sender, start] = useTransition();
   const svarRef = useRef<HTMLDivElement>(null);
 
-  function skift(p: ErhvervPakke) {
+  // Et skift op fra Starts gratis måned til en pakke, der ikke er gratis i
+  // måned 1: siden viser beløbet ud fra velkomstSkift og sender det viste med.
+  const fraVelkomst = (p: ErhvervPakke, op: boolean) =>
+    !!velkomstSkift && iGratisPeriode && op && p.maaned1 !== "gratis" && p.maanedspris != null;
+
+  function skift(p: ErhvervPakke, op: boolean) {
     setSvar(null);
     start(async () => {
       const fd = new FormData();
       fd.set("pakkeId", p.id);
+      if (velkomstSkift && fraVelkomst(p, op)) fd.set("visning", velkomstVisning(velkomstSkift));
       const res = await kaldOffentligHandling<SkiftPakkeSvar>("firma-skift-pakke", fd);
       // Kortet skal godkendes (3D Secure), eller betalingen fejlede: videre
       // til Stripes fakturaside for at betale forskellen.
@@ -149,34 +155,47 @@ export default function PakkeValg({
                     {op || iGratisPeriode ? A.bekraeftOpgraderTitel(p.navn) : A.bekraeftNedgraderTitel(p.navn)}
                   </p>
                   <p className={`mt-2 ${E_TEKST}`}>
-                    {iGratisPeriode
-                      ? op
-                        ? velkomstGratis && p.maaned1 !== "gratis" && p.maanedspris != null
-                          ? FA.bekraeftOpgraderFraGratisMaaned(
-                              p.navn,
-                              FA.beloebMedMoms(
-                                krFraOere(oereMedRabat(p.maanedspris, velkomstRabat.procent).ekskl),
-                                krFraOere(oereMedRabat(p.maanedspris, velkomstRabat.procent).inkl),
-                              ),
-                              velkomstRabat,
-                            )
-                          : FA.bekraeftOpgraderGratis
-                        : FA.bekraeftNedgraderGratis
-                      : op
-                        ? X.bekraeftOpgraderTekstAfventer
-                        : A.bekraeftNedgraderTekst(naestePeriode)}
+                    {velkomstSkift && fraVelkomst(p, op) && p.maanedspris != null
+                      ? velkomstSkift.udfald === "skift"
+                        ? FA.bekraeftOpgraderFraGratisMaaned(
+                            p.navn,
+                            FA.beloebMedMoms(
+                              krFraOere(oereMedRabat(p.maanedspris, velkomstSkift.rabat.procent).ekskl),
+                              krFraOere(oereMedRabat(p.maanedspris, velkomstSkift.rabat.procent).inkl),
+                            ),
+                            velkomstSkift.rabat,
+                          )
+                        : velkomstSkift.udfald === "venter"
+                          ? FA.bekraeftOpgraderVenterRabat
+                          : FA.bekraeftOpgraderRetRabat
+                      : iGratisPeriode
+                        ? op
+                          ? FA.bekraeftOpgraderGratis
+                          : FA.bekraeftNedgraderGratis
+                        : op
+                          ? X.bekraeftOpgraderTekstAfventer
+                          : A.bekraeftNedgraderTekst(naestePeriode)}
                   </p>
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                    <button
-                      type="button"
-                      onClick={() => skift(p)}
-                      disabled={sender}
-                      aria-busy={sender || undefined}
-                      className={E_KNAP_PRIMAER}
-                    >
-                      {sender && <span className="btn-spinner" aria-hidden="true" />}
-                      {op ? A.bekraeftOpgraderJa(p.navn) : iGratisPeriode ? FA.bekraeftNedgraderGratisJa : A.bekraeftNedgraderJa}
-                    </button>
+                    {/* ret_rabat: intet at trykke på (serveren ville afvise). */}
+                    {!(velkomstSkift?.udfald === "ret_rabat" && fraVelkomst(p, op)) && (
+                      <button
+                        type="button"
+                        onClick={() => skift(p, op)}
+                        disabled={sender}
+                        aria-busy={sender || undefined}
+                        className={E_KNAP_PRIMAER}
+                      >
+                        {sender && <span className="btn-spinner" aria-hidden="true" />}
+                        {velkomstSkift?.udfald === "venter" && fraVelkomst(p, op)
+                          ? FA.knapSaetRabatOp
+                          : op
+                            ? A.bekraeftOpgraderJa(p.navn)
+                            : iGratisPeriode
+                              ? FA.bekraeftNedgraderGratisJa
+                              : A.bekraeftNedgraderJa}
+                      </button>
+                    )}
                     <button type="button" onClick={() => setAaben(null)} disabled={sender} className={E_KNAP_SEKUNDAER}>
                       {A.knapAnnuller}
                     </button>

@@ -64,7 +64,7 @@ Princippet:
 - [ ] Appen: CAPTCHA, fejlkoden for indsigelse, visningsnavn, nye gebyrer og blokering. Nyt TestFlight-build + første Android-build.
 - [ ] Admin: staff kan ikke spærres ude via login-loftet.
 - [ ] Skift af e-mail: advarslen til den gamle adresse og log-ud af andre enheder skal sendes, selv hvis serveren dør midt i skiftet (outbox eller cron), og recovery-token ryddes igen efter skiftet (review 27. okt., småt 1-2).
-- [ ] Nye funktioner (Filip, 27. okt.), på hjemmesiden og i appen før funktionsstoppet: AI-hjælp til auktionen, BidHamr-bot med "Kontakt en rigtig medarbejder", Henvis en ven (10 boost-point), Del auktion og påmindelse før en auktion slutter.
+- [ ] Nye funktioner (Filip, 27. okt.), på hjemmesiden og i appen før funktionsstoppet: BidHamr-bot med "Kontakt en rigtig medarbejder", Henvis en ven (10 boost-point), Del auktion og påmindelse før en auktion slutter.
 - [ ] Samlet test af hele siden og appen, med fundene rettet.
 
 ---

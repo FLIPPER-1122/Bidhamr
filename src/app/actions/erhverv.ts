@@ -174,14 +174,16 @@ export type { SkiftPakkeSvar } from "@/lib/erhverv/pakkeskift";
 //  - Større pakke: Stripe trækker forskellen for resten af perioden med det
 //    samme (faktura). Først når den er betalt, får firmaet flere auktioner.
 //  - Mindre pakke: gælder fra næste periode (Subscription Schedule).
-export async function skiftFirmaPakke(pakkeId: string): Promise<SkiftPakkeSvar> {
+// visning: hvad siden viste ved et skift op fra Starts gratis måned
+// (velkomstVisning) - serveren afviser, hvis rabatten er ændret imens.
+export async function skiftFirmaPakke(pakkeId: string, visning?: string): Promise<SkiftPakkeSvar> {
   try {
     const supabase = await createClient();
     const {
       data: { user },
     } = await hentLoggetIndBruger(supabase);
     if (!user) return { fejl: "Du skal være logget ind." };
-    const svar = await skiftPakkeForBruger(user.id, pakkeId);
+    const svar = await skiftPakkeForBruger(user.id, pakkeId, visning);
     revalidatePath("/firma");
     return svar;
   } catch (err) {
