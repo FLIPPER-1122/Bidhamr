@@ -219,7 +219,7 @@ export const ERHVERV_FORMULAR = {
   fejl: {
     // Vises under et tomt felt, der skal udfyldes.
     mangler: "Dette felt skal udfyldes.",
-    manglerFlere: "Nogle felter mangler. De er markeret med rødt.",
+    manglerFlere: "Nogle felter skal rettes. De er markeret med rødt.",
     cvrUgyldigt: "CVR-nummeret skal være 8 cifre. Tjek, at du har skrevet det rigtigt.",
     cvrIkkeFundet:
       "Vi kan ikke finde et aktivt dansk firma med det CVR-nummer. Tjek, at du har skrevet det rigtigt.",

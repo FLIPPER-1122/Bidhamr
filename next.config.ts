@@ -85,6 +85,11 @@ const nextConfig: NextConfig = {
             },
           ]
         : []),
+      // Velkomstlinket i firmamailen (src/app/auth/velkomst/route.ts) bærer
+      // en billet i adressen og sender videre med et engangslink: ingen
+      // Referer. Ruten sætter selv headeren, men reglen ovenfor for alle
+      // stier overskriver den - derfor en undtagelse her (sidste regel vinder).
+      { source: "/auth/velkomst", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
     ];
   },
 };

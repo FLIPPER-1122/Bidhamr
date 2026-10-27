@@ -18,8 +18,16 @@ export default function OpretFirmakonto({
   start,
   loginEmail: startLogin,
   pakker,
+  firmaId = null,
+  godkendt = true,
 }: {
   henvendelseId: string;
+  // Henvendelsen har allerede fået en firmakonto / er ikke godkendt. Siden
+  // renderer ALTID denne komponent på samme plads (også i de to tilfælde),
+  // så React beholder resultatet, når revalidatePath i opretFirmakonto
+  // henter siden igen med firma_id sat - ellers forsvandt kvitteringen.
+  firmaId?: string | null;
+  godkendt?: boolean;
   start: FirmaVaerdier;
   loginEmail: string;
   pakker: ErhvervPakke[];
@@ -98,6 +106,25 @@ export default function OpretFirmakonto({
           {X.seFirma}
         </Link>
       </div>
+    );
+  }
+
+  if (firmaId) {
+    return (
+      <div className="rounded-xl border border-succes-kant bg-succes-bg p-4 text-succes-tekst">
+        <p className="font-semibold">{X.firmaOprettet}</p>
+        <Link href={`/admin/erhverv/firmaer/${firmaId}`} className="btn btn-sekundaer mt-3">
+          {X.seFirma}
+        </Link>
+      </div>
+    );
+  }
+
+  if (!godkendt) {
+    return (
+      <p className="rounded-lg border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
+        {A.opret.fejl.ikkeGodkendt}
+      </p>
     );
   }
 
@@ -277,7 +304,8 @@ export default function OpretFirmakonto({
             setTidligere(svar.firmaer ?? []);
             return { bliv: true };
           }
-          // Ingen router.refresh her: så ville siden skifte væk fra resultatet.
+          // Resultatet ligger i state; siden genindlæses (revalidatePath),
+          // men komponenten står samme sted og beholder det.
           setResultat({ firmaId: svar.firmaId, besked: svar.besked, mailSendt: svar.mailSendt });
         }}
       >

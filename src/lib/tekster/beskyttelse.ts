@@ -131,6 +131,8 @@ export const BIDPANEL = {
   // Næste mindstebud er over beløbsloftet (MAKS_BELOEB_KR) - ingen kan byde mere.
   loftNaaet: (maks: string) => `Auktionen har nået det højeste tilladte bud på ${maks}.`,
   loftNaaetKort: "Højeste tilladte bud er nået",
+  // Sluttiden er passeret, men auktionen er ikke lukket endnu (cron, under et minut).
+  tidSlut: "Auktionen er slut – resultatet kommer om lidt",
 } as const;
 
 // Sager i den nye prismodel (betalinger.prismodel = 'ny', Filip 26. okt. 2026):

@@ -94,34 +94,26 @@ export default async function HenvendelseSide({ params }: { params: Promise<{ id
       <section id="opret" className="scroll-mt-4 rounded-xl border border-neutral-200 bg-white p-5">
         <h2 className="font-sans text-lg font-semibold text-neutral-900">{A.opret.titel}</h2>
         <div className="mt-3">
-          {h.firma_id ? (
-            <div className="rounded-xl border border-succes-kant bg-succes-bg p-4 text-succes-tekst">
-              <p className="font-semibold">{X.firmaOprettet}</p>
-              <Link href={`/admin/erhverv/firmaer/${h.firma_id}`} className="btn btn-sekundaer mt-3">
-                {X.seFirma}
-              </Link>
-            </div>
-          ) : h.status !== "godkendt" ? (
-            <p className="rounded-lg border border-info-kant bg-info-bg px-4 py-3 text-sm text-info-tekst">
-              {A.opret.fejl.ikkeGodkendt}
-            </p>
-          ) : (
-            <OpretFirmakonto
-              henvendelseId={h.id}
-              loginEmail={h.email}
-              pakker={pakker}
-              start={{
-                firmanavn: h.firmanavn,
-                cvr: h.cvr,
-                adresse: h.adresse ?? "",
-                postnummer: h.postnummer ?? "",
-                by: h.bynavn ?? "",
-                telefon: h.telefon,
-                kontaktEmail: h.email,
-                kontaktperson: h.kontaktperson,
-              }}
-            />
-          )}
+          {/* Altid samme komponent her (også når firmaet er oprettet), så
+              kvitteringen efter "Opret firmakonto" bliver stående, når
+              siden genindlæses. */}
+          <OpretFirmakonto
+            henvendelseId={h.id}
+            firmaId={h.firma_id}
+            godkendt={h.status === "godkendt"}
+            loginEmail={h.email}
+            pakker={pakker}
+            start={{
+              firmanavn: h.firmanavn,
+              cvr: h.cvr,
+              adresse: h.adresse ?? "",
+              postnummer: h.postnummer ?? "",
+              by: h.bynavn ?? "",
+              telefon: h.telefon,
+              kontaktEmail: h.email,
+              kontaktperson: h.kontaktperson,
+            }}
+          />
         </div>
       </section>
     </div>

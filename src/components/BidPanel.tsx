@@ -532,6 +532,10 @@ export default function BidPanel({
   // Afsluttet eller annulleret: ingen opfordringer til at byde. En skjult
   // eller pauset auktion kan blive aktiv igen og tæller ikke som slut.
   const auktionSlut = auktionStatus !== "aktiv" && auktionStatus !== "skjult";
+  // Sluttiden er passeret, men cron har ikke lukket auktionen endnu (sker
+  // inden for et minut). Der kan ikke bydes mere - databasen afviser det
+  // også - så budformularen og budbjælken skjules imens.
+  const tidSlut = tidPasseret && auktionStatus === "aktiv" && !pauset;
 
   // Opsummering før "Afgiv bud" (DESIGN.md 8.6): bud, gebyr og fragt på hver
   // sin linje og totalen nederst. Kun visning - serveren beregner beløbet.
@@ -623,7 +627,7 @@ export default function BidPanel({
               <p className="mt-0.5">{AUTOBUD.statusMaksNaaet(`${mitMaksimum.toLocaleString("da-DK")} kr`)}</p>
             )}
           </div>
-          {jegFoerer && !loftNaaet && (
+          {jegFoerer && !loftNaaet && !tidSlut && (
             <button
               type="button"
               onClick={retMaksimum}
@@ -660,6 +664,10 @@ export default function BidPanel({
           ) : (
             <p className="text-base font-semibold text-tekst-daempet">Ingen bud – auktionen er lukket</p>
           )}
+        </div>
+      ) : tidSlut ? (
+        <div role="status" className="mt-4 rounded-xl bg-groen-lys px-5 py-4 text-center">
+          <p className="text-base font-semibold text-groen-mork">{BIDPANEL.tidSlut}</p>
         </div>
       ) : erSælger ? (
         <p className="mt-4 rounded-xl bg-groen-lys px-4 py-3 text-center text-sm text-groen-mork">
@@ -919,7 +927,7 @@ export default function BidPanel({
         </div>
       )}
 
-      {!auktionSlut && !erFirmakonto && (
+      {!auktionSlut && !tidSlut && !erFirmakonto && (
         <p className="mt-3 text-[13px] leading-relaxed text-tekst-daempet">
           {erhvervAuktion ? ERHVERV_BIDPANEL.prisLinje : BIDPANEL.prisLinje}
         </p>
@@ -1004,7 +1012,7 @@ export default function BidPanel({
         <p className="mt-2 text-sm text-tekst-svag">
           {auktionSlut
             ? "Der kom ingen bud på auktionen."
-            : auktionStatus === "aktiv" && !erSælger
+            : auktionStatus === "aktiv" && !erSælger && !tidSlut
               ? "Ingen bud endnu – vær den første."
               : "Ingen bud endnu."}
         </p>
@@ -1059,7 +1067,7 @@ export default function BidPanel({
       )}
 
       {/* Budbjælke i bunden på mobil, mens budboksen er ude af syne. */}
-      {bjaelkeMaal && kanByde &&
+      {bjaelkeMaal && kanByde && !tidSlut &&
         createPortal(
           <div
             className={`border-t border-kant bg-white px-4 py-3 shadow-flyder transition-opacity duration-200 sm:px-6 ${
