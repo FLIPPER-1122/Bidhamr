@@ -2637,13 +2637,15 @@ async function afstemGratisVedStart(firmaId: string): Promise<AfstemUdfald> {
   const maalVelkomst = velkomstGivet != null ? velkomstGivet + manglerVelkomst : null;
   const maalEkstra = givetEkstra + manglerEkstra;
   // En introrabat fra Checkout for den aftale, der stadig er planlagt: hele
-  // aftalen (N betalte måneder) gælder efter den nye gratis periode.
+  // aftalen (N betalte måneder) gælder efter den nye gratis periode. Er
+  // abonnementet allerede aktivt, har første faktura fået rabatten, så
+  // introResterende regner resten ud (ellers N+1 måneder med rabat).
   const fraCheckout =
     f.intro_status === "planlagt" && !!f.intro_noegle && checkoutNoegle === f.intro_noegle && f.intro_fra !== "straks" && !!f.intro_maaneder;
   const svar = await forlaengGratis({
     sub,
     maaneder: mangler,
-    rest: fraCheckout ? f.intro_maaneder : null,
+    rest: fraCheckout && sub.status === "trialing" ? f.intro_maaneder : null,
     metadata: {
       gratis_ekstra: String(maalEkstra),
       ...(maalVelkomst != null ? { gratis_velkomst: String(maalVelkomst) } : {}),
