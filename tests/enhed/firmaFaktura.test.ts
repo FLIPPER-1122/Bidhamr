@@ -175,7 +175,7 @@ describe("ingen automatisk afsendelse", () => {
     expect(brug).toEqual(["src/components/firma/FirmaFakturaKnapper.tsx"]);
     const knap = SRC.find((f) => f.p === "src/components/firma/FirmaFakturaKnapper.tsx")!.t;
     // Kaldet sker kun i "Ja, send"-handlingen, ikke i en effect.
-    expect(knap).not.toMatch(/useEffect\([^)]*sendFirmaFaktura/s);
+    expect(knap).not.toMatch(/useEffect\([^)]*sendFirmaFaktura/);
     expect(knap).toContain("sendBekraeft(");
   });
 
@@ -202,7 +202,7 @@ describe("ingen automatisk afsendelse", () => {
     expect(fn.slice(0, fn.indexOf("$fn$;", fn.indexOf("$fn$") + 4))).toMatch(/if v_uid is null or v_firma is null then\s+raise exception/);
     // Ingen planlagt kørsel.
     const alle = readdirSync(path.join(ROD, "supabase/migrations")).map((n) => readFileSync(path.join(ROD, "supabase/migrations", n), "utf8"));
-    for (const t of alle) expect(t).not.toMatch(/cron\.schedule[^;]*firma_faktura/si);
+    for (const t of alle) expect(t).not.toMatch(/cron\.schedule[^;]*firma_faktura/i);
     // Service role må ikke kalde send.
     expect(mig).not.toMatch(/grant execute on function public\.firma_faktura_send\([^)]*\) to [^;]*service_role/);
   });

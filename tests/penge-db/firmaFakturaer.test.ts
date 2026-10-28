@@ -83,6 +83,10 @@ create function public.staff_aal2_ok(p_maks_timer integer default 12) returns bo
   $$ select coalesce(current_setting('test.aal2', true), '') = 'ja' $$;
 `;
 
+// JSON fra databasen (løst typet - testen tjekker værdierne).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Json = any;
+
 let db: PGlite;
 
 async function en<T>(sql: string, params: unknown[] = []): Promise<T> {
@@ -179,7 +183,7 @@ describe("købers oplysninger og moms", () => {
       stand: "ny_med_maerke",
       levering: { maade: "doer", navn: "K. Køber", adresse: "Checkoutvej 9", post: "2100", by: "København Ø", email: "levering@koeber.dk" },
     });
-    const d = (await en<{ d: Record<string, any> }>(`select public.firma_faktura_byg($1) d`, [await kladdeFor(s.trade)])).d;
+    const d = (await en<{ d: Json }>(`select public.firma_faktura_byg($1) d`, [await kladdeFor(s.trade)])).d;
     // Uden kontoadresse (bruger_adresser) går checkout forud for users.adresse.
     expect(d.koeber).toMatchObject({ navn: "Kasper Juridisk Køber", adresse: "Checkoutvej 9", postnummer: "2100", by: "København Ø", email: "levering@koeber.dk" });
     expect(d.linjer[0].tekst).toBe("Kommode (stand: ny med mærke)");
@@ -201,7 +205,7 @@ describe("købers oplysninger og moms", () => {
       bud: 50000,
       levering: { maade: "doer", navn: "Lise Larsen", adresse: "Lisevej 2", post: "8000", by: "Aarhus C", email: "lise@koeber.dk" },
     });
-    const d = (await en<{ d: Record<string, any> }>(`select public.firma_faktura_byg($1) d`, [await kladdeFor(s.trade)])).d;
+    const d = (await en<{ d: Json }>(`select public.firma_faktura_byg($1) d`, [await kladdeFor(s.trade)])).d;
     expect(d.koeber).toMatchObject({ navn: "Lise Larsen", adresse: "Lisevej 2", postnummer: "8000", by: "Aarhus C" });
     expect(d.momsordning).toBe("brugtmoms");
     expect(d.moms_oere).toBeNull();
@@ -290,7 +294,7 @@ describe("afsendelse - kun firmaets eget tryk", () => {
     expect([a.fakturanummer, b.fakturanummer, igen.fakturanummer, c.fakturanummer]).toEqual(["BH-0007", "BH-0008", "BH-0007", "BH-0009"]);
     const numre = (await db.query<{ nummer: number }>(`select nummer from public.firma_fakturaer where firma_id = $1 and nummer is not null order by nummer`, [F1])).rows.map((r) => r.nummer);
     expect(numre).toEqual([7, 8, 9]);
-    const r = await en<{ status: string; sendt_af: string; data: Record<string, any> }>(`select status, sendt_af, data from public.firma_fakturaer where id = $1`, [k1]);
+    const r = await en<{ status: string; sendt_af: string; data: Json }>(`select status, sendt_af, data from public.firma_fakturaer where id = $1`, [k1]);
     expect(r.status).toBe("sendt");
     expect(r.sendt_af).toBe(FIRMA_U);
     expect(r.data.fakturanummer).toBe("BH-0007");
@@ -304,7 +308,7 @@ describe("afsendelse - kun firmaets eget tryk", () => {
     const r = await send(uden);
     expect(r.kode).toBe("sendt");
     expect(r.fakturanummer).toBe("BH-0010");
-    expect((r.data as any).koeber).toMatchObject({ navn: "Lise Larsen", adresse: "Lisevej 2", firmanavn: "Lises Firma ApS", cvr: "11223344" });
+    expect((r.data as Json).koeber).toMatchObject({ navn: "Lise Larsen", adresse: "Lisevej 2", firmanavn: "Lises Firma ApS", cvr: "11223344" });
   });
 
   it("en sendt faktura kan ikke ændres eller slettes", async () => {
@@ -336,7 +340,7 @@ describe("afsendelse - kun firmaets eget tryk", () => {
     const r = await send(kid);
     expect(r.kode).toBe("sendt");
     expect(r.fakturanummer).toBe("BH-0011");
-    const d = r.data as any;
+    const d = r.data as Json;
     expect(d.type).toBe("kreditnota");
     expect(d.krediterer.fakturanummer).toBe("BH-0008");
     expect(d.total_oere).toBe(-20000);
@@ -377,7 +381,7 @@ describe("kontoadressen (bruger_adresser, 20261102340000)", () => {
   it("kontoens adresse går forud for checkout og users.adresse", async () => {
     await db.query(`insert into public.bruger_adresser values ($1, 'Kontovej 5', '5000', 'Odense C')`, [KOEBER]);
     const s = await salg({ levering: { maade: "doer", navn: "K", adresse: "Checkoutvej 9", post: "2100", by: "København Ø", email: "k@k.dk" } });
-    const d = (await en<{ d: Record<string, any> }>(`select public.firma_faktura_byg($1) d`, [await kladdeFor(s.trade)])).d;
+    const d = (await en<{ d: Json }>(`select public.firma_faktura_byg($1) d`, [await kladdeFor(s.trade)])).d;
     expect(d.koeber).toMatchObject({ adresse: "Kontovej 5", postnummer: "5000", by: "Odense C" });
     const auto = (await en<{ a: Record<string, string> }>(`select public.firma_faktura_koeber_auto($1) a`, [s.trade])).a;
     expect(auto.adresse_kilde).toBe("konto");
