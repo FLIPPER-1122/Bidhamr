@@ -8,6 +8,7 @@ import { hentFirmaOversigt } from "@/app/actions/erhverv";
 import { logDriftFejl } from "@/lib/drift";
 import { FIRMA_DASHBOARD, FIRMA_OVERSIGT } from "@/lib/tekster/erhverv";
 import type { FakturaData } from "@/lib/erhverv/fakturaOplysninger";
+import type { FirmaFakturaListe } from "@/lib/erhverv/firmaFaktura";
 import type {
   AuktionGruppe,
   FirmaAuktioner,
@@ -82,3 +83,7 @@ export const hentFirmaFakturaSalg = cache(
   async (fra: string | null = null, til: string | null = null, trade: string | null = null) =>
     rpc<FakturaData>("firma_faktura_salg", { p_fra: fra, p_til: til, p_trade: trade }),
 );
+
+// Fakturaer fra firmaet til køberne (20261102330000). firma_fakturaer_liste
+// opretter manglende kladder og giver kun firmaets egne (auth.uid()).
+export const hentFirmaFakturaer = cache(() => rpc<FirmaFakturaListe>("firma_fakturaer_liste"));

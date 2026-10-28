@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { hentFirmaFakturaSalg, hentFirmaSalg, kraevFirma } from "@/lib/erhverv/firmaData";
+import { hentFirmaFakturaer, hentFirmaSalg, kraevFirma } from "@/lib/erhverv/firmaData";
 import { foerLancering } from "@/lib/lancering";
 import { salgStatus } from "@/lib/erhverv/firmaStatus";
 import { FirmaSide, Kort, LukketBoks, StatusMaerke, VareBillede } from "@/components/firma/dele";
@@ -14,8 +14,9 @@ import {
 } from "@/components/erhverv/stil";
 import { FIRMA_DASHBOARD as D } from "@/lib/tekster/erhverv";
 import { kr, langDato } from "@/lib/erhverv/visning";
-import { FakturaOplysningerFold } from "@/components/firma/FakturaOplysninger";
 import { FAKTURA_TEKST } from "@/lib/erhverv/fakturaOplysninger";
+import FirmaFakturaKnapper from "@/components/firma/FirmaFakturaKnapper";
+import { MANGLER_TEKST } from "@/lib/erhverv/firmaFaktura";
 
 // Salg: alle handler, hvor firmaet er sælger (firma_salg), med tydelig
 // status. "Send pakke" og detaljer sker inde i dashboardet
@@ -25,10 +26,13 @@ export const metadata = { title: D.salg.titel };
 
 export default async function FirmaSalgSide() {
   await kraevFirma("/firma/salg");
-  const [salg, faktura] = await Promise.all([hentFirmaSalg(), hentFirmaFakturaSalg()]);
+  const [salg, fakturaer] = await Promise.all([hentFirmaSalg(), hentFirmaFakturaer()]);
   const lukket = foerLancering();
-  // Oplysninger til firmaets egen faktura (kun betalte salg).
-  const fakturaPrHandel = new Map((faktura?.salg ?? []).map((f) => [f.trade_id, f]));
+  // Fakturakladden pr. betalt salg (firma til køber - sendes kun ved tryk).
+  const fakturaPrHandel = new Map(
+    (fakturaer?.fakturaer ?? []).filter((f) => f.type === "faktura").map((f) => [f.trade_id, f]),
+  );
+  const naeste = fakturaer?.indstillinger.naeste_fakturanummer ?? "";
   const idag = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Copenhagen" });
   const maanedStart = `${idag.slice(0, 8)}01`;
 
@@ -56,8 +60,27 @@ export default async function FirmaSalgSide() {
                       </div>
                     </div>
                   </div>
-                  {faktura && fakturaPrHandel.get(s.trade_id) ? (
-                    <FakturaOplysningerFold salg={fakturaPrHandel.get(s.trade_id)!} firma={faktura.firma} />
+                  {fakturaPrHandel.get(s.trade_id) ? (
+                    (() => {
+                      const f = fakturaPrHandel.get(s.trade_id)!;
+                      return (
+                        <div className="mt-4">
+                          <FirmaFakturaKnapper
+                            id={f.id}
+                            type={f.type}
+                            status={f.status}
+                            fakturanummer={f.fakturanummer}
+                            naesteNummer={naeste}
+                            koeberEmail={f.data?.koeber.email ?? null}
+                            mangler={(f.data?.mangler ?? []).map((k) => MANGLER_TEKST[k] ?? k)}
+                            sendtKl={f.sendt_kl}
+                            mailFejl={f.mail_fejl}
+                            mailSendtKl={f.mail_sendt_kl}
+                            kreditnotaId={f.kreditnota_id}
+                          />
+                        </div>
+                      );
+                    })()
                   ) : (
                     s.status !== "annulleret" && <p className={`mt-3 ${E_HJAELP}`}>{FAKTURA_TEKST.ikkeBetalt}</p>
                   )}

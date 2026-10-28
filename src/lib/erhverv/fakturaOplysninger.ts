@@ -30,8 +30,8 @@ export type FakturaData = { firma: FakturaFirma; salg: FakturaSalg[] };
 export const FAKTURA_TEKST = {
   titel: "Oplysninger til din faktura",
   forklaring:
-    "Du sender selv fakturaen på varen til køberen fra dit eget regnskabsprogram. Her er de oplysninger, du skal bruge.",
-  ikkeBetalt: "Oplysningerne til fakturaen vises her, når køberen har betalt.",
+    "Fakturaen til køberen laver vi som kladde under Fakturaer, når køberen har betalt. Du sender den selv med knappen \"Send\". Her er også alle oplysningerne, hvis du hellere vil fakturere fra dit eget regnskabsprogram.",
+  ikkeBetalt: "Fakturakladden laves, når køberen har betalt.",
   koeber: "Køber",
   adresse: "Adresse",
   ingenAdresse: "Køberen har ikke oplyst adresse",

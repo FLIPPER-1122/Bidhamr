@@ -13,6 +13,7 @@ import { FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 import { ERHVERV_EMAIL } from "@/lib/erhverv/regler";
 import { KLAGE_FIRMA } from "@/lib/tekster/erhvervKlager";
 import { UGENS_FIRMA } from "@/lib/tekster/ugensButik";
+import { FIRMA_FAKTURA_TEKST } from "@/lib/erhverv/firmaFaktura";
 
 const M = FIRMA_DASHBOARD.menu;
 
@@ -20,6 +21,7 @@ const PUNKTER: { href: string; label: string }[] = [
   { href: "/firma", label: M.overblik },
   { href: "/firma/auktioner", label: M.auktioner },
   { href: "/firma/salg", label: M.salg },
+  { href: "/firma/fakturaer", label: FIRMA_FAKTURA_TEKST.titel },
   { href: "/firma/klager", label: KLAGE_FIRMA.menupunkt },
   { href: "/firma/statistik", label: M.statistik },
   { href: "/firma/udbetalinger", label: M.udbetalinger },

@@ -50,6 +50,7 @@ import ReturlabelBoks, { type Afsender as ReturAfsender, type ReturfragtVisning 
 import { hentKontoType } from "@/lib/supabase/bruger";
 import { foerLancering } from "@/lib/lancering";
 import FirmaKontaktBoks from "@/components/erhverv/FirmaKontaktBoks";
+import KoeberFirmaFakturaBoks from "@/components/handel/KoeberFirmaFakturaBoks";
 import KlageBoks from "@/components/erhverv/klager/KlageBoks";
 import { FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 import type { SaelgerReklamation } from "@/lib/reklamation/typer";
@@ -1244,6 +1245,8 @@ export default async function HandelDetalje({
         {kvittering && <KvitteringBoks k={kvittering} />}
         {/* BidHamrs fakturaer på gebyrer, fragt og BidHamr Beskyttelse (src/lib/faktura). */}
         <FakturaBoks tradeId={handel.id} />
+        {/* Faktura på varen fra firmaet (firmaet udsteder og sender selv). */}
+        {erKoeber && erhvervHandel && <KoeberFirmaFakturaBoks tradeId={handel.id} />}
 
         {/* Køberen kan oprette en sag */}
         {muligheder && !muligheder.harSag && (muligheder.typer.length > 0 || muligheder.kraeverBeskyttelse.length > 0) && (
