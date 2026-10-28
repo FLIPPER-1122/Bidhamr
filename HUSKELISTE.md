@@ -215,3 +215,11 @@ Svar til Claude Code, når du har besluttet dig, fx:
 
 ## BidHamr-bot og App Store (review 28. okt. 2026)
 - Botten må ALDRIG sige "køb point på bidhamr.dk" eller nævne BidHamrs pointpriser i appen (Apple 3.1.1/3.1.3). Tilføj det i systemprompten (`src/lib/bot/viden.ts`), og et filter, når samtalen kommer fra appen (`kilde = 'app'`).
+
+## CAPTCHA i appen (bygget 28. okt. 2026, app-commit 023ae40)
+- Appen sender nu Turnstile-token ved login, glemt adgangskode, opret konto og "Send en ny kode". Uden `EXPO_PUBLIC_TURNSTILE_SITE_KEY` sker der intet (fail open).
+- Rækkefølge:
+  1. Sæt `EXPO_PUBLIC_TURNSTILE_SITE_KEY` (samme site key som hjemmesiden) i EAS for development/preview/production.
+  2. Lav et nyt build, og få det ud til brugerne.
+  3. Slå "Captcha protection" til i Supabase, først på Bidhamr Test og så i produktion.
+- Cloudflare-widget (Managed) skal have hostnames `bidhamr.dk`, `www.bidhamr.dk`, `test.bidhamr.dk` og `localhost`.
