@@ -7,6 +7,7 @@ import { koerFragtCron } from "@/lib/fragt/server";
 import { koerReturfragtCron } from "@/lib/betaling/returfragt";
 import { koerBoostCron } from "@/lib/betaling/boost";
 import { koerHenvisningCron } from "@/lib/henvisning/server";
+import { koerIapCron } from "@/lib/iap/server";
 import { koerUgensButikCron } from "@/lib/betaling/ugensButik";
 import { koerEkstraFragtCron } from "@/lib/betaling/ekstraFragt";
 import { harCronAdgang } from "@/lib/cronAdgang";
@@ -280,7 +281,17 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "Henvis en ven", fejl: err });
     }
-    const r = { ...betaling, fragt, returfragt, boost, ugensButik, ekstraFragt, dac7, erhvervLuk, erhvervSynk, betaFejlOprydning, ekstraFragtOprydning, henvisning };
+    // Køb af boost-point i appen (20261102320000): én gang i døgnet (claimet i
+    // databasen) Googles Voided Purchases som sikkerhedsnet for tabte
+    // RTDN'er, og consume igen, hvor det fejlede. Flytter ingen penge (kun
+    // point) - fejl her tæller ikke som trinfejl.
+    let iap: Awaited<ReturnType<typeof koerIapCron>> = null;
+    try {
+      iap = await koerIapCron();
+    } catch (err) {
+      await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "boost/iap-cron", fejl: err });
+    }
+    const r = { ...betaling, fragt, returfragt, boost, ugensButik, ekstraFragt, dac7, erhvervLuk, erhvervSynk, betaFejlOprydning, ekstraFragtOprydning, henvisning, iap };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);
