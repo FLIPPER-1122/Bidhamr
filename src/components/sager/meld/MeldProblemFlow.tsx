@@ -627,24 +627,13 @@ function BilledFelt({
     <li className={`border p-3 ${ramme}`} aria-labelledby={`${id}-titel`}>
       <div className="flex gap-3">
         <div className="relative h-[76px] w-[76px] shrink-0 overflow-hidden border border-kant bg-white">
-          {taget && !ulaeselige.has(egne[0].id) ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={egne[0].preview}
-              alt=""
-              className="h-full w-full object-cover"
-              onError={() => setUlaeselige((s) => new Set(s).add(egne[0].id))}
-            />
-          ) : (
-            <SagEksempel motiv={eksempelMotiv(krav.kategori, valgId)} />
-          )}
+          {/* Eksemplet bliver stående; køberens egne billeder står nedenunder. */}
+          <SagEksempel motiv={eksempelMotiv(krav.kategori, valgId)} />
           <span
-            className={`absolute bottom-0 left-0 px-1.5 py-px text-[10.5px] font-bold text-white ${
-              taget ? "bg-groen" : "bg-tekst/70"
-            }`}
+            className="absolute bottom-0 left-0 bg-tekst/70 px-1.5 py-px text-[10.5px] font-bold text-white"
             aria-hidden="true"
           >
-            {taget ? SAG_FLOW.trin2.ditBillede : SAG_FLOW.trin2.eksempel}
+            {SAG_FLOW.trin2.eksempel}
           </span>
         </div>
         <div className="min-w-0 flex-1">
