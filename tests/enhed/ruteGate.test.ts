@@ -77,6 +77,9 @@ const OFFENTLIGE_RUTER: Record<string, Exclude<Klasse, "login" | "admin-vaert" |
   // API-ruter med egen adgangskontrol (token, signatur, cron-hemmelighed ...).
   "/api/waitlist": "offentlig",
   "/api/webhooks/stripe": "offentlig",
+  // Køb af boost-point i appen: Apples JWS-signatur og Pub/Sub OIDC-token.
+  "/api/webhooks/apple": "offentlig",
+  "/api/webhooks/google-play": "offentlig",
   "/api/fragt/webhook/[firma]": "offentlig",
   "/api/cron/afslut-auktioner": "offentlig",
   "/api/cron/afstemning": "offentlig",
@@ -114,6 +117,8 @@ const OFFENTLIGE_RUTER: Record<string, Exclude<Klasse, "login" | "admin-vaert" |
   "/api/bot/medarbejder": "offentlig",
   "/api/app/bot": "offentlig",
   "/api/app/bot/medarbejder": "offentlig",
+  // Køb af boost-point i appen: Bearer-token og kun private (ruten selv).
+  "/api/app/boost/iap": "offentlig",
 };
 
 // Alle ruter under src/app som skabeloner (/auktion/[id]).

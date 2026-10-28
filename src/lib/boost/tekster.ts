@@ -68,7 +68,16 @@ export const BOOST_TEKST = {
     tilbagefoersel: "Trukket tilbage",
     staff: "Justeret af BidHamr",
     henvisning: "Henvist en ven",
+    // Køb i appen (Filip, 27. okt. 2026).
+    koeb_apple: "Købt i appen (App Store)",
+    koeb_google: "Købt i appen (Google Play)",
+    refusion_apple: "Refunderet af Apple",
+    refusion_google: "Refunderet af Google",
   } as Record<string, string>,
+  // Saldoen kan gå i minus, når Apple eller Google refunderer et køb af point,
+  // der allerede er brugt.
+  iMinus: (point: number) =>
+    `Din saldo er ${point.toLocaleString("da-DK")} point, fordi et køb af point er refunderet. Du kan booste igen, når saldoen er over prisen for et boost.`,
 
   // Auktionssiden (ejeren).
   auktionTitel: "Boost din auktion",

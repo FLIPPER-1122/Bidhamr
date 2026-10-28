@@ -157,6 +157,12 @@ export const GRAENSER = {
   betaling_app_bruger: { maks: 60, vindueSek: 10 * 60 },
   // Boost på hjemmesiden (køb af point og "Boost i 24 timer").
   boost_bruger: { maks: 30, vindueSek: 10 * 60 },
+  // Køb af boost-point i appen (POST /api/app/boost/iap): pr. IP før tokenet
+  // er valideret og pr. bruger bagefter (hvert kald rammer Apple/Google).
+  // GET (er køb klar?) pr. IP.
+  iap_ip: { maks: 120, vindueSek: 60 * 60 },
+  iap_bruger: { maks: 30, vindueSek: 10 * 60 },
+  iap_status_ip: { maks: 300, vindueSek: 60 * 60 },
   // Ugens butik i Firma oversigt (køb og annullér - hvert kald rammer Stripe)
   // pr. firma.
   ugens_butik_firma: { maks: 30, vindueSek: 10 * 60 },
