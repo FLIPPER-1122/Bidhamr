@@ -1,9 +1,14 @@
-// Sagen på handelssiden - for både køber og sælger. Server-komponent.
-// Opbygning (så enkelt som muligt for kunden):
-//   1. Tidslinje: hvor er sagen nu?
-//   2. "Det skal du gøre nu": én kort sætning og højst én knap.
-//   3. Seneste besked fra BidHamr om sagen (med link til at svare).
-//   4. Detaljer foldet sammen.
+// Sagen på handelssiden (#sag) - for både køber og sælger. Server-komponent.
+// Opbygning som showcase/opret-sag-showcase.html skærm 9-12:
+//   1. Status og problemet øverst.
+//   2. "Det skal du gøre nu": én kort sætning og højst én knap (sælgerens
+//      forklaring, anke, flere billeder) + seneste besked fra BidHamr.
+//   3. Afgørelsen, returfragten og anken.
+//   4. Tidslinjen "Sådan går det videre".
+//   5. Det, køberen har sendt, sælgerens forklaring og pakkebillederne.
+//   6. Detaljer foldet sammen.
+// Teksterne står i src/lib/tekster/sagValg.ts (SAG_FLOW.sag), så appen
+// kan bruge de samme.
 // Ingen kronebeløb. BidHamr holder aldrig pengene: betalingen håndteres af
 // vores betalingspartner Stripe.
 import Link from "next/link";
@@ -11,6 +16,8 @@ import type { MinSag } from "@/app/actions/sager";
 import type { StaffBesked } from "@/app/actions/staffChat";
 import { SAG_MAKS_BILLEDER, SAG_TYPE_NAVN } from "@/lib/sager";
 import TilfoejSagBilleder from "./TilfoejSagBilleder";
+import SagSvarForm from "./SagSvarForm";
+import { SAG_FLOW, sagUdfyld } from "@/lib/tekster/sagValg";
 import AnkeForm from "./AnkeForm";
 import { BeskyttelseBadge, SagBilleder, SagStatusBadge, sagTid } from "./visning";
 import { SAG_REFUSION_NY } from "@/lib/tekster/beskyttelse";
@@ -62,21 +69,35 @@ function tidslinje(sag: MinSag): { trin: Trin[]; aktiv: number; alleFaerdige: bo
   const anke = sag.anke;
   const ankeVenter = anke?.status === "afventer";
 
+  const tl = SAG_FLOW.sag.tidslinje;
   const trin: Trin[] = [
-    { noegle: "oprettet", navn: "Sag oprettet", note: kortDato(sag.oprettetKl) },
-    { noegle: "behandler", navn: "BidHamr behandler" },
+    {
+      noegle: "oprettet",
+      navn: sag.erKoeber ? tl.oprettetKoeber : tl.oprettetSaelger,
+      note: sagTid(sag.oprettetKl),
+    },
+    {
+      noegle: "behandler",
+      navn: tl.behandler,
+      note: afgjort ? undefined : sag.erKoeber ? tl.behandlerNoteKoeber : tl.behandlerNoteSaelger,
+    },
     {
       noegle: "afgjort",
-      navn: "Afgjort",
+      navn: tl.afgjort,
       // Er afgørelsen ændret på anke, er afgjortKl tidspunktet for ankens
       // afgørelse - den dato står på anke-trinnet.
-      note: afgjort && sag.afgjortKl && anke?.status !== "omgjort" ? kortDato(sag.afgjortKl) : undefined,
+      note:
+        afgjort && sag.afgjortKl && anke?.status !== "omgjort"
+          ? kortDato(sag.afgjortKl)
+          : afgjort
+            ? undefined
+            : tl.afgjortNote,
     },
   ];
   if (anke) {
     trin.push({
       noegle: "anke",
-      navn: "Anke",
+      navn: tl.anke,
       note: ankeVenter ? "Behandles" : anke.behandletKl ? `Afgjort ${kortDato(anke.behandletKl)}` : undefined,
     });
   }
@@ -85,20 +106,20 @@ function tidslinje(sag: MinSag): { trin: Trin[]; aktiv: number; alleFaerdige: bo
   if (medRetur && afgjort && !anke) {
     trin.push({
       noegle: "ankefrist",
-      navn: "Ankefrist",
+      navn: tl.ankefrist,
       note: sag.returVenterTilKl ? `Til ${kortDato(sag.returVenterTilKl)}` : undefined,
     });
   }
   if (medRetur) {
     trin.push({
       noegle: "retur",
-      navn: "Send varen retur",
+      navn: tl.retur,
       note: sag.returAfleveretKl ? `Afleveret ${kortDato(sag.returAfleveretKl)}` : undefined,
     });
   }
   trin.push({
     noegle: "slut",
-    navn: lukketUdenPenge ? "Sagen er lukket" : sag.afvikletKl ? "Pengene er sendt" : "Pengene er på vej",
+    navn: lukketUdenPenge ? tl.slutLukket : sag.afvikletKl ? tl.slutSendt : tl.slutPenge,
     note:
       afgjort && !ankeVenter && sag.status !== "afventer_retur" && !sag.afvikletKl && sag.pengeFlyttesEfterKl
         ? `Tidligst ${kortDato(sag.pengeFlyttesEfterKl)}`
@@ -119,7 +140,7 @@ function tidslinje(sag: MinSag): { trin: Trin[]; aktiv: number; alleFaerdige: bo
 function Tidslinje({ sag }: { sag: MinSag }) {
   const { trin, aktiv, alleFaerdige } = tidslinje(sag);
   return (
-    <ol className="flex flex-col gap-0 sm:flex-row sm:gap-2" aria-label="Sagens forløb">
+    <ol className="grid" aria-label="Sagens forløb">
       {trin.map((t, i) => {
         const faerdig = alleFaerdige || i < aktiv;
         const nu = !alleFaerdige && i === aktiv;
@@ -128,45 +149,43 @@ function Tidslinje({ sag }: { sag: MinSag }) {
           <li
             key={t.noegle}
             aria-current={nu ? "step" : undefined}
-            className="relative flex gap-3 pb-4 last:pb-0 sm:flex-1 sm:flex-col sm:items-center sm:gap-2 sm:pb-0 sm:text-center"
+            className="relative grid grid-cols-[26px_1fr] gap-3 pb-4 last:pb-0"
           >
-            {/* Forbindelseslinje: lodret på mobil, vandret fra sm. */}
             {!sidste && (
               <span
                 aria-hidden="true"
-                className={`absolute left-[13px] top-7 h-[calc(100%-1.75rem)] w-0.5 sm:left-[calc(50%+18px)] sm:top-[13px] sm:h-0.5 sm:w-[calc(100%-36px+0.5rem)] ${
-                  faerdig ? "bg-groen" : "bg-kant"
-                }`}
+                className={`absolute left-3 top-6 bottom-0 w-0.5 ${faerdig ? "bg-groen" : "bg-kant"}`}
               />
             )}
             <span
               aria-hidden="true"
-              className={`relative z-10 grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold ${
+              className={`relative z-10 grid h-[26px] w-[26px] place-items-center rounded-full border-2 ${
                 faerdig
-                  ? "bg-groen text-white"
+                  ? "border-groen bg-groen text-white"
                   : nu
-                    ? "bg-orange-knap text-white ring-4 ring-orange-lys"
-                    : "border-2 border-kant-staerk bg-white text-tekst-svag"
+                    ? "border-orange-knap bg-white"
+                    : "border-kant-staerk bg-white"
               }`}
             >
               {faerdig ? (
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               ) : (
-                i + 1
+                nu && <span className="h-2.5 w-2.5 rounded-full bg-orange-knap" />
               )}
             </span>
-            <span className="min-w-0 pt-0.5 sm:pt-0">
+            <span className="min-w-0 pt-0.5">
               <span
-                className={`block text-sm ${
-                  nu ? "font-semibold text-tekst" : faerdig ? "font-medium text-tekst" : "text-tekst-svag"
+                className={`block text-[15px] leading-snug ${
+                  nu || faerdig ? "font-semibold text-tekst" : "font-medium text-tekst-daempet"
                 }`}
               >
                 {t.navn}
                 {nu && <span className="sr-only"> (nu)</span>}
+                {faerdig && <span className="sr-only"> (færdig)</span>}
               </span>
-              {t.note && <span className="block text-xs text-tekst-daempet">{t.note}</span>}
+              {t.note && <span className="block text-[13px] leading-snug text-tekst-svag">{t.note}</span>}
             </span>
           </li>
         );
@@ -355,6 +374,30 @@ function SenesteBesked({ samtale }: { samtale: SagSamtale }) {
   );
 }
 
+// Hvem betaler returfragten - "dækket" for køberen, når sælgeren eller
+// BidHamr betaler (sager.returfragt_betaler; ReturlabelBoks åbner så ingen
+// betaling).
+function returfragtTekst(sag: MinSag): string | null {
+  if (!sag.returKraeves && sag.status !== "afventer_retur") return null;
+  const t = SAG_FLOW.sag;
+  const b = sag.returfragtBetaler;
+  if (sag.erKoeber) return b === "saelger" || b === "bidhamr" ? t.returfragtDaekket : t.returfragtSelv;
+  if (b === "saelger") return t.returfragtDaekketSaelger;
+  if (b === "bidhamr") return t.returfragtBidhamr;
+  return t.returfragtKoeber;
+}
+
+// Venter køberen stadig på sælgerens forklaring (inden for 48 timer)?
+function svarVenter(sag: MinSag): boolean {
+  return (
+    sag.erKoeber &&
+    !sag.svar &&
+    sag.status === "aaben" &&
+    !!sag.svarFristKl &&
+    Date.parse(sag.svarFristKl) > Date.now()
+  );
+}
+
 export default function SagVisning({
   sag,
   brugerId,
@@ -364,185 +407,234 @@ export default function SagVisning({
   brugerId: string;
   samtale: SagSamtale | null;
 }) {
+  const t = SAG_FLOW.sag;
   const nu = goerNu(sag);
+  const { alleFaerdige } = tidslinje(sag);
   const kanTilfoejeBilleder = sag.erKoeber && sag.status === "aaben" && sag.billeder.length < SAG_MAKS_BILLEDER;
+  const problem = SAG_TYPE_NAVN[sag.type];
+  const rf = returfragtTekst(sag);
+  // Sælgerens forklaring (regel 3): sælgeren svarer direkte her.
+  const visSvarForm = !sag.erKoeber && sag.kanSvare && !!sag.svarFristKl;
+  const venterPaaSvar = svarVenter(sag);
 
   return (
     <section
       id="sag"
       aria-labelledby="sag-titel"
-      className="scroll-mt-24 rounded-none border border-kant bg-white p-5 sm:p-6"
+      className="scroll-mt-24 rounded-none border border-kant bg-white"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="sag-titel" className="text-xl font-semibold text-tekst">
-          {sag.erKoeber ? "Din sag" : "Sag fra køberen"}
-        </h2>
-        <SagStatusBadge status={sag.status} />
+      {/* Status øverst */}
+      <div className="bg-groen-lys p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="sag-titel" className="text-xl leading-tight text-tekst">
+            {sag.erKoeber ? t.titelKoeber : t.titelSaelger}
+          </h2>
+          <SagStatusBadge status={sag.status} />
+        </div>
+        <p className="mt-2 text-[17px] font-semibold leading-snug text-groen-mork">
+          {sag.erKoeber ? problem : sagUdfyld(t.meldtSaelger, { problem: problem.toLowerCase() })}
+        </p>
+        <p className="mt-0.5 text-sm text-tekst-daempet">{sagUdfyld(t.meldt, { dato: sagTid(sag.oprettetKl) })}</p>
       </div>
 
-      <div className="mt-5">
-        <Tidslinje sag={sag} />
-      </div>
+      <div className="space-y-6 p-4 sm:p-5">
+        {/* Det skal du gøre nu */}
+        <div
+          className={`p-4 sm:p-5 ${
+            nu.handling ? "border border-advarsel-kant bg-advarsel-bg" : "border border-kant bg-[#FAFAFA]"
+          }`}
+        >
+          <h3 className="text-[15px] font-semibold text-tekst">{alleFaerdige ? t.endte : t.goerNu}</h3>
+          <p className="mt-1 text-[15px] text-tekst">{nu.tekst}</p>
 
-      <div
-        className={`mt-5 rounded-xl p-4 sm:p-5 ${
-          nu.handling ? "border border-orange bg-orange-lys" : "bg-groen-lys"
-        }`}
-      >
-        <h3 className="text-sm font-semibold text-groen-mork">
-          {tidslinje(sag).alleFaerdige ? "Sådan endte sagen" : "Det skal du gøre nu"}
-        </h3>
-        <p className="mt-1 text-[15px] text-tekst">{nu.tekst}</p>
+          {nu.ankeTekst && <p className="mt-2 text-[15px] text-tekst">{nu.ankeTekst}</p>}
+          {nu.anke === "kan" && sag.ankeMulighed.tilKl && (
+            <div className="mt-3">
+              <AnkeForm
+                sagId={sag.id}
+                tradeId={sag.tradeId}
+                brugerId={brugerId}
+                fristTekst={datoOgTid(sag.ankeMulighed.tilKl)}
+              />
+            </div>
+          )}
 
-        {nu.ankeTekst && <p className="mt-2 text-[15px] text-tekst">{nu.ankeTekst}</p>}
-        {nu.anke === "kan" && sag.ankeMulighed.tilKl && (
-          <div className="mt-3">
-            <AnkeForm
-              sagId={sag.id}
-              tradeId={sag.tradeId}
-              brugerId={brugerId}
-              fristTekst={datoOgTid(sag.ankeMulighed.tilKl)}
-            />
+          {visSvarForm && (
+            <div className="mt-3">
+              <SagSvarForm
+                sagId={sag.id}
+                tradeId={sag.tradeId}
+                saelgerId={brugerId}
+                fristTekst={sagTid(sag.svarFristKl!)}
+              />
+            </div>
+          )}
+
+          {kanTilfoejeBilleder && (
+            <div className="mt-3">
+              <TilfoejSagBilleder
+                sagId={sag.id}
+                tradeId={sag.tradeId}
+                koeberId={brugerId}
+                pladsTilbage={SAG_MAKS_BILLEDER - sag.billeder.length}
+              />
+            </div>
+          )}
+
+          {samtale && <SenesteBesked samtale={samtale} />}
+        </div>
+
+        {/* Afgørelsen */}
+        {sag.begrundelse && sag.status !== "aaben" && (
+          <div>
+            <h3 className="text-[17px] font-semibold text-tekst">{t.afgoerelse}</h3>
+            {sag.afgjortKl && <p className="text-xs text-tekst-svag">{sagTid(sag.afgjortKl)}</p>}
+            <p className="mt-1.5 whitespace-pre-wrap break-words border-l-[3px] border-groen bg-groen-lys px-3 py-2.5 text-sm text-tekst">
+              {sag.begrundelse}
+            </p>
           </div>
         )}
 
-        {kanTilfoejeBilleder && (
-          <div className="mt-3">
-            <TilfoejSagBilleder
-              sagId={sag.id}
-              tradeId={sag.tradeId}
-              koeberId={brugerId}
-              pladsTilbage={SAG_MAKS_BILLEDER - sag.billeder.length}
-            />
+        {rf && (
+          <p className="text-sm text-tekst">
+            <span className="font-semibold">{t.returfragt}:</span> {rf}
+          </p>
+        )}
+
+        {/* Anken */}
+        {sag.anke && (
+          <div className="border border-info-kant bg-info-bg p-4">
+            <h3 className="text-[15px] font-semibold text-tekst">
+              {sag.anke.egen ? "Din anke" : `Anke fra ${sag.anke.part === "koeber" ? "køberen" : "sælgeren"}`}
+            </h3>
+            <p className="mt-0.5 text-xs text-tekst-daempet">
+              Indgivet {sagTid(sag.anke.indgivetKl)} ·{" "}
+              {sag.anke.status === "afventer"
+                ? "behandles"
+                : sag.anke.status === "stadfaestet"
+                  ? "afgørelsen står"
+                  : "afgørelsen er ændret"}
+            </p>
+            <p className="mt-2 whitespace-pre-wrap break-words text-sm text-tekst">{sag.anke.begrundelse}</p>
+            {sag.anke.billeder.length > 0 && (
+              <div className="mt-3">
+                <SagBilleder billeder={sag.anke.billeder} />
+              </div>
+            )}
+            {sag.anke.afgoerelseBegrundelse && (
+              <div className="mt-3">
+                <h4 className="text-sm font-semibold text-tekst">BidHamrs afgørelse på anken</h4>
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm text-tekst">
+                  {sag.anke.afgoerelseBegrundelse}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
-        {samtale && <SenesteBesked samtale={samtale} />}
-      </div>
+        {/* Tidslinjen */}
+        <div>
+          <h3 className="mb-3 text-[17px] font-semibold text-tekst">{alleFaerdige ? t.endte : t.videre}</h3>
+          <Tidslinje sag={sag} />
+        </div>
 
-      <details className="group mt-4 rounded-xl border border-kant">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen [&::-webkit-details-marker]:hidden">
-          Se detaljer om sagen
-          <svg
-            aria-hidden="true"
-            className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        </summary>
-
-        <div className="space-y-5 border-t border-kant px-4 py-4">
-          {sag.begrundelse && sag.status !== "aaben" && (
-            <div>
-              <h4 className="text-sm font-semibold text-tekst">BidHamrs begrundelse</h4>
-              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-tekst">{sag.begrundelse}</p>
-            </div>
-          )}
-
-          <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-tekst-svag">Hvad sagen drejer sig om</dt>
-              <dd className="font-medium text-tekst">{SAG_TYPE_NAVN[sag.type]}</dd>
-            </div>
-            <div>
-              <dt className="text-tekst-svag">Oprettet</dt>
-              <dd className="font-medium text-tekst">{sagTid(sag.oprettetKl)}</dd>
-            </div>
-            {sag.afgjortKl && sag.status !== "aaben" && (
-              <div>
-                <dt className="text-tekst-svag">Afgjort</dt>
-                <dd className="font-medium text-tekst">{sagTid(sag.afgjortKl)}</dd>
-              </div>
-            )}
-            {sag.returAfleveretKl && (
-              <div>
-                <dt className="text-tekst-svag">Returpakke afleveret</dt>
-                <dd className="font-medium text-tekst">{sagTid(sag.returAfleveretKl)}</dd>
-              </div>
-            )}
-            {sag.genaabnetKl && (
-              <div>
-                <dt className="text-tekst-svag">Genåbnet</dt>
-                <dd className="font-medium text-tekst">{sagTid(sag.genaabnetKl)}</dd>
-              </div>
-            )}
-          </dl>
-          {sag.beskyttelse && <BeskyttelseBadge />}
-
-          <div>
-            <h4 className="text-sm font-semibold text-tekst">Køberens beskrivelse</h4>
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-tekst">{sag.beskrivelse}</p>
-          </div>
-
-          <div>
-            <h4 className="mb-2 text-sm font-semibold text-tekst">Billeder ({sag.billeder.length})</h4>
-            <SagBilleder billeder={sag.billeder} />
-          </div>
-
-          {/* Sælgerens svar (regel 3, 20261102210000) - ses af køber og sælger. */}
-          {sag.svar && (
-            <div>
-              <h4 className="text-sm font-semibold text-tekst">
-                {sag.erKoeber ? "Sælgerens forklaring" : "Din forklaring"}
-              </h4>
-              <p className="mt-0.5 text-xs text-tekst-daempet">Sendt {sagTid(sag.svar.oprettetKl)}</p>
-              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-tekst">{sag.svar.tekst}</p>
-              {sag.svar.billeder.length > 0 && (
-                <div className="mt-2">
-                  <SagBilleder billeder={sag.svar.billeder} />
-                </div>
-              )}
-            </div>
-          )}
-
-          {sag.anke && (
-            <div className="rounded-xl border border-info-kant bg-info-bg p-4">
-              <h4 className="text-sm font-semibold text-tekst">
-                {sag.anke.egen ? "Din anke" : `Anke fra ${sag.anke.part === "koeber" ? "køberen" : "sælgeren"}`}
-              </h4>
-              <p className="mt-0.5 text-xs text-tekst-daempet">
-                Indgivet {sagTid(sag.anke.indgivetKl)} ·{" "}
-                {sag.anke.status === "afventer"
-                  ? "behandles"
-                  : sag.anke.status === "stadfaestet"
-                    ? "afgørelsen står"
-                    : "afgørelsen er ændret"}
-              </p>
-              <p className="mt-2 whitespace-pre-wrap break-words text-sm text-tekst">{sag.anke.begrundelse}</p>
-              {sag.anke.billeder.length > 0 && (
-                <div className="mt-3">
-                  <SagBilleder billeder={sag.anke.billeder} />
-                </div>
-              )}
-              {sag.anke.afgoerelseBegrundelse && (
-                <div className="mt-3">
-                  <h5 className="text-sm font-semibold text-tekst">BidHamrs afgørelse på anken</h5>
-                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-tekst">
-                    {sag.anke.afgoerelseBegrundelse}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {sag.pakkebilleder.length > 0 && (
-            <div>
-              <h4 className="text-sm font-semibold text-tekst">
-                Sælgerens billeder af indpakningen ({sag.pakkebilleder.length})
-              </h4>
-              <p className="mb-2 mt-0.5 text-sm text-tekst-daempet">
-                Taget, da pakken blev sendt. BidHamr bruger dem til at vurdere, om varen var pakket
-                ordentligt.
-              </p>
-              <SagBilleder billeder={sag.pakkebilleder} />
-            </div>
+        {/* Det har køberen sendt */}
+        <div>
+          <h3 className="text-[17px] font-semibold text-tekst">{sag.erKoeber ? t.duHarSendt : t.koeberSkriver}</h3>
+          <p className="mt-1.5 whitespace-pre-wrap break-words border-l-[3px] border-kant-staerk bg-[#F7F7F7] px-3 py-2.5 text-sm text-tekst">
+            {sag.beskrivelse}
+          </p>
+          {sag.pakkeSmidtUd && <p className="mt-2 text-xs text-tekst-svag">{t.smidtUd}</p>}
+          {sag.billeder.length > 0 && (
+            <>
+              <p className="mb-2 mt-3 text-xs text-tekst-svag">{sag.erKoeber ? t.dineBilleder : t.koeberBilleder}</p>
+              <SagBilleder billeder={sag.billeder} />
+            </>
           )}
         </div>
-      </details>
+
+        {/* Sælgerens forklaring (regel 3) - ses af køber og sælger. */}
+        {sag.svar ? (
+          <div>
+            <h3 className="text-[17px] font-semibold text-tekst">{sag.erKoeber ? t.svarKoeber : t.svarSaelger}</h3>
+            <p className="text-xs text-tekst-svag">{sagTid(sag.svar.oprettetKl)}</p>
+            <p className="mt-1.5 whitespace-pre-wrap break-words border-l-[3px] border-kant-staerk bg-[#F7F7F7] px-3 py-2.5 text-sm text-tekst">
+              {sag.svar.tekst}
+            </p>
+            {sag.svar.billeder.length > 0 && (
+              <div className="mt-3">
+                <SagBilleder billeder={sag.svar.billeder} />
+              </div>
+            )}
+          </div>
+        ) : (
+          venterPaaSvar && (
+            <div>
+              <h3 className="text-[17px] font-semibold text-tekst">{t.svarKoeber}</h3>
+              <p className="mt-1 text-sm text-tekst-daempet">
+                {sagUdfyld(t.svarVenter, { dato: sagTid(sag.svarFristKl!) })}
+              </p>
+            </div>
+          )
+        )}
+
+        {sag.pakkebilleder.length > 0 && (
+          <div>
+            <h3 className="text-[15px] font-semibold text-tekst">
+              {sag.erKoeber ? t.pakkebillederKoeber : t.pakkebillederSaelger} ({sag.pakkebilleder.length})
+            </h3>
+            <p className="mb-2 mt-0.5 text-sm text-tekst-daempet">{t.pakkebillederHjaelp}</p>
+            <SagBilleder billeder={sag.pakkebilleder} />
+          </div>
+        )}
+
+        <details className="group border border-kant">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-groen focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen [&::-webkit-details-marker]:hidden">
+            {t.detaljer}
+            <svg
+              aria-hidden="true"
+              className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </summary>
+          <div className="space-y-4 border-t border-kant px-4 py-4">
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-tekst-svag">Hvad sagen drejer sig om</dt>
+                <dd className="font-medium text-tekst">{problem}</dd>
+              </div>
+              <div>
+                <dt className="text-tekst-svag">Oprettet</dt>
+                <dd className="font-medium text-tekst">{sagTid(sag.oprettetKl)}</dd>
+              </div>
+              {sag.afgjortKl && sag.status !== "aaben" && (
+                <div>
+                  <dt className="text-tekst-svag">Afgjort</dt>
+                  <dd className="font-medium text-tekst">{sagTid(sag.afgjortKl)}</dd>
+                </div>
+              )}
+              {sag.returAfleveretKl && (
+                <div>
+                  <dt className="text-tekst-svag">Returpakke afleveret</dt>
+                  <dd className="font-medium text-tekst">{sagTid(sag.returAfleveretKl)}</dd>
+                </div>
+              )}
+              {sag.genaabnetKl && (
+                <div>
+                  <dt className="text-tekst-svag">Genåbnet</dt>
+                  <dd className="font-medium text-tekst">{sagTid(sag.genaabnetKl)}</dd>
+                </div>
+              )}
+            </dl>
+            {sag.beskyttelse && <BeskyttelseBadge />}
+          </div>
+        </details>
+      </div>
     </section>
   );
 }
