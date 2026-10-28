@@ -4,7 +4,9 @@ Beslutning: ROADMAP-BESLUTNINGER.md, "Køb af boost-point i appen (Filip, 27. ok
 3.1.1 og 3.1.3(g)) og Google Play kræver deres egen betaling for digitale varer. I appen købes boost-point derfor kun
 via Apple og Google. På bidhamr.dk købes de fortsat via Stripe (uændret).
 
-- Migration: `supabase/migrations/20261102320000_boost_iap.sql`
+- Migrationer: `supabase/migrations/20261102320000_boost_iap.sql` og `20261102370000_boost_iap_rettelser.sql`
+  (rettelser efter review: markering af testkøb/promo, ventende refusioner, lås mellem kreditering og refusion,
+  "Download dine data")
 - Kode: `src/lib/iap/` (konfig, regler, apple, google, server)
 - Ruter: `GET/POST /api/app/boost/iap`, `POST /api/webhooks/apple`, `POST /api/webhooks/google-play`
 - Appens kontrakt: docs/APP-ENDPOINTS.md, "Køb af boost-point i appen"
@@ -23,7 +25,17 @@ via Apple og Google. På bidhamr.dk købes de fortsat via Stripe (uændret).
      købet igen med App Store Server API (**Get Transaction Info**). Apples svar er sandheden: forbrugsprodukt, ét stk.,
      ikke refunderet og købt af den rigtige konto (`appAccountToken`).
    - **Google:** `purchases.products.get` med service account: betalt (`purchaseState` 0), ikke et testkøb på
-     produktion, ét stk. og den rigtige konto (`obfuscatedExternalAccountId`).
+     produktion, ét stk. og den rigtige konto (`obfuscatedExternalAccountId`). `purchaseType` 1 (promokode, ikke
+     betalt) krediteres med markeringen `promo` og tælles ikke som omsætning. `purchaseType` 2 (belønnet) afvises.
+   - **Kontobindingen er påkrævet i produktion.** `appAccountToken` (Apple) og `obfuscatedAccountId` (Google) er et
+     UUID, som serveren regner ud: HMAC-SHA256 af bruger-id'et med `IAP_KONTO_HEMMELIGHED` (formateret som UUID
+     version 8). Appen får værdien fra `GET /api/app/boost/iap`. Bruger-id'et sendes ikke til Apple/Google. Mangler
+     værdien i købet, afvises det med `409 konto_mangler` (på testdatabasen må den mangle). Står der en anden værdi:
+     `409 anden_konto`.
+   - Kontoen (firma/spærret) tjekkes **efter** verificeringen. Er købet ægte, men kontoen kan ikke få point (`erhverv`,
+     `spaerret` eller `konto_mangler`), får chefen en drift-note (`boost/iap-afvist-betalt`), for brugeren har betalt.
+     Google-køb forbruges ikke og refunderes derfor automatisk af Google efter 3 dage. Apple refunderer ikke af sig
+     selv: brugeren skal søge refusion på reportaproblem.apple.com, eller chefen giver pointene.
 4. Databasen krediterer pointene **én gang** (`boost_iap_krediter`). Antallet af point kommer fra
    `boost_iap_produkter`. Købet gemmes i `boost_iap_koeb` med unikt indeks på platform + transaktion/ordre og på
    Googles token. Samme køb kan derfor aldrig give point to gange eller gå til en anden bruger. Posteringerne hedder
@@ -33,9 +45,24 @@ via Apple og Google. På bidhamr.dk købes de fortsat via Stripe (uændret).
 6. Apple og Google udbetaler beløbet til BidHamr efter deres gebyr: 15 % hos Apple med Small Business Program og
    15 % hos Google.
 
-**Refusion:** Apple (`REFUND`-notifikation) eller Google (`voidedPurchaseNotification` via Pub/Sub, og hver dag
-Voided Purchases API som sikkerhedsnet) trækker pointene tilbage med `refusion_apple` / `refusion_google`. Er
-pointene brugt, går saldoen i **minus**:
+**Refusion:** Apple (`REFUND`-notifikation) eller Google (`voidedPurchaseNotification` via Pub/Sub) trækker pointene
+tilbage med `refusion_apple` / `refusion_google`. Sikkerhedsnet i den daglige cron:
+- **Apple:** App Store Server API **Get Notification History** (`getNotificationHistory` i Apples officielle
+  bibliotek) for `REFUND` og `REFUND_REVERSED` det seneste døgn plus 12 timers overlapning (36 timer), i hvert tilladt
+  miljø. Hver notifikation verificeres og behandles præcis som webhooken - samme idempotens (`notificationUUID`), så
+  en notifikation, webhooken allerede har behandlet, gør intet. Delvise refusioner (`REFUND_PRORATED`) virker også.
+- **Google:** Voided Purchases API (de seneste 3 døgn).
+- En Google-RTDN bekræftes hos Google, før pointene trækkes: `purchases.products.get` skal sige `purchaseState` 1
+  (annulleret). Siger Google noget andet, trækkes intet (Voided Purchases API tager det, hvis det er rigtigt). Kan
+  Google ikke nås, svarer serveren 500, og Pub/Sub prøver igen.
+
+**Refusion før kreditering:** kommer en refusion for et køb, vi endnu ikke har krediteret (fx før appen nåede at
+sende købet, eller et firmakøb), gemmes den i `boost_iap_ventende_refusioner`, og notifikationen markeres ikke som
+behandlet. Sender appen købet bagefter, afviser `boost_iap_krediter` det (`409 refunderet`). Apple `REFUND_REVERSED`
+ophæver den ventende refusion. Kreditering og refusion af samme køb er låst mod hinanden i databasen (advisory lock på
+transaktions-id/Google-token), så en samtidig refusion ikke går tabt.
+
+Er pointene brugt, går saldoen i **minus**:
 - Chefen får en drift-alarm (`boost/iap-minus`), og købet er markeret under Admin → brugeren → Boost-point.
 - Nye boost er blokeret, til saldoen er over prisen for et boost.
 - Nye køb og optjente point lægges til som normalt.
@@ -48,10 +75,21 @@ pointene brugt, går saldoen i **minus**:
 **Ingen faktura og ingen kvitteringsmail fra BidHamr.** Købene ligger i `boost_iap_koeb`, ikke i `boost_koeb`. Derfor
 ser fakturakøen (`faktura_planlaeg_boost`) og Stripe-flowet dem aldrig.
 
+**Stripe-refusion ved minus:** refunderer chefen et Stripe-køb, mens saldoen er i minus, trækkes der ingen point
+(tilbageførslen klippes til 0). Admin viser en advarsel i dialogen, før refusionen gives.
+
 **Testkøb** (Apple Sandbox og Googles licenstestere) er gratis:
-- Tilladt på testdatabasen.
-- På produktion kun med `IAP_TILLAD_TESTKOEB=1`, fx mens Apple gennemgår appen.
-- Testkøb giver point, men gemmes som `miljoe = 'test'` og tælles for sig i rapporten.
+- Altid tilladt på testdatabasen (gemmes som `miljoe = 'test'`).
+- På produktion kun når **begge** dele er sat (ellers slået fra - fail closed):
+  - `IAP_TILLAD_TESTKOEB_TIL=<ISO-dato>` i fremtiden og **højst 14 dage frem**. En dato i fortiden, for langt frem
+    eller i et andet format slår det fra.
+  - `IAP_TESTKOEB_KONTI=<bruger-id>,<bruger-id>` - kun disse konti (fx kontoen til Apples App Review) må lave testkøb.
+- Testkøb i produktion får markeringen `testkoeb_prod` og tælles for sig i rapporten (ikke som omsætning).
+- Så længe det er slået til, logger den daglige cron en drift-advarsel: "Testkøb er slået til i produktion"
+  (`boost/iap-testkoeb`).
+- Når Apple har godkendt appen: fjern de to variabler, og træk testkøbene tilbage samlet i Supabase SQL Editor:
+  `select public.boost_iap_tilbagekald_testkoeb();` Svaret er antal køb og point. Den er idempotent.
+- Det gamle flag `IAP_TILLAD_TESTKOEB=1` virker ikke længere.
 
 ## Rapport
 
@@ -62,11 +100,17 @@ Admin → **Penge** → "Boost-salg" viser for perioden, hver for sig:
   - bruttopris i DKK (Apple oplyser prisen på købet)
   - listepris på bidhamr.dk
   - refusioner
-  - testkøb
-- **Google Play:** de samme tal. Google oplyser ikke prisen på købet, så her vises kun listeprisen.
+  - testkøb (heraf testkøb i produktion)
+- **Google Play:** de samme tal. Google oplyser ikke prisen på købet, så her vises kun listeprisen. Promokoder vises
+  for sig og tæller ikke med i omsætningen.
 - Antal brugere med negativ saldo.
 
-Admin → brugeren → Boost-point viser brugerens køb i appen med platform, pris, transaktions-id, refusion og noter.
+Admin → brugeren → Boost-point viser brugerens køb i appen med platform, pris, transaktions-id, markering (testkøb i
+produktion / promokode), refusion og noter.
+
+**Download dine data** (`mine_data`) har nøglen `boost_koeb`: saldo, køb på bidhamr.dk (Stripe: point, beløb,
+status, datoer - uden Stripe-id'er) og køb i appen (platform, transaktions-id, produkt, point, pris, land,
+refusion - uden Googles token).
 
 ## Bogføring
 
@@ -104,12 +148,14 @@ iap_ikke_klar`).
 | `APPLE_IAP_PRIVATE_KEY` | Indholdet af .p8-filen (linjeskift må skrives som `\n`) |
 | `APPLE_BUNDLE_ID` | `dk.bidhamr.app` |
 | `APPLE_APP_APPLE_ID` | Appens Apple ID (tal, App Information) |
-| `APPLE_IAP_MILJOE` | `Production` (bidhamr.dk) eller `Sandbox` (test.bidhamr.dk). `Sandbox` på produktionsdatabasen kræver `IAP_TILLAD_TESTKOEB=1` |
+| `APPLE_IAP_MILJOE` | `Production` (bidhamr.dk) eller `Sandbox` (test.bidhamr.dk). `Sandbox` på produktionsdatabasen virker kun, mens testkøbsvinduet er åbent |
 | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Service account-nøglen (hele JSON'en) |
 | `GOOGLE_PLAY_PACKAGE` | `dk.bidhamr.app` |
 | `GOOGLE_PUBSUB_AUDIENCE` | Audience i push-abonnementet, fx `https://bidhamr.dk/api/webhooks/google-play` |
 | `GOOGLE_PUBSUB_SA_EMAIL` | Den service account, push-abonnementet signerer med |
-| `IAP_TILLAD_TESTKOEB` | Valgfri. `1` = testkøb tilladt på produktion (kun under App Review) |
+| `IAP_KONTO_HEMMELIGHED` | Påkrævet (begge platforme). Mindst 32 tegn, fx `openssl rand -hex 32`. Bruges til kontobindingen (`appAccountToken`). Skift den aldrig, når appen er i brug. Forskellig på bidhamr.dk og test.bidhamr.dk |
+| `IAP_TILLAD_TESTKOEB_TIL` | Valgfri, kun produktion. ISO-dato (fx `2026-11-10`), højst 14 dage frem. Testkøb er tilladt indtil da (kun under App Review) |
+| `IAP_TESTKOEB_KONTI` | Valgfri, kun produktion. Kommaseparerede bruger-id'er, der må lave testkøb (fx App Review-kontoen) |
 
 ## Filips opsætning
 
@@ -143,8 +189,10 @@ iap_ikke_klar`).
    - Opret et par testkonti med e-mails, der ikke er rigtige Apple-konti.
    - Log ind med dem under Indstillinger → App Store → Sandbox-konto på en testtelefon.
 8. **Under App Review:**
-   - Apple køber i Sandbox. Sæt midlertidigt `IAP_TILLAD_TESTKOEB=1` i produktion, så reviewerens køb virker.
-   - Fjern det igen, når appen er godkendt. Ellers kan TestFlight-testere få gratis point.
+   - Apple køber i Sandbox. Opret en BidHamr-konto til reviewerne, og sæt midlertidigt i produktion:
+     `IAP_TESTKOEB_KONTI=<kontoens bruger-id>` og `IAP_TILLAD_TESTKOEB_TIL=<dato højst 14 dage frem>`.
+   - Når appen er godkendt: fjern begge, og kør `select public.boost_iap_tilbagekald_testkoeb();`. Udløber datoen,
+     slås det fra af sig selv. Andre konti (fx TestFlight-testere) kan aldrig få gratis point i produktion.
 
 ### Google Play Console
 
@@ -178,13 +226,16 @@ iap_ikke_klar`).
    - Vælg at få notifikationer for alle typer (også engangskøb).
    - Tryk "Send test notification". Serveren svarer 204.
 7. **Licenstestere** (Settings → License testing): tilføj testernes Google-konti. Deres køb er gratis testkøb
-   (`purchaseType` 0) og virker kun på test.bidhamr.dk, eller med `IAP_TILLAD_TESTKOEB=1`.
-8. **Voided Purchases API** bruges af den daglige cron (en del af betalings-cron'en, én gang i døgnet). Den kræver
+   (`purchaseType` 0) og virker kun på test.bidhamr.dk, eller i produktion for kontiene i `IAP_TESTKOEB_KONTI`, mens
+   `IAP_TILLAD_TESTKOEB_TIL` er gyldig.
+8. **Apple Get Notification History** bruges også af den daglige cron med samme In-App Purchase-nøgle. Der skal
+   ikke sættes andet op.
+9. **Voided Purchases API** bruges af den daglige cron (en del af betalings-cron'en, én gang i døgnet). Den kræver
    samme service account. Der skal ikke sættes andet op.
 
 ### Sådan testes det (test.bidhamr.dk)
 
-1. Kør migrationen, og sæt variablerne med `APPLE_IAP_MILJOE=Sandbox`.
+1. Kør migrationerne, og sæt variablerne med `APPLE_IAP_MILJOE=Sandbox` og en `IAP_KONTO_HEMMELIGHED`.
 2. `GET /api/app/boost/iap` skal give `klar: { ios: true, android: true }`.
 3. Køb 100 point med en Sandbox-tester og en licenstester. Saldoen stiger med 100, og købet står under Admin →
    brugeren → Boost-point.

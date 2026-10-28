@@ -45,6 +45,7 @@ type AppKoeb = {
   produkt_id: string;
   point: number;
   miljoe: "produktion" | "test";
+  markering?: "testkoeb_prod" | "promo" | null;
   koebt_kl: string;
   pris_milli: number | null;
   valuta: string | null;
@@ -153,13 +154,20 @@ export default async function BoostAdminKort({
                   triggerLabel="Refundér køb"
                   triggerClassName="btn btn-tekst btn-lille"
                   title="Refundér købet af boost-point?"
-                  description={`Hele beløbet (${kroner(Number(k.beloeb_oere))}) sendes tilbage via Stripe, og brugerens point trækkes tilbage - højst ${k.point}, og saldoen kan ikke blive negativ. Brugeren får en kreditnota.`}
+                  description={
+                    v.saldo < 0
+                      ? `Advarsel: saldoen er i minus (${v.saldo} point) efter en refusion i appen. Hele beløbet (${kroner(Number(k.beloeb_oere))}) sendes tilbage via Stripe, men der trækkes INGEN point tilbage, fordi saldoen ikke kan blive mere negativ. Brugeren får altså pengene tilbage og har stadig minusset. Brugeren får en kreditnota.`
+                      : `Hele beløbet (${kroner(Number(k.beloeb_oere))}) sendes tilbage via Stripe, og brugerens point trækkes tilbage - højst ${k.point}, og saldoen kan ikke blive negativ. Brugeren får en kreditnota.`
+                  }
                   confirmLabel="Refundér"
                   action={refunderBoostKoebAction}
                   hiddenFields={{ koebId: k.id, brugerId }}
                   fakta={[
                     { label: "Beløb", vaerdi: kroner(Number(k.beloeb_oere)) },
-                    { label: "Point trækkes", vaerdi: `${Math.min(k.point, v.saldo)} af ${k.point}` },
+                    { label: "Point trækkes", vaerdi: `${Math.max(0, Math.min(k.point, v.saldo))} af ${k.point}` },
+                    ...(v.saldo < 0
+                      ? [{ label: "Saldo", vaerdi: <span className="font-semibold text-red-700">{`${v.saldo} point (i minus)`}</span> }]
+                      : []),
                   ]}
                   aarsagField={{ name: "begrundelse", label: "Begrundelse (intern)", placeholder: "Hvorfor refunderes købet?", required: true }}
                   fare
@@ -184,7 +192,8 @@ export default async function BoostAdminKort({
             <li key={k.id} className="py-2">
               <p className="text-neutral-900">
                 {k.point} point · {PLATFORM[k.platform] ?? k.platform} · {appPris(k)}
-                {k.miljoe === "test" ? " · testkøb" : ""}
+                {k.markering === "testkoeb_prod" ? " · testkøb i produktion" : k.miljoe === "test" ? " · testkøb" : ""}
+                {k.markering === "promo" ? " · promokode (ikke betalt)" : ""}
                 {k.refunderet_point > 0 ? ` · refunderet (${k.refunderet_point} point trukket)` : ""}
               </p>
               <p className="text-xs text-neutral-500">

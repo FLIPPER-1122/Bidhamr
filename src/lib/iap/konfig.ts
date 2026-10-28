@@ -1,6 +1,8 @@
 import "server-only";
 
+import { createHmac } from "node:crypto";
 import { erTestdatabase } from "@/lib/miljoe";
+import { testkoebKonti, testkoebVindue } from "@/lib/iap/regler";
 
 // Konfiguration af køb af boost-point i appen (Apple In-App Purchase og
 // Google Play Billing). Alt kommer fra miljøvariabler (se .env.example og
@@ -12,11 +14,20 @@ import { erTestdatabase } from "@/lib/miljoe";
 //   - Apple: kun det miljø, APPLE_IAP_MILJOE siger ("Production" eller
 //     "Sandbox"). En Sandbox-transaktion afvises på en Production-server.
 //   - Testkøb (Apple Sandbox på en Production-server og Googles licenstest-
-//     køb) tillades kun på testdatabasen eller med IAP_TILLAD_TESTKOEB=1
-//     (fx mens Apple gennemgår appen - App Review køber i Sandbox). De
-//     gemmes med miljoe 'test' og tælles for sig i rapporten.
-//   - På produktionsdatabasen er APPLE_IAP_MILJOE=Sandbox ikke klar, medmindre
-//     IAP_TILLAD_TESTKOEB=1 (ellers ville gratis Sandbox-køb give point).
+//     køb) tillades altid på testdatabasen. På produktionsdatabasen KUN når
+//     IAP_TILLAD_TESTKOEB_TIL er en ISO-dato i fremtiden og højst 14 dage
+//     frem, og kun for kontiene i IAP_TESTKOEB_KONTI (fx kontoen til Apples
+//     App Review). Alt andet = slået fra (fail closed). Testkøb gemmes med
+//     miljoe 'test', i produktion også med markeringen 'testkoeb_prod', og
+//     tælles for sig i rapporten. Så længe vinduet er åbent, logger den
+//     daglige cron en drift-advarsel.
+//   - På produktionsdatabasen er APPLE_IAP_MILJOE=Sandbox kun klar, mens
+//     testkøbsvinduet er åbent (ellers ville gratis Sandbox-køb give point).
+//
+// Kontobindingen (appAccountToken hos Apple, obfuscatedAccountId hos Google)
+// er en HMAC af bruger-id'et med IAP_KONTO_HEMMELIGHED - deterministisk, så
+// serveren kan regne den ud igen, men uden at bruger-id'et sendes til
+// Apple/Google. Mangler hemmeligheden, er køb i appen ikke klar.
 
 export type AppleMiljoe = "Production" | "Sandbox";
 
@@ -37,7 +48,6 @@ export type GoogleKonfig = {
   pakke: string;
   pubsubAudience: string;
   pubsubEmail: string;
-  tilladTestkoeb: boolean;
 };
 
 const UUID_LIGNENDE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -49,8 +59,47 @@ const env = (navn: string) => (process.env[navn] ?? "").trim();
 // "\n" i en env-værdi (Vercel gemmer ofte nøglen på én linje).
 const pem = (v: string) => v.replace(/\\n/g, "\n");
 
-export function testkoebTilladt(): boolean {
-  return erTestdatabase() || env("IAP_TILLAD_TESTKOEB") === "1";
+export type TestkoebStatus = {
+  // Testkøb kan forekomme (testdatabasen, eller et åbent vindue med mindst
+  // én konto i produktion).
+  aabent: boolean;
+  // Produktionsdatabasen med åbent vindue (drift-advarsel hver dag).
+  iProduktion: boolean;
+  til: Date | null;
+  // null = alle (testdatabasen); ellers kun disse konti.
+  konti: Set<string> | null;
+};
+
+export function testkoebStatus(nuMs: number = Date.now()): TestkoebStatus {
+  if (erTestdatabase()) return { aabent: true, iProduktion: false, til: null, konti: null };
+  const v = testkoebVindue(env("IAP_TILLAD_TESTKOEB_TIL"), nuMs);
+  const konti = testkoebKonti(env("IAP_TESTKOEB_KONTI"));
+  const aabent = v.aabent && konti.size > 0;
+  return { aabent, iProduktion: aabent, til: aabent ? v.til : null, konti: aabent ? konti : new Set() };
+}
+
+// Må DENNE bruger lave testkøb?
+export function testkoebTilladtFor(brugerId: string, s: TestkoebStatus = testkoebStatus()): boolean {
+  if (!s.aabent) return false;
+  return s.konti === null || s.konti.has(brugerId.toLowerCase());
+}
+
+function kontoHemmelighed(): string | null {
+  const h = env("IAP_KONTO_HEMMELIGHED");
+  return h.length >= 32 ? h : null;
+}
+
+// appAccountToken / obfuscatedAccountId for en bruger: HMAC-SHA256 af
+// bruger-id'et, formateret som et UUID (version 8, RFC 9562), fordi Apple
+// kræver et UUID. null = hemmeligheden mangler (køb i appen er ikke klar).
+export function kontoToken(brugerId: string): string | null {
+  const h = kontoHemmelighed();
+  if (!h) return null;
+  const b = createHmac("sha256", h).update(`bidhamr-iap-konto:v1:${brugerId.toLowerCase()}`, "utf8").digest().subarray(0, 16);
+  b[6] = (b[6] & 0x0f) | 0x80;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const x = b.toString("hex");
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
 }
 
 export function appleKonfig(): AppleKonfig | null {
@@ -66,7 +115,8 @@ export function appleKonfig(): AppleKonfig | null {
   if (!PAKKE.test(bundleId)) return null;
   if (!/^\d{1,15}$/.test(appAppleIdTekst)) return null;
   if (miljoeTekst !== "Production" && miljoeTekst !== "Sandbox") return null;
-  const test = testkoebTilladt();
+  if (!kontoHemmelighed()) return null;
+  const test = testkoebStatus().aabent;
   if (miljoeTekst === "Sandbox" && !test) return null;
   const tilladte: AppleMiljoe[] = miljoeTekst === "Production" && test ? ["Production", "Sandbox"] : [miljoeTekst];
   return {
@@ -85,6 +135,7 @@ export function googleKonfig(): GoogleKonfig | null {
   const pubsubAudience = env("GOOGLE_PUBSUB_AUDIENCE");
   const pubsubEmail = env("GOOGLE_PUBSUB_SA_EMAIL");
   if (!PAKKE.test(pakke) || !pubsubAudience || pubsubAudience.length > 500 || !EMAIL.test(pubsubEmail)) return null;
+  if (!kontoHemmelighed()) return null;
   let sa: { client_email?: unknown; private_key?: unknown };
   try {
     sa = JSON.parse(env("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON")) as typeof sa;
@@ -99,7 +150,6 @@ export function googleKonfig(): GoogleKonfig | null {
     pakke,
     pubsubAudience,
     pubsubEmail: pubsubEmail.toLowerCase(),
-    tilladTestkoeb: testkoebTilladt(),
   };
 }
 

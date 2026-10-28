@@ -201,6 +201,14 @@ describe("gatelisten kender alle ruter", () => {
     expect(klasse("/udbetalinger/[id]")).toBe("ukendt");
   });
 
+  it("kun præcis /api/app/boost/iap er åben under /api/app/boost", () => {
+    expect(erOffentligRute("/api/app/boost/iap")).toBe(true);
+    expect(erOffentligRute("/api/app/boost")).toBe(false);
+    expect(erOffentligRute("/api/app/boost/brug")).toBe(false);
+    expect(erOffentligRute("/api/app/boostx")).toBe(false);
+    expect(erOffentligRute("/api/app/boost/iapx")).toBe(false);
+  });
+
   it("admin, konto og handler kræver login", () => {
     for (const r of ["/admin", "/admin/dsa", "/konto", "/mine-handler/[trade_id]", "/opret-auktion", "/firma", "/profil/mig", "/auktion/[id]/rediger", "/dev/mails"]) {
       expect(klasse(r), r).toBe("login");
