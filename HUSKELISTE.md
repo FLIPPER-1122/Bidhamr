@@ -186,9 +186,9 @@ Svar til Claude Code, når du har besluttet dig, fx:
 > 1. Ja, åbn gaten kun på testdatabasen. 2. Ja, slet cron-jobbet afslut-auktioner i produktion. 3. Slå mails fra i dev – log dem i stedet.
 
 ## BidHamr-bot – småting fra review (27. okt. 2026), før lancering
-- Ændringer af bottens lofter på /admin/bot skal logges i `moderation_log` med gamle og nye værdier.
-- Afvis en ny besked, mens et svar er i gang i samme samtale (kode `svar_i_gang`), så skønnet for svar i gang bliver rigtigt.
-- Hæv `BOT_SKOEN_INPUT_PR_RUNDE` til ca. 60.000, og vis en advarsel på /admin/bot, når prisen for ét svar overstiger loftet pr. bruger (fx ved Opus).
+- ~~Ændringer af bottens lofter på /admin/bot skal logges i `moderation_log` med gamle og nye værdier.~~ (rettet i `20261102410000_huskeliste_oprydning.sql`, 28. okt.)
+- ~~Afvis en ny besked, mens et svar er i gang i samme samtale (kode `svar_i_gang`), så skønnet for svar i gang bliver rigtigt.~~ (rettet i `20261102410000_huskeliste_oprydning.sql`, 28. okt.) Appen skal låse "Send", mens svaret streames (docs/APP-ENDPOINTS.md).
+- ~~Hæv `BOT_SKOEN_INPUT_PR_RUNDE` til ca. 60.000, og vis en advarsel på /admin/bot, når prisen for ét svar overstiger loftet pr. bruger (fx ved Opus).~~ (rettet 28. okt.)
 - Efter lancering: overvej en samlet andel af budgettet for konti uden MitID-verificering.
 
 ## Rækkefølge ved udrulning af prod-pakken (review 28. okt. 2026)
@@ -196,16 +196,17 @@ Svar til Claude Code, når du har besluttet dig, fx:
 - Ellers rammes brugerne mens den gamle kode kører:
   - Kører `20261102340000_bruger_adresse.sql` før den nye kode, kan alle eksisterende private brugere ikke byde (BHY01 uden formular).
   - Det samme gælder sagsreglerne (`20261102210000`).
+- `20261102410000_huskeliste_oprydning.sql` kører til sidst (efter 120000/160000, 210000/350000, 240000-310000 og 330000/390000 - den tjekker md5 og stopper ellers). Koden tåler, at den ikke er kørt endnu (skift af e-mail og "Send mailen igen" virker som før).
 - Undtagelse: `20261102310000_bot_loft_pr_gruppe.sql` skal køres **før** den nye bot-kode, ellers svarer botten ikke. Den gamle kode tåler migrationen. Kør den sammen med de andre lige efter deployet; botten er alligevel skjult, indtil `ANTHROPIC_API_KEY` er sat i produktion.
 
 ## Sagsregler – småting fra review (28. okt. 2026)
-- `sag_indpakning_ved_afgoerelse`: giv `billeder_mangler`, når staff vælger "sælgeren betaler returfragt", og sagen ikke har et pakke-/labelbillede. Ellers kan sælgeren få en regning uden bevis.
-- Genåbning efter retur: markér hos staff, at BidHamr kan stå med returfragten, når sælgerens regning er frafaldet.
+- ~~`sag_indpakning_ved_afgoerelse`: giv `billeder_mangler`, når staff vælger "sælgeren betaler returfragt", og sagen ikke har et pakke-/labelbillede. Ellers kan sælgeren få en regning uden bevis.~~ (rettet i `20261102410000_huskeliste_oprydning.sql`, 28. okt.)
+- ~~Genåbning efter retur: markér hos staff, at BidHamr kan stå med returfragten, når sælgerens regning er frafaldet.~~ (rettet i `20261102410000_huskeliste_oprydning.sql`, 28. okt.)
 
 ## Firma-faktura – småting fra review (28. okt. 2026)
-- Mulig deadlock mellem `firma_faktura_send` og ændring af standard-momsordning. Lås indstillingerne først i `send`, eller vis "Prøv igen" ved 40P01.
+- ~~Mulig deadlock mellem `firma_faktura_send` og ændring af standard-momsordning. Lås indstillingerne først i `send`, eller vis "Prøv igen" ved 40P01.~~ (rettet i `20261102410000_huskeliste_oprydning.sql`, 28. okt.)
 - Backfill i 390000 slår triggeren fra. Brug flaget pr. række i stedet, hvis den skal køres igen manuelt.
-- "Send mailen igen": lås rækken, så to samtidige tryk ikke giver to mails.
+- ~~"Send mailen igen": lås rækken, så to samtidige tryk ikke giver to mails.~~ (rettet i `20261102410000_huskeliste_oprydning.sql`, 28. okt.)
 
 ## BidHamr-bot og App Store (review 28. okt. 2026)
-- Botten må ALDRIG sige "køb point på bidhamr.dk" eller nævne BidHamrs pointpriser i appen (Apple 3.1.1/3.1.3). Tilføj det i systemprompten (`src/lib/bot/viden.ts`), og et filter, når samtalen kommer fra appen (`kilde = 'app'`).
+- ~~Botten må ALDRIG sige "køb point på bidhamr.dk" eller nævne BidHamrs pointpriser i appen (Apple 3.1.1/3.1.3). Tilføj det i systemprompten (`src/lib/bot/viden.ts`), og et filter, når samtalen kommer fra appen (`kilde = 'app'`).~~ (rettet 28. okt.: systemprompt + filter i `src/lib/bot/filter.ts`)

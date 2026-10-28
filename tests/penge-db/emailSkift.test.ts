@@ -14,6 +14,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { huskelisteAfsnit } from "./huskelisteAfsnit";
 
 const MIGRATION = readFileSync(
   path.resolve(import.meta.dirname, "../../supabase/migrations/20261102120000_skift_email.sql"),
@@ -327,5 +328,171 @@ describe("værn og GDPR", () => {
         await db.exec(`reset role`);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 20261102410000 (afsnit "email"): outbox for log-ud og advarsel, og
+// recovery-token ryddes igen efter skiftet.
+// ---------------------------------------------------------------------------
+describe("outbox efter skiftet (20261102410000)", () => {
+  const OUT = "00000000-0000-4000-8000-0000000000b1";
+  const ANDEN = "00000000-0000-4000-8000-0000000000b2";
+  const S_BEHOLD = "00000000-0000-4000-8000-00000000c001";
+  const S_GAMMEL = "00000000-0000-4000-8000-00000000c002";
+  const S_ANDEN = "00000000-0000-4000-8000-00000000c003";
+
+  beforeAll(async () => {
+    // Det fra Supabase Auth, som afsnittet bruger (findes i drift).
+    await db.exec(`
+      alter table auth.users add column recovery_sent_at timestamptz;
+      alter table auth.one_time_tokens add column created_at timestamptz not null default now();
+      create table auth.sessions (id uuid primary key, user_id uuid not null references auth.users(id) on delete cascade,
+        created_at timestamptz not null default now());
+    `);
+    const afsnit = huskelisteAfsnit("email");
+    await db.exec(afsnit);
+    await db.exec(afsnit); // idempotent
+    for (const [id, email] of [[OUT, "out@test.dk"], [ANDEN, "anden@test.dk"]] as const) {
+      await db.query(`insert into auth.users (id, email) values ($1, $2)`, [id, email]);
+      await db.query(`insert into public.users (id, email) values ($1, $2)`, [id, email]);
+    }
+  });
+
+  const skift = async (bruger: string, ny: string, kode: string, session: string | null) => {
+    expect((await anmod(bruger, ny, kode)).kode).toBe("ok");
+    const ok = await tjek(bruger, kode);
+    expect(ok.kode).toBe("ok");
+    expect((await en<{ r: boolean }>(`select public.email_skift_behold_session($1, $2, $3) r`, [ok.id, bruger, session])).r).toBe(true);
+    // Som Supabase Auth' updateUserById.
+    await db.query(`update auth.users set email = $2 where id = $1`, [bruger, ny]);
+    return ok.id as string;
+  };
+  const tag = async (skiftId: string | null = null) =>
+    (await en<{ v: Record<string, unknown>[] }>(`select public.email_skift_outbox_tag($1) v`, [skiftId])).v;
+
+  it("behold_session kun for egen, bekræftet anmodning", async () => {
+    expect((await anmod(OUT, "out-x@test.dk", "100100")).kode).toBe("ok");
+    const s = await en<{ id: string }>(`select id from public.email_skift where bruger_id = $1 and status = 'afventer'`, [OUT]);
+    // Ikke bekræftet endnu.
+    expect((await en<{ r: boolean }>(`select public.email_skift_behold_session($1, $2, $3) r`, [s.id, OUT, S_BEHOLD])).r).toBe(false);
+    const ok = await tjek(OUT, "100100");
+    // En anden brugers id.
+    expect((await en<{ r: boolean }>(`select public.email_skift_behold_session($1, $2, $3) r`, [ok.id, ANDEN, S_BEHOLD])).r).toBe(false);
+    await db.query(`select public.email_skift_afslut($1, 'fejl')`, [ok.id]);
+  });
+
+  it("skiftet opretter outbox-rækken i samme transaktion; kun brugerens eget skift", async () => {
+    // Sessioner og tokens fra før skiftet.
+    await db.query(
+      `insert into auth.sessions (id, user_id, created_at) values ($1, $4, now() - interval '1 hour'),
+         ($2, $4, now() - interval '1 hour'), ($3, $5, now() - interval '1 hour')`,
+      [S_BEHOLD, S_GAMMEL, S_ANDEN, OUT, ANDEN]);
+    const id = await skift(OUT, "out-ny@test.dk", "200200", S_BEHOLD);
+    const o = await en<{ n: number; bruger_id: string }>(
+      `select count(*)::int n, min(bruger_id::text) bruger_id from public.email_skift_outbox where email_skift_id = $1`, [id]);
+    expect(o).toEqual({ n: 1, bruger_id: OUT });
+    // Skift uden for flowet (dashboardet) giver ingen række.
+    await db.query(`update auth.users set email = 'anden-ny@test.dk' where id = $1`, [ANDEN]);
+    expect(Number((await en<{ n: number }>(
+      `select count(*)::int n from public.email_skift_outbox x join public.email_skift s on s.id = x.email_skift_id where s.bruger_id = $1`,
+      [ANDEN])).n)).toBe(0);
+  });
+
+  it("GoTrue skriver recovery-token tilbage efter skiftet: log_ud rydder den igen og logger andre enheder ud", async () => {
+    const skiftId = (await en<{ id: string }>(
+      `select id from public.email_skift where bruger_id = $1 and status = 'gennemfoert' order by oprettet_kl desc limit 1`, [OUT])).id;
+    // Som hvis Supabase Auth gemmer brugerens gamle felter igen (uden ny e-mail).
+    await db.query(
+      `update auth.users set recovery_token = 'gammel', recovery_sent_at = now() - interval '10 minutes' where id = $1`, [OUT]);
+    await db.query(
+      `insert into auth.one_time_tokens (user_id, token_type, token_hash, relates_to, created_at)
+         values ($1, 'recovery_token', 'gammel', 'out@test.dk', now() - interval '10 minutes')`, [OUT]);
+    // En ny session efter skiftet (fx login på en ny enhed med den nye adresse).
+    await db.query(`update public.email_skift_outbox set skiftet_kl = now() - interval '1 minute' where email_skift_id = $1`, [skiftId]);
+    await db.query(`insert into auth.sessions (id, user_id, created_at) values (gen_random_uuid(), $1, now())`, [OUT]);
+
+    const raekker = await tag(skiftId);
+    expect(raekker).toHaveLength(1);
+    expect(raekker[0]).toMatchObject({ bruger_id: OUT, gammel_email: "out@test.dk", ny_email: "out-ny@test.dk", log_ud: false, mail: false, stripe: false, forsoeg: 1 });
+    // Taget: et samtidigt forsøg (cron) får den ikke.
+    expect(await tag(skiftId)).toEqual([]);
+    expect(await tag()).toEqual([]);
+
+    const id = raekker[0].id as string;
+    const r = await en<{ v: Record<string, unknown> }>(`select public.email_skift_outbox_log_ud($1) v`, [id]);
+    expect(r.v).toEqual({ kode: "ok", sessioner: 1, tokens: 2 });
+    const sess = await db.query<{ id: string }>(`select id::text from auth.sessions where user_id = $1 order by created_at`, [OUT]);
+    // Den, der skiftede, og den nye efter skiftet er tilbage. Den gamle er væk.
+    expect(sess.rows.map((x) => x.id)).toContain(S_BEHOLD);
+    expect(sess.rows.map((x) => x.id)).not.toContain(S_GAMMEL);
+    expect(sess.rows).toHaveLength(2);
+    // Andre brugeres sessioner røres ikke.
+    expect(Number((await en<{ n: number }>(`select count(*)::int n from auth.sessions where id = $1`, [S_ANDEN])).n)).toBe(1);
+    expect((await en<{ recovery_token: string }>(`select recovery_token from auth.users where id = $1`, [OUT])).recovery_token).toBe("");
+    // Idempotent.
+    expect((await en<{ v: Record<string, unknown> }>(`select public.email_skift_outbox_log_ud($1) v`, [id])).v).toEqual({ kode: "allerede" });
+
+    // "Glemt adgangskode" til den NYE adresse efter skiftet røres ikke.
+    await db.query(`update auth.users set recovery_token = 'ny', recovery_sent_at = now() where id = $1`, [OUT]);
+    await db.query(`update public.email_skift_outbox set log_ud_kl = null where id = $1`, [id]);
+    await db.query(`select public.email_skift_outbox_log_ud($1)`, [id]);
+    expect((await en<{ recovery_token: string }>(`select recovery_token from auth.users where id = $1`, [OUT])).recovery_token).toBe("ny");
+  });
+
+  it("trin og fejl: rækken er færdig, når alle tre trin er gjort; en fejl slipper låsen til cron", async () => {
+    const o = await en<{ id: string }>(`select x.id from public.email_skift_outbox x join public.email_skift s on s.id = x.email_skift_id where s.bruger_id = $1`, [OUT]);
+    expect((await en<{ r: boolean }>(`select public.email_skift_outbox_trin($1, 'ukendt') r`, [o.id])).r).toBe(false);
+    expect((await en<{ r: boolean }>(`select public.email_skift_outbox_fejl($1, 'Resend nede') r`, [o.id])).r).toBe(true);
+    // Låsen er sluppet: cron kan tage den med det samme.
+    const igen = await tag();
+    expect(igen).toHaveLength(1);
+    expect(igen[0]).toMatchObject({ log_ud: true, mail: false, forsoeg: 2 });
+    await db.query(`select public.email_skift_outbox_trin($1, 'mail')`, [o.id]);
+    expect((await en<{ udfoert_kl: string | null }>(`select udfoert_kl from public.email_skift_outbox where id = $1`, [o.id])).udfoert_kl).toBeNull();
+    await db.query(`select public.email_skift_outbox_trin($1, 'stripe')`, [o.id]);
+    const f = await en<{ udfoert_kl: string | null; sidste_fejl: string | null; laast_til: string | null }>(
+      `select udfoert_kl, sidste_fejl, laast_til from public.email_skift_outbox where id = $1`, [o.id]);
+    expect(f.udfoert_kl).not.toBeNull();
+    expect(f.sidste_fejl).toBeNull();
+    expect(f.laast_til).toBeNull();
+    expect(await tag()).toEqual([]);
+  });
+
+  it("højst 12 forsøg; ukendt session (null) logger alle sessioner fra før skiftet ud", async () => {
+    await db.query(`insert into auth.sessions (id, user_id, created_at) values (gen_random_uuid(), $1, now() - interval '1 hour')`, [ANDEN]);
+    const id = await skift(ANDEN, "anden-tredje@test.dk", "300300", null);
+    await db.query(`update public.email_skift_outbox set skiftet_kl = now() + interval '1 second' where email_skift_id = $1`, [id]);
+    const [r] = await tag(id);
+    await db.query(`select public.email_skift_outbox_log_ud($1)`, [r.id]);
+    expect(Number((await en<{ n: number }>(`select count(*)::int n from auth.sessions where user_id = $1`, [ANDEN])).n)).toBe(0);
+    await db.query(`update public.email_skift_outbox set forsoeg = 12, laast_til = null where id = $1`, [r.id]);
+    expect(await tag()).toEqual([]);
+  });
+
+  it("kun service_role", async () => {
+    for (const rolle of ["authenticated", "anon"]) {
+      await db.exec(`set role ${rolle}`);
+      try {
+        await expect(db.query(`select * from public.email_skift_outbox`)).rejects.toThrow(/permission denied/);
+        await expect(db.query(`select public.email_skift_outbox_tag(null)`)).rejects.toThrow(/permission denied/);
+        await expect(db.query(`select public.email_skift_outbox_log_ud($1)`, [OUT])).rejects.toThrow(/permission denied/);
+        await expect(db.query(`select public.email_skift_outbox_trin($1, 'mail')`, [OUT])).rejects.toThrow(/permission denied/);
+        await expect(db.query(`select public.email_skift_outbox_fejl($1, 'x')`, [OUT])).rejects.toThrow(/permission denied/);
+        await expect(db.query(`select public.email_skift_behold_session($1, $1, $1)`, [OUT])).rejects.toThrow(/permission denied/);
+      } finally {
+        await db.exec(`reset role`);
+      }
+    }
+  });
+
+  it("drifttjek: en ændret spejling stopper afsnittet", async () => {
+    const d = new PGlite();
+    await d.exec(STUB);
+    await d.exec(MIGRATION);
+    await d.exec(RETTELSER);
+    await d.exec(`create or replace function public.auth_users_email_spejl() returns trigger language plpgsql as $$ begin return new; end $$;`);
+    await expect(d.exec(huskelisteAfsnit("email"))).rejects.toThrow(/auth_users_email_spejl.*md5/);
+    await d.close();
   });
 });

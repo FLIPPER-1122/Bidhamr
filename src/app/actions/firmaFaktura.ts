@@ -14,7 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { indenForGraense, FOR_MANGE_FORSOEG } from "@/lib/rateLimit";
 import { logDriftFejl } from "@/lib/drift";
-import { hentSendtRaekke, sendFakturaMail } from "@/lib/erhverv/firmaFakturaServer";
+import { hentSendtRaekke, sendFakturaMail, sendFakturaMailLaast } from "@/lib/erhverv/firmaFakturaServer";
 import {
   EMAIL_FAKTURA,
   MANGLER_TEKST,
@@ -121,9 +121,12 @@ export async function sendFirmaFakturaMailIgen(id: string): Promise<{ ok: true }
     const raekke = await hentSendtRaekke(id);
     if (!raekke || raekke.saelger_id !== user.id) return { fejl: "Fakturaen findes ikke." };
     if (raekke.mail_sendt_kl) return { fejl: "Mailen er allerede sendt til køberen." };
-    const ok = await sendFakturaMail(raekke);
+    // To samtidige tryk: kun det første sender (låsen i databasen).
+    const udfald = await sendFakturaMailLaast(raekke);
     genopfrisk();
-    return ok ? { ok: true } : { fejl: "Mailen kunne ikke sendes. Download PDF'en, og send den selv, eller prøv igen senere." };
+    if (udfald === "sendt") return { ok: true };
+    if (udfald === "i_gang") return { fejl: "Mailen er ved at blive sendt. Vent et øjeblik, og genindlæs siden." };
+    return { fejl: "Mailen kunne ikke sendes. Download PDF'en, og send den selv, eller prøv igen senere." };
   } catch (err) {
     await logDriftFejl({ kilde: "action", hvor: "sendFirmaFakturaMailIgen", fejl: err });
     return { fejl: GENERISK };

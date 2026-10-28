@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { huskelisteAfsnit } from "./huskelisteAfsnit";
 
 const MIGRATION = readFileSync(
   path.resolve(import.meta.dirname, "../../supabase/migrations/20261102240000_bidhamr_bot.sql"),
@@ -478,5 +479,110 @@ describe("USD-loft pr. gruppe (20261102310000)", () => {
     expect((await nyMaks(null, A, IP7, -5)).kode).toBe("ok");
     expect((await nyMaks(null, A, IP7, -5)).kode).toBe("ok");
     await nulstilDoegn();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 20261102410000 (afsnit "bot"): svar_i_gang og log over ændrede lofter.
+// ---------------------------------------------------------------------------
+describe("svar_i_gang og log over lofterne (20261102410000)", () => {
+  const CHEF = "00000000-0000-4000-8000-0000000000e1";
+  const IP8 = "8".repeat(64);
+  const gemSvar = (samtale: string) =>
+    rpc("public.bot_gem_svar($1, 'Svar', 'claude-haiku-5-5', 1, 1, 0, 0, 0.001, '{}', 'end_turn', 1)", [samtale]);
+
+  beforeAll(async () => {
+    // moderation_log som i drift (de dele, afsnittet bruger).
+    await db.exec(`
+      create table public.moderation_log (id uuid primary key default gen_random_uuid(), medarbejder_id uuid not null,
+        handling text not null, maal_type text not null, maal_id uuid not null, bruger_id uuid, aarsag text not null,
+        oprettet_kl timestamptz not null default now(),
+        constraint moderation_log_handling_check check (handling = any (array['advarsel', 'suspension'])),
+        constraint moderation_log_maal_type_check check (maal_type = any (array['bruger', 'auktion'])));
+    `);
+    const afsnit = huskelisteAfsnit("bot");
+    await db.exec(afsnit);
+    await db.exec(afsnit); // idempotent
+    await nulstilDoegn();
+  });
+
+  it("en ny besked afvises, mens et svar er i gang i samme samtale - andre samtaler er ikke ramt", async () => {
+    const forste = await ny(null, A, IP8);
+    expect(forste.kode).toBe("ok");
+    const s = forste.samtale_id as string;
+    expect(await ny(s, A, IP8)).toEqual({ kode: "svar_i_gang" });
+    // Beskeden er ikke gemt.
+    expect(Number((await db.query<{ n: number }>(
+      `select count(*)::int n from public.bot_beskeder where samtale_id = $1 and rolle = 'bruger'`, [s])).rows[0].n)).toBe(1);
+    // En anden samtale (samme bruger) må gerne.
+    expect((await ny(null, A, IP8)).kode).toBe("ok");
+    // Når svaret er gemt, kan brugeren skrive igen.
+    await gemSvar(s);
+    expect((await ny(s, A, IP8)).kode).toBe("ok");
+    // Et svar, der aldrig blev gemt (serveren døde), spærrer kun i 60 sekunder.
+    expect(await ny(s, A, IP8)).toEqual({ kode: "svar_i_gang" });
+    await db.exec(`update public.bot_beskeder set oprettet_kl = now() - interval '2 minutes' where samtale_id = '${s}'`);
+    expect((await ny(s, A, IP8)).kode).toBe("ok");
+    await nulstilDoegn();
+  });
+
+  it("uden login: samme regel", async () => {
+    const forste = await ny(null, null, IP8);
+    expect(forste.kode).toBe("ok");
+    expect(await ny(forste.samtale_id as string, null, IP8)).toEqual({ kode: "svar_i_gang" });
+    await nulstilDoegn();
+  });
+
+  it("ændrede lofter logges i moderation_log med gamle og nye værdier", async () => {
+    await db.exec(`delete from public.moderation_log`);
+    await db.exec(`update public.bot_indstillinger set doegnloft_usd = 5, anon_andel = 0.5, bruger_loft_usd = 0.25, doegnloft_anon = 2000`);
+    await db.exec(`delete from public.moderation_log`);
+    await db.query(
+      `update public.bot_indstillinger set doegnloft_usd = 8, anon_andel = 0.4, opdateret_af = $1, opdateret_kl = now()`, [CHEF]);
+    const r = await db.query<{ medarbejder_id: string; handling: string; maal_type: string; maal_id: string; aarsag: string }>(
+      `select medarbejder_id, handling, maal_type, maal_id, aarsag from public.moderation_log`);
+    expect(r.rows).toHaveLength(1);
+    const l = r.rows[0];
+    expect(l).toMatchObject({ medarbejder_id: CHEF, handling: "bot_lofter_aendret", maal_type: "system", maal_id: CHEF });
+    expect(l.aarsag).toMatch(/døgnloft 5\.00 -> 8\.00 USD/);
+    expect(l.aarsag).toMatch(/andel uden login 50\.0 -> 40\.0 %/);
+    const json = JSON.parse(l.aarsag.slice(l.aarsag.indexOf(" | ") + 3));
+    expect(Number(json.gammel.doegnloft_usd)).toBe(5);
+    expect(Number(json.ny.doegnloft_usd)).toBe(8);
+    expect(Number(json.ny.anon_andel)).toBe(0.4);
+
+    // Uændrede lofter (fx alarm-tidspunktet fra bot_ny_besked) logges ikke.
+    await db.exec(`update public.bot_indstillinger set usd_alarm_kl = now(), opdateret_kl = now()`);
+    expect(Number((await db.query<{ n: number }>(`select count(*)::int n from public.moderation_log`)).rows[0].n)).toBe(1);
+    // Uden opdateret_af: systembrugeren.
+    await db.exec(`update public.bot_indstillinger set opdateret_af = null, doegnloft_usd = 5, anon_andel = 0.5`);
+    const sys = await db.query<{ medarbejder_id: string }>(
+      `select medarbejder_id from public.moderation_log order by oprettet_kl desc, id limit 2`);
+    expect(sys.rows.map((x) => x.medarbejder_id)).toContain("00000000-0000-4000-8000-0000000b1d00");
+  });
+
+  it("flettede check-constraints: de gamle værdier er bevaret", async () => {
+    const r = await db.query<{ conname: string; def: string }>(
+      `select conname, pg_get_constraintdef(oid) def from pg_constraint where conrelid = 'public.moderation_log'::regclass order by 1`);
+    const h = r.rows.find((x) => x.conname === "moderation_log_handling_check")!.def;
+    for (const v of ["advarsel", "suspension", "bot_lofter_aendret"]) expect(h).toContain(v);
+    const t = r.rows.find((x) => x.conname === "moderation_log_maal_type_check")!.def;
+    for (const v of ["bruger", "auktion", "system"]) expect(t).toContain(v);
+  });
+
+  it("drifttjek: en ukendt udgave af bot_ny_besked stopper afsnittet", async () => {
+    const d = new PGlite();
+    await d.exec(STUB);
+    await d.exec(MIGRATION);
+    await d.exec(RETTELSER);
+    await d.exec(PR_GRUPPE);
+    await d.exec(`create table public.moderation_log (id uuid primary key default gen_random_uuid(), medarbejder_id uuid not null,
+      handling text not null check (handling = any (array['x'])), maal_type text not null, maal_id uuid not null, bruger_id uuid,
+      aarsag text not null)`);
+    const fn = (await d.query<{ def: string }>(
+      `select pg_get_functiondef('public.bot_ny_besked(uuid,uuid,text,text,text,numeric)'::regprocedure) def`)).rows[0].def;
+    await d.exec(fn.replace("c_maks_bruger   constant integer := 30;", "c_maks_bruger   constant integer := 31;"));
+    await expect(d.exec(huskelisteAfsnit("bot"))).rejects.toThrow(/bot_ny_besked.*md5/);
+    await d.close();
   });
 });

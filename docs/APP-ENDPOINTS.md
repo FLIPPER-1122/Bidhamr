@@ -252,6 +252,9 @@ via en stjålet session).
    `409 optaget` (adressen blev taget, før koden blev brugt), `403 staff` / `firma` / `suspenderet` / `lukket` /
    `slettet`, `429 for_mange`. Ved skiftet holder alle gamle links og koder til den gamle adresse ("Glemt
    adgangskode", bekræftelse) op med at virke; sessionen og refresh-tokenet virker videre.
+   Fra `20261102410000`: log-ud af andre enheder, mailen til den gamle adresse og Stripe sker via en outbox i
+   databasen (oprettet i samme transaktion som skiftet). Dør serveren midt i skiftet, gør cron'en resten inden for
+   ca. 5 minutter. Appens egen session (fra Bearer-tokenet) logges ikke ud - intet at ændre i appen.
 
 Grænser: `konto_app_ip`, `adgangskode_bruger` (deles med skift af adgangskode og sletning), `email_skift_bruger`
 (5/time), `email_skift_ny_email` (3/time pr. ny adresse - tælles først efter en rigtig adgangskode) og
@@ -386,6 +389,16 @@ Det er BidHamrs regler og handelsbetingelser, der gælder."
   tilbage). Vis `fejl`-teksten og et link til login og til kontaktformularen.
 - Filteret: selve ordet "forsikring" (og bøjninger) bliver til "BidHamr Beskyttelse", sammensatte ord som
   "indboforsikring" til "dækning" - intet at gøre i appen.
+
+Ændret i `20261102410000_huskeliste_oprydning.sql` (28. okt. 2026):
+- **Ny kode `409 svar_i_gang`** på `POST /api/app/bot`: botten svarer stadig på den forrige besked i samme samtale
+  (en besked fra de sidste 60 sekunder uden svar). Appen skal ikke sende en ny besked, før streamen for den forrige
+  er slut (`{ "type": "slut" }`) - lås feltet og knappen "Send", mens svaret streames. Kommer koden alligevel, så
+  vis `fejl`-teksten, behold brugerens tekst i feltet, og lad brugeren sende igen, når svaret er kommet. Samtalen
+  er ikke ødelagt (start IKKE en ny samtale).
+- **App Store-reglen**: botten nævner aldrig køb af point på bidhamr.dk eller pointpriser. Svar i samtaler fra
+  appen filtreres sætning for sætning, så tekststykkerne i streamen kan komme i lidt større bidder (hele
+  sætninger) - intet at gøre i appen.
 
 ## Køb af boost-point i appen: GET/POST /api/app/boost/iap (Apple og Google)
 

@@ -244,6 +244,9 @@ const KODE_FEJL: Record<string, string> = {
     "Indpakningen er vurderet ordentlig i denne sag. Vælg BidHamr som betaler – eller fortryd vurderingen først.",
   indpakning_daarlig:
     "Sælgeren har fået påmindelse/advarsel for dårlig indpakning i denne sag. Vælg sælgeren som betaler.",
+  // 20261102410000: sælgeren får kun en regning for returfragten med bevis.
+  billeder_mangler:
+    "Sælgeren kan kun betale returfragten, hvis køberen har sendt et billede af pakken eller labelen i sagen. Vælg BidHamr som betaler.",
   vaelg_type: "Sagen er af typen \"Andet\". Ret sagstypen, før køberen får medhold.",
   ugyldig_type: "Vælg en sagstype.",
   uaendret: "Sagen har allerede den type.",

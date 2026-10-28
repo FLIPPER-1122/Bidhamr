@@ -87,3 +87,78 @@ export function lavOrdFilter(): OrdFilter {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// App Store-reglen (Apple 3.1.1/3.1.3, review 28. okt. 2026): i appen må
+// botten ALDRIG sige "køb point på bidhamr.dk" eller nævne BidHamrs
+// pointpriser. Systemprompten siger det til modellen (viden.ts); filteret her
+// fanger det, hvis modellen alligevel skriver det, i samtaler fra appen
+// (bot_samtaler.kilde = 'app' eller et kald fra appen).
+//
+// Svaret holdes tilbage sætning for sætning. En sætning, der nævner point
+// eller boost OG enten en pris eller hjemmesiden (bidhamr.dk, hjemmesiden,
+// browseren ...), erstattes af en neutral sætning (første gang) eller
+// fjernes (senere). Alt andet sendes uændret.
+
+const POINT_ORD = /(?<![\p{L}\p{N}])(?:boost|point)/iu;
+const PRIS = /\d[\d.,]*\s*(?:kroner|kr|dkk|usd|euro|€|\$|,-)(?![\p{L}])|(?:(?<![\p{L}])kr\.?|dkk|\$|€)\s*\d/iu;
+const HJEMMESIDE =
+  /bidhamr\s*\.\s*dk|(?<![\p{L}])(?:hjemmeside|webside|website|browser|internetside)|www\.|på nettet|på (?:din |en )?computer/iu;
+
+export const APP_ERSTATNING =
+  "Spørgsmål om point og boost kan en medarbejder hjælpe dig med - tryk på \"Kontakt en rigtig medarbejder\".";
+
+// Må sætningen IKKE vises i appen?
+export function erForbudtIApp(saetning: string): boolean {
+  if (!POINT_ORD.test(saetning)) return false;
+  return PRIS.test(saetning) || HJEMMESIDE.test(saetning);
+}
+
+// Sætningsgrænse: tegnsætning + mellemrum + stort bogstav/tal/citat (så
+// "49 kr. på bidhamr.dk" ikke deles), eller linjeskift.
+const SAETNING_SLUT = /[.!?…]+["')\]»”]*[ \t]+(?=[\p{Lu}\p{N}"„“«(-])|\n+/gu;
+// Længere end dette uden sætningsgrænse: tjekkes og sendes alligevel.
+const MAKS_SAETNING = 2000;
+
+export function lavAppFilter(): OrdFilter {
+  let rest = "";
+  let erstattet = false;
+  const ren = (stykke: string): string => {
+    if (!erForbudtIApp(stykke)) return stykke;
+    if (erstattet) return "";
+    erstattet = true;
+    const hale = stykke.match(/\s*$/)?.[0] ?? "";
+    return `${APP_ERSTATNING}${hale}`;
+  };
+  return {
+    skub(bid) {
+      rest += bid;
+      let ud = "";
+      let start = 0;
+      for (const m of rest.matchAll(SAETNING_SLUT)) {
+        const slut = (m.index ?? 0) + m[0].length;
+        // Et linjeskift sidst kan blive efterfulgt af flere - vent.
+        if (slut >= rest.length) break;
+        ud += ren(rest.slice(start, slut));
+        start = slut;
+      }
+      rest = rest.slice(start);
+      if (rest.length > MAKS_SAETNING) {
+        ud += ren(rest);
+        rest = "";
+      }
+      return ud;
+    },
+    toem() {
+      const ud = rest ? ren(rest) : "";
+      rest = "";
+      return ud;
+    },
+  };
+}
+
+// Hele teksten på én gang (fx til test).
+export function appSikkerTekst(tekst: string): string {
+  const f = lavAppFilter();
+  return f.skub(tekst) + f.toem();
+}

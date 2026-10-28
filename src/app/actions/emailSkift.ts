@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { logDriftFejl } from "@/lib/drift";
 import { EMAIL_SKIFT, anmodEmailSkiftFor, bekraeftEmailSkiftFor } from "@/lib/emailSkift";
+import { sessionIdFraToken } from "@/lib/enheder";
 
 const IKKE_LOGGET_IND = "Du er ikke logget ind længere. Log ind igen.";
 
@@ -34,9 +35,15 @@ export async function bekraeftEmailSkift(kode: string): Promise<{ ok: true; emai
     const supabase = await createClient();
     const { data } = await hentLoggetIndBruger(supabase);
     if (!data.user) return { fejl: IKKE_LOGGET_IND };
+    // Denne enheds session (cookien) logges ikke ud. Brugeren er verificeret
+    // ovenfor (getUser), så tokenet fra cookien må læses her.
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     const r = await bekraeftEmailSkiftFor({
       bruger: data.user,
       kode,
+      sessionId: sessionIdFraToken(session?.access_token),
       logUdAndre: async () => (await supabase.auth.signOut({ scope: "others" })).error,
     });
     if ("fejl" in r) return { fejl: r.fejl };

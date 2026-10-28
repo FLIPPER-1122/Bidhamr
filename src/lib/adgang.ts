@@ -31,7 +31,7 @@ import {
 } from "@/lib/rateLimit";
 import { renEmail } from "@/lib/kontoOprettelse";
 import { hentKontoStatus } from "@/lib/kontoStatus";
-import { registrerLogin } from "@/lib/enheder";
+import { erKendtEnhed, registrerLogin } from "@/lib/enheder";
 import { logDriftFejl } from "@/lib/drift";
 import {
   aktivTotpFaktor,
@@ -69,14 +69,15 @@ async function kunAdminVaert(): Promise<boolean> {
 // Supabase (bcrypt + netværk) tager typisk 0,2-0,8 s; gulvet ligger klart
 // over, så et svar for en ukendt e-mail (intet login) tager lige så lang tid
 // som et for en medarbejder med forkert adgangskode.
-const MIN_SVARTID_MS = 2000;
+// Sættes ned i testene.
+export const ADMIN_SVARTID = { minMs: 2000 };
 
 async function medMinimumSvartid<T>(fn: () => Promise<T>): Promise<T> {
   const start = Date.now();
   try {
     return await fn();
   } finally {
-    const rest = MIN_SVARTID_MS - (Date.now() - start);
+    const rest = ADMIN_SVARTID.minMs - (Date.now() - start);
     if (rest > 0) await new Promise((r) => setTimeout(r, rest));
   }
 }
@@ -115,6 +116,25 @@ async function staffMaaLoggeInd(email: string): Promise<StaffOpslag> {
   return { kode: "ja", id: u.id };
 }
 
+// Loftet pr. e-mail alene (uden IP) stopper, at mange IP'er gætter løs på
+// samme konto. Men en angriber kunne også bruge det til at spærre en
+// medarbejder ude ved at ramme loftet med forkerte forsøg (PLAN-MOD-
+// LANCERING, "staff kan ikke spærres ude"). Derfor gælder det IKKE fra en
+// kendt enhed for netop den konto (cookien bh_enhed fra et tidligere login
+// på admin-hosten, erKendtEnhed) - dér gælder kun lofterne pr. IP og pr.
+// e-mail+IP. Fra alle andre browsere tælles loftet som før, også for
+// e-mails, der ikke er staff, og svaret er det samme, så hverken tekst
+// eller svartid (MIN_SVARTID_MS) afslører, om e-mailen er staff. Tælles
+// efter opslaget, men for alle uden en kendt enhed.
+async function graensePrEmail(
+  navn: "admin_login_email" | "admin_gendan_email",
+  email: string,
+  adgang: StaffOpslag,
+): Promise<string | null> {
+  if (adgang.kode === "ja" && (await erKendtEnhed(adgang.id))) return null;
+  return graenseFejl(await tjekGraenserLukket([[navn, email]]));
+}
+
 type Naeste = "kode" | "opsaet" | "lukket";
 
 // Log ind med e-mail og adgangskode. Svaret siger, hvilket trin der er det
@@ -142,7 +162,6 @@ async function logIndAdminTrin(emailInput: string, password: string): Promise<{ 
       await tjekGraenserLukket([
         ["admin_login_ip", ip],
         ["admin_login_email_ip", `${email}|${ip}`],
-        ["admin_login_email", email],
       ]),
     );
     if (graense) return { fejl: graense };
@@ -150,6 +169,10 @@ async function logIndAdminTrin(emailInput: string, password: string): Promise<{ 
     // Først opslaget: kun aktive staff-konti logges ind uden CAPTCHA.
     const adgang = await staffMaaLoggeInd(email);
     if (adgang.kode === "fejl") return { fejl: GENERISK };
+
+    // Loftet pr. e-mail (alle IP'er) - se graensePrEmail.
+    const emailGraense = await graensePrEmail("admin_login_email", email, adgang);
+    if (emailGraense) return { fejl: emailGraense };
     if (adgang.kode === "nej") return { fejl: FORKERT_LOGIN };
 
     const supabase = await createClient();
@@ -453,12 +476,14 @@ async function gendanAdminTrin(
     }
 
     const ip = await klientIp();
-    const graense = graenseFejl(await tjekGraenserLukket([["admin_gendan_ip", ip], ["admin_gendan_email", email]]));
+    const graense = graenseFejl(await tjekGraenserLukket([["admin_gendan_ip", ip]]));
     if (graense) return { fejl: graense };
 
     // Som logIndAdmin: kun aktive staff-konti logges ind uden CAPTCHA.
     const adgang = await staffMaaLoggeInd(email);
     if (adgang.kode === "fejl") return { fejl: PROEV_IGEN_OM_LIDT };
+    const emailGraense = await graensePrEmail("admin_gendan_email", email, adgang);
+    if (emailGraense) return { fejl: emailGraense };
     if (adgang.kode === "nej") return { fejl: FORKERT };
 
     const supabase = await createClient();

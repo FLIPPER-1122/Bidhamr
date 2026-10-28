@@ -205,7 +205,13 @@ export default function BotChat({ brugerNoegle, maksTegn }: { brugerNoegle: stri
       });
       if (!res.ok || !res.body) {
         const j = (await res.json().catch(() => null)) as { fejl?: string; kode?: string } | null;
-        setBeskeder((b) => b.slice(0, -1));
+        if (j?.kode === "svar_i_gang") {
+          // Beskeden er ikke gemt: tilbage i feltet, så den kan sendes igen.
+          setBeskeder((b) => b.slice(0, -2));
+          setTekst(besked);
+        } else {
+          setBeskeder((b) => b.slice(0, -1));
+        }
         setFejl(j?.fejl ?? GENERISK);
         if (j?.kode === "ukendt_samtale" || j?.kode === "samtale_fuld") setNySamtale(true);
         if (j?.kode === "loft_bruger" || j?.kode === "loft_ip" || j?.kode === "loft_alle" || j?.kode === "loft_bruger_usd") {

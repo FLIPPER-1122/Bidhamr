@@ -4,6 +4,7 @@ import { logDriftFejl } from "@/lib/drift";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { APP_GENERISK, APP_IKKE_LOGGET_IND, appBruger, appSvar, bearerToken, fremmedOrigin, laesJsonKrop } from "@/lib/appApi";
 import { bekraeftEmailSkiftFor } from "@/lib/emailSkift";
+import { sessionIdFraToken } from "@/lib/enheder";
 import { EMAIL_SKIFT_STATUS } from "../status";
 
 // Skift af e-mail fra appen, trin 2: koden fra mailen til den nye adresse.
@@ -50,7 +51,10 @@ export async function POST(req: NextRequest) {
     const r = await bekraeftEmailSkiftFor({
       bruger,
       kode,
-      // Andre enheder logges ud - denne bliver logget ind.
+      // Andre enheder logges ud - denne (appens session) bliver logget ind.
+      // Tokenet er netop valideret af appBruger.
+      sessionId: sessionIdFraToken(token),
+      // Kun hvis databasen ikke er migreret (20261102410000).
       logUdAndre: async () => (await createAdminClient().auth.admin.signOut(token, "others")).error,
     });
     if ("fejl" in r) return appSvar(EMAIL_SKIFT_STATUS[r.kode] ?? 400, { fejl: r.fejl, kode: r.kode });

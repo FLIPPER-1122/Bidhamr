@@ -9,7 +9,9 @@ import "server-only";
 //    plante falske bot-svar i samtalen.
 // 3. Manuel værktøjsløkke med streaming og et loft på BOT_MAKS_RUNDER runder.
 //    Værktøjerne læser kun brugerens egne data med brugerens egen session.
-//    Ordet "forsikring" filtreres fra svaret (filter.ts).
+//    Ordet "forsikring" filtreres fra svaret (filter.ts). I samtaler fra
+//    appen fjernes desuden sætninger om at købe point på hjemmesiden eller
+//    om pointpriser (App Store-reglen, filter.ts).
 // 4. Svaret og forbruget (tokens og pris) gemmes (bot_gem_svar) - også når
 //    svaret afbrydes (brugeren lukker, fejl eller den samlede deadline
 //    BOT_DEADLINE_MS, som ligger under routens maxDuration).
@@ -46,7 +48,7 @@ import {
 } from "@/lib/bot/konfig";
 import { botKontekst, botSystemprompt } from "@/lib/bot/viden";
 import { BOT_VAERKTOEJER, koerVaerktoej } from "@/lib/bot/vaerktoejer";
-import { lavOrdFilter } from "@/lib/bot/filter";
+import { lavAppFilter, lavOrdFilter } from "@/lib/bot/filter";
 
 export const BOT_IKKE_TILGAENGELIG = { status: 404, fejl: "BidHamr-bot er ikke tilgængelig.", kode: "ikke_tilgaengelig" } as const;
 
@@ -106,6 +108,18 @@ async function hentHistorik(samtaleId: string): Promise<Anthropic.MessageParam[]
   return raekker.map((r) => ({ role: r.rolle === "bruger" ? "user" : "assistant", content: r.tekst }));
 }
 
+// Er samtalen startet i appen (bot_samtaler.kilde)? Ved fejl: ja (så
+// App Store-filteret hellere bruges én gang for meget).
+async function samtaleFraApp(samtaleId: string): Promise<boolean> {
+  const { data, error } = await createAdminClient()
+    .from("bot_samtaler")
+    .select("kilde")
+    .eq("id", samtaleId)
+    .maybeSingle<{ kilde: string }>();
+  if (error || !data) return true;
+  return data.kilde === "app";
+}
+
 export async function startBotSvar(k: BotKald): Promise<BotStart> {
   const noegle = botNoegle();
   const model = botModel();
@@ -151,6 +165,7 @@ export async function startBotSvar(k: BotKald): Promise<BotStart> {
 
   const historik = await hentHistorik(samtaleId);
   if (!historik || historik.length === 0) return loftFejl("fejl");
+  const iApp = k.kilde === "app" || (await samtaleFraApp(samtaleId));
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -175,6 +190,8 @@ export async function startBotSvar(k: BotKald): Promise<BotStart> {
       let tidenGik = false;
       const messages: Anthropic.MessageParam[] = [...historik];
       const filter = lavOrdFilter();
+      // App Store-reglen: kun i samtaler fra appen.
+      const appFilter = iApp ? lavAppFilter() : null;
       // Den igangværende runde (til forbruget, hvis den afbrydes).
       let aktiv: ReturnType<Anthropic["messages"]["stream"]> | null = null;
       let rundeTegn = 0;
@@ -184,8 +201,14 @@ export async function startBotSvar(k: BotKald): Promise<BotStart> {
         tekst += t;
         send({ type: "tekst", tekst: t });
       };
-      const skriv = (t: string) => udsend(filter.skub(t));
-      const toem = () => udsend(filter.toem());
+      const skriv = (t: string) => {
+        const ren = filter.skub(t);
+        udsend(appFilter ? appFilter.skub(ren) : ren);
+      };
+      const toem = () => {
+        const ren = filter.toem();
+        udsend(appFilter ? appFilter.skub(ren) + appFilter.toem() : ren);
+      };
 
       const timer = setTimeout(
         () => {

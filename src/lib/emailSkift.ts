@@ -12,7 +12,9 @@ import "server-only";
 //      (Supabase' admin-API). Databasen spejler public.users.email,
 //      firmaets kontakt_email og loggen i samme transaktion (trigger på
 //      auth.users). Andre enheder logges ud, den gamle adresse får en mail,
-//      og Stripe-kunden/Connect-kontoen får den nye adresse.
+//      og Stripe-kunden/Connect-kontoen får den nye adresse - via
+//      email_skift_outbox (20261102410000), som oprettes i samme transaktion
+//      som skiftet. Dør serveren midt i det, gør betalings-cron'en resten.
 //
 // Staff-konti (medarbejder, admin, chef, erhvervssælger) kan IKKE selv skifte
 // e-mail - de kontakter chefen. Firmakonti (konto_type 'erhverv') kontakter
@@ -220,8 +222,12 @@ export async function anmodEmailSkiftFor(args: {
 export async function bekraeftEmailSkiftFor(args: {
   bruger: Pick<User, "id" | "email">;
   kode: unknown;
-  // Logger andre enheder ud - denne bliver logget ind (som ved skift af
-  // adgangskode): cookie-sessionen på hjemmesiden, Bearer-tokenet i appen.
+  // Den kaldende enheds Supabase-session (session_id i access tokenet):
+  // cookie-sessionen på hjemmesiden, Bearer-tokenet i appen. Den logges ikke
+  // ud. null = ukendt - så logges alle sessioner fra før skiftet ud.
+  sessionId: string | null;
+  // Kun hvis databasen ikke er migreret endnu (20261102410000): logger andre
+  // enheder ud med Supabase' eget kald, som før outboxen.
   logUdAndre: () => Promise<AuthFejlInfo | null>;
 }): Promise<{ ok: true; email: string } | EmailSkiftFejl> {
   const { bruger } = args;
@@ -254,10 +260,26 @@ export async function bekraeftEmailSkiftFor(args: {
   const nyEmail = svar.ny_email;
   const gammelEmail = bruger.email ?? svar.gammel_email ?? null;
 
-  // Login-adressen skiftes nu. Databasen spejler i samme transaktion og
-  // rydder gamle links/koder. Kaster kaldet (netværk, timeout), afsluttes
-  // anmodningen som 'fejl', så den ikke sidder fast i 'bekraeftet'
-  // (email_skift_anmod rydder også selv op efter 5 minutter).
+  // Den enhed, der skifter, gemmes FØR Supabase Auth opdateres, så outboxen
+  // (20261102410000) ved, hvilken session der ikke skal logges ud - også hvis
+  // serveren dør lige efter skiftet. Fejler det, logges alle sessioner fra
+  // før skiftet ud (det sikre valg).
+  const sessionId = args.sessionId && UUID_RE.test(args.sessionId) ? args.sessionId : null;
+  const { error: sessionFejl } = await admin.rpc("email_skift_behold_session", {
+    p_id: svar.id,
+    p_bruger: bruger.id,
+    p_session: sessionId,
+  });
+  const outbox = !manglerMigration(sessionFejl);
+  if (sessionFejl && outbox) {
+    await logDriftFejl({ kilde: "action", hvor: "emailSkift/behold_session", fejl: sessionFejl, brugerId: bruger.id });
+  }
+
+  // Login-adressen skiftes nu. Databasen spejler i samme transaktion,
+  // rydder gamle links/koder og opretter outbox-rækken. Kaster kaldet
+  // (netværk, timeout), afsluttes anmodningen som 'fejl', så den ikke sidder
+  // fast i 'bekraeftet' (email_skift_anmod rydder også selv op efter 5
+  // minutter). Er skiftet alligevel sket i Supabase, tager cron'en outboxen.
   let authFejl: Awaited<ReturnType<typeof admin.auth.admin.updateUserById>>["error"];
   try {
     ({ error: authFejl } = await admin.auth.admin.updateUserById(bruger.id, { email: nyEmail, email_confirm: true }));
@@ -287,6 +309,15 @@ export async function bekraeftEmailSkiftFor(args: {
   }
   await nulstilGraense("email_skift_kode_bruger", bruger.id);
 
+  if (outbox) {
+    // Log ud af andre enheder, ryd gamle recovery-tokens, mail til den gamle
+    // adresse og Stripe - via outboxen. Det, der ikke når at blive gjort her,
+    // gør betalings-cron'en inden for 5 minutter.
+    await koerEmailSkiftOutbox({ skiftId: svar.id });
+    return { ok: true, email: nyEmail };
+  }
+
+  // Databasen er ikke migreret (20261102410000): som før.
   // Andre enheder logges ud - denne bliver logget ind.
   const udFejl = await args.logUdAndre();
   if (udFejl) {
@@ -306,6 +337,97 @@ export async function bekraeftEmailSkiftFor(args: {
 
   await synkEmailTilStripe(bruger.id, nyEmail);
   return { ok: true, email: nyEmail };
+}
+
+// ------------------------------------------------------------ 3. Outbox
+
+// Mangler funktionen/tabellen (migrationen 20261102410000 er ikke kørt)?
+function manglerMigration(fejl: { code?: string } | null | undefined): boolean {
+  return fejl?.code === "PGRST202" || fejl?.code === "42883" || fejl?.code === "42P01" || fejl?.code === "PGRST205";
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Samme loft som email_skift_outbox_tag (forsoeg < 12).
+export const EMAIL_SKIFT_OUTBOX_MAKS_FORSOEG = 12;
+
+type OutboxRaekke = {
+  id: string;
+  bruger_id: string;
+  skiftet_kl: string | null;
+  gammel_email: string | null;
+  ny_email: string | null;
+  log_ud: boolean;
+  mail: boolean;
+  stripe: boolean;
+  forsoeg: number;
+};
+
+const skjulEmail = (t: string) => t.replace(/[^\s@]+@[^\s@]+/g, "[e-mail]");
+
+// Det, der skal ske efter et skift (email_skift_outbox): log ud af andre
+// enheder + ryd gamle recovery-tokens (databasen), mail til den gamle adresse
+// ("Var det ikke dig?") og Stripe. Hvert trin markeres for sig, så et nyt
+// forsøg kun gør det, der mangler. skiftId: kun det skift (lige efter
+// skiftet); ellers de ældste åbne rækker (betalings-cron'en). Kaster aldrig
+// for én række - fejlen gemmes på rækken og logges i /admin/drift.
+// null = migrationen er ikke kørt.
+export async function koerEmailSkiftOutbox(
+  opts: { skiftId?: string; graense?: number } = {},
+): Promise<{ behandlet: number; fejl: number } | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("email_skift_outbox_tag", {
+    p_skift: opts.skiftId ?? null,
+    p_graense: opts.graense ?? 20,
+  });
+  if (error) {
+    if (manglerMigration(error)) return null;
+    await logDriftFejl({ kilde: "server", hvor: "emailSkift/outbox_tag", fejl: error });
+    return { behandlet: 0, fejl: 1 };
+  }
+  const raekker = (Array.isArray(data) ? data : []) as OutboxRaekke[];
+  let behandlet = 0;
+  let fejl = 0;
+  for (const r of raekker) {
+    try {
+      if (!r.log_ud) {
+        const { error: udFejl } = await admin.rpc("email_skift_outbox_log_ud", { p_id: r.id });
+        if (udFejl) throw new Error(`log ud: ${udFejl.code ?? ""} ${udFejl.message}`);
+      }
+      if (!r.mail) {
+        const gammel = r.gammel_email;
+        // Slettet konto (adresserne er fjernet) eller pladsholder: ingen mail.
+        if (gammel && r.ny_email && !gammel.endsWith(".invalid")) {
+          const tidspunkt = r.skiftet_kl ? new Date(r.skiftet_kl) : new Date();
+          const res = await sendHandelMailDetaljer(gammel, emailAendretMail({ tidspunkt, nyEmail: r.ny_email }));
+          if (!res.ok) throw new Error(`mail til den gamle adresse: ${String(res.fejl)}`);
+        }
+        const { error: trinFejl } = await admin.rpc("email_skift_outbox_trin", { p_id: r.id, p_trin: "mail" });
+        if (trinFejl) throw new Error(`mail markeret: ${trinFejl.message}`);
+      }
+      if (!r.stripe) {
+        // synkEmailTilStripe logger selv sine fejl og stopper ikke skiftet.
+        if (r.ny_email && !r.ny_email.endsWith(".invalid")) await synkEmailTilStripe(r.bruger_id, r.ny_email);
+        const { error: trinFejl } = await admin.rpc("email_skift_outbox_trin", { p_id: r.id, p_trin: "stripe" });
+        if (trinFejl) throw new Error(`Stripe markeret: ${trinFejl.message}`);
+      }
+      behandlet++;
+    } catch (err) {
+      fejl++;
+      const tekst = skjulEmail(err instanceof Error ? err.message : String(err));
+      const { error: gemFejl } = await admin.rpc("email_skift_outbox_fejl", { p_id: r.id, p_fejl: tekst });
+      if (gemFejl) console.error("email_skift_outbox_fejl fejlede:", gemFejl.message);
+      await logDriftFejl({
+        kilde: "server",
+        hvor:
+          r.forsoeg >= EMAIL_SKIFT_OUTBOX_MAKS_FORSOEG
+            ? "emailSkift/outbox (opgivet efter 12 forsøg - log brugeren ud og send mailen manuelt)"
+            : "emailSkift/outbox",
+        fejl: tekst,
+        brugerId: r.bruger_id,
+      });
+    }
+  }
+  return { behandlet, fejl };
 }
 
 // Den private Stripe-kunde (kvitteringer, gemt kort) får den nye adresse.
