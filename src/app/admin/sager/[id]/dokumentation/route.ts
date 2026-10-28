@@ -7,9 +7,11 @@ import { bygDokument } from "@/lib/sagDokumentation/indhold";
 import { lavDokumentationPdf } from "@/lib/sagDokumentation/pdf";
 import {
   LOG_FEJL,
+  MAKS_PR_TIME,
   dokumentationAfvisning,
   dokumentationFilnavn,
   erUdgave,
+  logFejlStatus,
   rensFelt,
   tjekFelter,
 } from "@/lib/sagDokumentation/regler";
@@ -21,8 +23,11 @@ import {
 //   saelger: staff (medarbejder+) med to-trins-login, som ikke er inhabil.
 //   politi:  kun chefen, som ikke er inhabil.
 // Rollen og inhabiliteten tjekkes her og igen i databasen
-// (sag_dokumentation_log). PDF'en laves, udleveringen logges, og først
-// derefter sendes PDF'en. Fejler loggen, sendes intet. PDF'en gemmes ikke.
+// (sag_dokumentation_log), som også tjekker aktiv to-trins-login og loftet
+// på MAKS_PR_TIME pr. time under en lås pr. medarbejder (20261102380000).
+// PDF'en laves, udleveringen logges, og først derefter sendes PDF'en.
+// Fejler et opslag eller loggen, sendes intet (500), og intet logges.
+// PDF'en gemmes ikke.
 // POST (ikke GET), så et link eller prefetch aldrig laver en udlevering.
 // Fejl returneres som JSON { fejl } (dialogen viser teksten).
 
@@ -31,8 +36,6 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Højst så mange PDF'er pr. medarbejder i timen (mod masseudtræk).
-const MAKS_PR_TIME = 30;
 
 function fejl(status: number, tekst: string) {
   return NextResponse.json({ fejl: tekst }, { status, headers: { "Cache-Control": "no-store" } });
@@ -85,6 +88,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const afvist = dokumentationAfvisning(rolle, udgave, inhabil);
     if (afvist) return fejl(403, afvist);
 
+    // Hurtig forhåndstælling, så PDF'en ikke laves forgæves. Loftet
+    // håndhæves i databasen (sag_dokumentation_log, under lås).
     const { count, error: cErr } = await admin
       .from("sag_dokumentation_udlevering")
       .select("id", { count: "exact", head: true })
@@ -109,7 +114,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     });
     if (logErr) throw new Error(`sag_dokumentation_log: ${logErr.message}`);
     const kode = (log as { kode?: string } | null)?.kode;
-    if (kode !== "ok") return fejl(kode === "ugyldig_sag" ? 404 : 403, LOG_FEJL[kode ?? ""] ?? "Udleveringen kunne ikke logges.");
+    if (kode !== "ok") return fejl(logFejlStatus(kode), LOG_FEJL[kode ?? ""] ?? "Udleveringen kunne ikke logges.");
 
     return new NextResponse(new Blob([pdf as Uint8Array<ArrayBuffer>], { type: "application/pdf" }), {
       status: 200,

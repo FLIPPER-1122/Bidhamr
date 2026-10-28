@@ -10,7 +10,7 @@ import { erSagType, SAG_BUCKET, SAG_KATEGORI_NAVN, type SagBilledeKategori, type
 import { PAKKE_BUCKET, PAKKE_KATEGORI_NAVN, erPakkeBilledeKategori } from "@/lib/pakkebilleder";
 import { standNavn } from "@/lib/stand";
 import { statusLabel } from "@/components/HandelStatusBadge";
-import type { SagDokumentationUdgave } from "@/lib/sagDokumentation/regler";
+import { auktionSti, billedStiTilladt, type SagDokumentationUdgave } from "@/lib/sagDokumentation/regler";
 import type {
   DokBillede,
   DokChatBesked,
@@ -22,9 +22,27 @@ import type {
 type Admin = ReturnType<typeof createAdminClient>;
 
 // Loft, så én PDF ikke bliver uhåndterlig (billeder op til 10 MB hver).
+// Rammes et loft, står det i PDF'en (DokumentationData.afkortet).
 const MAKS_BILLEDER_I_ALT = 60;
 const MAKS_BILLED_BYTES = 12 * 1024 * 1024;
-const MAKS_BESKEDER = 1000;
+export const MAKS_BESKEDER = 1000;
+export const MAKS_HAENDELSER = 500;
+export const MAKS_PAKKEBILLEDER = 20;
+export const MAKS_FORSENDELSER = 20;
+
+// Et opslag, der fejler, må aldrig give en PDF, der ser komplet ud: der
+// kastes, routen svarer 500, og udleveringen logges ikke.
+function tjek<T>(tabel: string, r: { data: T; error: { message: string } | null }): T {
+  if (r.error) throw new Error(`${tabel}: ${r.error.message}`);
+  return r.data;
+}
+
+function loft(vist: number, iAlt: number | null): { vist: number; iAlt: number } | undefined {
+  return iAlt !== null && iAlt > vist ? { vist, iAlt } : undefined;
+}
+
+export const BILLEDE_KAN_IKKE_KONVERTERES =
+  "(billedformatet kunne ikke konverteres til PDF – se originalen på sagssiden i admin)";
 
 class Optaelling {
   brugt = 0;
@@ -43,9 +61,14 @@ async function tilJpeg(bytes: Uint8Array): Promise<Uint8Array | null> {
     const sharp = (await import("sharp")).default;
     const ud = await sharp(bytes, { failOn: "none" }).rotate().jpeg({ quality: 85 }).toBuffer();
     return new Uint8Array(ud);
-  } catch {
+  } catch (e) {
+    console.error("[sag-dokumentation] billede kunne ikke konverteres:", e instanceof Error ? e.message : e);
     return null;
   }
+}
+
+function utilgaengelig(tekst: string, tidKl: string | null): DokBillede {
+  return { tekst: `${tekst} (kan ikke hentes)`, tid: tidKl, bytes: null, format: null };
 }
 
 async function hentBillede(
@@ -73,21 +96,12 @@ async function hentBillede(
         f = "jpg";
       }
     }
-    if (!f) return { tekst: `${tekst} (billedformatet kan ikke vises i PDF)`, tid: tidKl, bytes: null, format: null };
+    if (!f) return { tekst: `${tekst} ${BILLEDE_KAN_IKKE_KONVERTERES}`, tid: tidKl, bytes: null, format: null };
     return { tekst, tid: tidKl, bytes, format: f };
   } catch (e) {
     console.error("[sag-dokumentation] billede kunne ikke hentes:", bucket, e instanceof Error ? e.message : e);
     return { tekst: `${tekst} (billedet kunne ikke hentes)`, tid: tidKl, bytes: null, format: null };
   }
-}
-
-// Offentlig URL til auktionsbilledet -> bucket og sti i vores egen lagring.
-// Kun billeder i "auktion-billeder" hentes (aldrig vilkårlige URL'er).
-function auktionSti(url: string): string | null {
-  const m = /^https:\/\/[a-z0-9]+\.supabase\.co\/storage\/v1\/object\/public\/auktion-billeder\/([^?#]+)$/.exec(url);
-  if (!m) return null;
-  const sti = decodeURIComponent(m[1]);
-  return /\.\.|\\/.test(sti) ? null : sti;
 }
 
 function fragtfirmaNavn(kode: string | null): string {
@@ -172,8 +186,7 @@ export async function hentDokumentationData(
         .select("bud_oere, fragt_oere, total_oere, betalt_kl, status")
         .eq("trade_id", tradeId)
         .order("oprettet", { ascending: false })
-        .limit(1)
-        .maybeSingle<{ bud_oere: number | null; fragt_oere: number | null; total_oere: number | null; betalt_kl: string | null; status: string }>(),
+        .limit(50),
       admin
         .from("handel_levering")
         .select("maade, modtager_navn, modtager_adresse, modtager_postnummer, modtager_by, pakkeshop_navn, pakkeshop_adresse, pakkeshop_postnummer, pakkeshop_by")
@@ -181,13 +194,20 @@ export async function hentDokumentationData(
         .maybeSingle<Record<string, string | null>>(),
       admin
         .from("forsendelser")
-        .select("id, type, fragtfirma, transportoer, status, sporingsnummer, oprettet_kl, afleveret_kl, leveret_kl, vaegt_gram")
+        .select("id, type, fragtfirma, transportoer, status, sporingsnummer, oprettet_kl, afleveret_kl, leveret_kl, vaegt_gram", {
+          count: "exact",
+        })
         .eq("trade_id", tradeId)
         .order("oprettet_kl", { ascending: true })
-        .limit(20),
+        .limit(MAKS_FORSENDELSER),
       admin.from("sag_billeder").select("sti, kategori, oprettet_kl").eq("sag_id", sagId).order("oprettet_kl", { ascending: true }),
       admin.from("sag_svar").select("id, tekst, oprettet_kl").eq("sag_id", sagId).maybeSingle<{ id: string; tekst: string; oprettet_kl: string }>(),
-      admin.from("pakke_billeder").select("sti, kategori, oprettet_kl").eq("trade_id", tradeId).order("oprettet_kl", { ascending: true }).limit(20),
+      admin
+        .from("pakke_billeder")
+        .select("sti, kategori, oprettet_kl", { count: "exact" })
+        .eq("trade_id", tradeId)
+        .order("oprettet_kl", { ascending: true })
+        .limit(MAKS_PAKKEBILLEDER),
       admin
         .from("sag_anker")
         .select("id, part, indgivet_kl, begrundelse, status, behandlet_kl, afgoerelse_begrundelse")
@@ -203,9 +223,10 @@ export async function hentDokumentationData(
         }>(),
       admin
         .from("messages")
-        .select("sender_id, content, created_at, fra_bidhamr, blokeret_grund")
+        // De nyeste MAKS_BESKEDER (vendes om nedenfor).
+        .select("sender_id, content, created_at, fra_bidhamr, blokeret_grund", { count: "exact" })
         .eq("trade_id", tradeId)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
         .limit(MAKS_BESKEDER),
       admin.from("users").select("id, navn").in("id", [koeberId, saelgerId]),
     ]);
@@ -215,11 +236,48 @@ export async function hentDokumentationData(
   const s = sagR.data;
   const h = handelR.data;
   if (!erSagType(s.type)) throw new Error("ukendt sagstype");
+  // Valgfri kolonner (findes ikke i alle databaser endnu): fejl ignoreres.
   const valgfri = valgfriR.error ? null : valgfriR.data;
-  const navn = new Map(((brugereR.data ?? []) as { id: string; navn: string | null }[]).map((u) => [u.id, u.navn]));
+  const brugere = tjek("users", brugereR) as { id: string; navn: string | null }[] | null;
+  const navn = new Map((brugere ?? []).map((u) => [u.id, u.navn]));
+  const betalinger = (tjek("betalinger", betalingR) ?? []) as {
+    bud_oere: number | null;
+    fragt_oere: number | null;
+    total_oere: number | null;
+    betalt_kl: string | null;
+    status: string;
+  }[];
+  // Den betalte række frem for den nyeste (fx et senere afbrudt forsøg).
+  const betaling = betalinger.find((b) => b.status === "betalt") ?? betalinger[0] ?? null;
+  const lev = tjek("handel_levering", leveringR);
+  const forsendelser = (tjek("forsendelser", forsendR) ?? []) as {
+    id: string;
+    type: string;
+    fragtfirma: string | null;
+    transportoer: string | null;
+    status: string;
+    sporingsnummer: string | null;
+    oprettet_kl: string | null;
+    afleveret_kl: string | null;
+    leveret_kl: string | null;
+    vaegt_gram: number | null;
+  }[];
+  const sagBilleder = (tjek("sag_billeder", sagBilledR) ?? []) as { sti: string; kategori: SagBilledeKategori; oprettet_kl: string }[];
+  const svar = tjek("sag_svar", svarR);
+  const pakkeRaekker = (tjek("pakke_billeder", pakkeR) ?? []) as { sti: string; kategori: string; oprettet_kl: string }[];
+  const ankeRaekke = tjek("sag_anker", ankeR);
+  const beskedRaekker = ((tjek("messages", chatR) ?? []) as {
+    sender_id: string | null;
+    content: string;
+    created_at: string;
+    fra_bidhamr: boolean | null;
+    blokeret_grund: string | null;
+  }[]).slice().reverse();
+  // Billeder må kun hentes fra handlens egen mappe hos en af parterne.
+  const parterIds = [koeberId, saelgerId];
 
   // Auktionen
-  const { data: a } = h.auction_id
+  const auktionR = h.auction_id
     ? await admin
         .from("auctions")
         .select("id, titel, beskrivelse, kategori, maerke, stand, vaegt_gram, billeder")
@@ -234,32 +292,29 @@ export async function hentDokumentationData(
           vaegt_gram: number | null;
           billeder: string[] | null;
         }>()
-    : { data: null };
+    : { data: null, error: null };
+  const a = tjek("auctions", auktionR);
 
   // Sporingshændelser (med målt vægt fra fragtfirmaet, hvis den findes).
-  const forsendelser = (forsendR.data ?? []) as {
-    id: string;
-    type: string;
-    fragtfirma: string | null;
-    transportoer: string | null;
-    status: string;
-    sporingsnummer: string | null;
-    oprettet_kl: string | null;
-    afleveret_kl: string | null;
-    leveret_kl: string | null;
-    vaegt_gram: number | null;
-  }[];
+  // De nyeste MAKS_HAENDELSER, vist i tidsorden.
   const synlige = forsendelser.filter((f) => f.sporingsnummer || f.afleveret_kl || f.status !== "annulleret");
-  const { data: haendelser } = synlige.length
+  const haendelserR = synlige.length
     ? await admin
         .from("forsendelse_haendelser")
-        .select("forsendelse_id, tidspunkt, type, beskrivelse, raa")
+        .select("forsendelse_id, tidspunkt, type, beskrivelse, raa", { count: "exact" })
         .in("forsendelse_id", synlige.map((f) => f.id))
-        .order("tidspunkt", { ascending: true })
-        .limit(500)
-    : { data: [] };
+        .order("tidspunkt", { ascending: false })
+        .limit(MAKS_HAENDELSER)
+    : { data: [], error: null, count: 0 };
+  const haendelser = ((tjek("forsendelse_haendelser", haendelserR) ?? []) as {
+    forsendelse_id: string;
+    tidspunkt: string | null;
+    type: string;
+    beskrivelse: string | null;
+    raa: Record<string, unknown> | null;
+  }[]).slice().reverse();
   const hPrF = new Map<string, DokForsendelse["haendelser"]>();
-  for (const x of (haendelser ?? []) as {
+  for (const x of haendelser as {
     forsendelse_id: string;
     tidspunkt: string | null;
     type: string;
@@ -275,72 +330,78 @@ export async function hentDokumentationData(
   // Billeder (hentes efter hinanden for at holde hukommelsen nede).
   const auktionBilleder: DokBillede[] = [];
   for (const [i, url] of (a?.billeder ?? []).entries()) {
-    const sti = typeof url === "string" ? auktionSti(url) : null;
+    const sti = auktionSti(url);
     if (!sti) {
-      auktionBilleder.push({ tekst: `Auktionsbillede ${i + 1} (kan ikke hentes)`, tid: null, bytes: null, format: null });
+      auktionBilleder.push(utilgaengelig(`Auktionsbillede ${i + 1}`, null));
       continue;
     }
     auktionBilleder.push(await hentBillede(admin, "auktion-billeder", sti, `Auktionsbillede ${i + 1}`, null, taeller));
   }
+  // Sag-/pakkebillede: kun fra handlens mappe, ellers "(kan ikke hentes)".
+  const sagsbillede = async (bucket: string, sti: string, tekst: string, tidKl: string | null): Promise<DokBillede> => {
+    if (!billedStiTilladt(sti, tradeId, parterIds)) {
+      console.error("[sag-dokumentation] billedsti uden for handlens mappe:", bucket, sagId);
+      return utilgaengelig(tekst, tidKl);
+    }
+    return hentBillede(admin, bucket, sti, tekst, tidKl, taeller);
+  };
   const koeberBilleder: DokumentationData["koeberBilleder"] = [];
-  for (const b of (sagBilledR.data ?? []) as { sti: string; kategori: SagBilledeKategori; oprettet_kl: string }[]) {
+  for (const b of sagBilleder) {
     const kat = SAG_KATEGORI_NAVN[b.kategori] ?? "Billede";
-    koeberBilleder.push({ ...(await hentBillede(admin, SAG_BUCKET, b.sti, kat, b.oprettet_kl, taeller)), kategori: kat });
+    koeberBilleder.push({ ...(await sagsbillede(SAG_BUCKET, b.sti, kat, b.oprettet_kl)), kategori: kat });
   }
   const pakkebilleder: DokBillede[] = [];
-  for (const b of (pakkeR.data ?? []) as { sti: string; kategori: string; oprettet_kl: string }[]) {
+  for (const b of pakkeRaekker) {
     if (!erPakkeBilledeKategori(b.kategori)) continue;
-    pakkebilleder.push(await hentBillede(admin, PAKKE_BUCKET, b.sti, PAKKE_KATEGORI_NAVN[b.kategori], b.oprettet_kl, taeller));
+    pakkebilleder.push(await sagsbillede(PAKKE_BUCKET, b.sti, PAKKE_KATEGORI_NAVN[b.kategori], b.oprettet_kl));
   }
   let saelgerSvar: DokumentationData["saelgerSvar"] = null;
-  if (svarR.data) {
-    const { data: sb } = await admin
-      .from("sag_svar_billeder")
-      .select("sti, kategori, oprettet_kl")
-      .eq("svar_id", svarR.data.id)
-      .order("oprettet_kl", { ascending: true });
+  if (svar) {
+    const sb = tjek(
+      "sag_svar_billeder",
+      await admin.from("sag_svar_billeder").select("sti, kategori, oprettet_kl").eq("svar_id", svar.id).order("oprettet_kl", { ascending: true }),
+    );
     const billeder: DokBillede[] = [];
     for (const b of (sb ?? []) as { sti: string; kategori: SagBilledeKategori; oprettet_kl: string }[]) {
-      billeder.push(await hentBillede(admin, SAG_BUCKET, b.sti, SAG_KATEGORI_NAVN[b.kategori] ?? "Billede", b.oprettet_kl, taeller));
+      billeder.push(await sagsbillede(SAG_BUCKET, b.sti, SAG_KATEGORI_NAVN[b.kategori] ?? "Billede", b.oprettet_kl));
     }
-    saelgerSvar = { tekst: svarR.data.tekst, oprettetKl: svarR.data.oprettet_kl, billeder };
+    saelgerSvar = { tekst: svar.tekst, oprettetKl: svar.oprettet_kl, billeder };
   }
   let anke: DokumentationData["anke"] = null;
-  if (ankeR.data) {
-    const { data: ab } = await admin
-      .from("sag_anke_billeder")
-      .select("sti, kategori, oprettet_kl")
-      .eq("anke_id", ankeR.data.id)
-      .order("oprettet_kl", { ascending: true });
+  if (ankeRaekke) {
+    const ab = tjek(
+      "sag_anke_billeder",
+      await admin.from("sag_anke_billeder").select("sti, kategori, oprettet_kl").eq("anke_id", ankeRaekke.id).order("oprettet_kl", { ascending: true }),
+    );
     const billeder: DokBillede[] = [];
     for (const b of (ab ?? []) as { sti: string; kategori: SagBilledeKategori; oprettet_kl: string }[]) {
-      billeder.push(await hentBillede(admin, SAG_BUCKET, b.sti, SAG_KATEGORI_NAVN[b.kategori] ?? "Billede", b.oprettet_kl, taeller));
+      billeder.push(await sagsbillede(SAG_BUCKET, b.sti, SAG_KATEGORI_NAVN[b.kategori] ?? "Billede", b.oprettet_kl));
     }
     anke = {
-      part: ankeR.data.part,
-      indgivetKl: ankeR.data.indgivet_kl,
-      begrundelse: ankeR.data.begrundelse,
-      status: ankeR.data.status,
-      behandletKl: ankeR.data.behandlet_kl,
-      afgoerelseBegrundelse: ankeR.data.afgoerelse_begrundelse,
+      part: ankeRaekke.part,
+      indgivetKl: ankeRaekke.indgivet_kl,
+      begrundelse: ankeRaekke.begrundelse,
+      status: ankeRaekke.status,
+      behandletKl: ankeRaekke.behandlet_kl,
+      afgoerelseBegrundelse: ankeRaekke.afgoerelse_begrundelse,
       billeder,
     };
   }
 
-  const chat: DokChatBesked[] = ((chatR.data ?? []) as {
-    sender_id: string | null;
-    content: string;
-    created_at: string;
-    fra_bidhamr: boolean | null;
-    blokeret_grund: string | null;
-  }[]).map((m) => ({
+  const chat: DokChatBesked[] = beskedRaekker.map((m) => ({
     tid: m.created_at,
     fra: m.fra_bidhamr ? "bidhamr" : m.sender_id === koeberId ? "koeber" : m.sender_id === saelgerId ? "saelger" : "ukendt",
     tekst: m.content,
     stoppet: m.blokeret_grund,
   }));
 
-  const lev = leveringR.error ? null : leveringR.data;
+  const afkortet: NonNullable<DokumentationData["afkortet"]> = {
+    beskeder: loft(beskedRaekker.length, chatR.count ?? null),
+    haendelser: loft(haendelser.length, haendelserR.count ?? null),
+    pakkebilleder: loft(pakkeRaekker.length, pakkeR.count ?? null),
+    forsendelser: loft(forsendelser.length, forsendR.count ?? null),
+  };
+
   const pakkeshop = lev?.pakkeshop_navn
     ? [lev.pakkeshop_navn, lev.pakkeshop_adresse, [lev.pakkeshop_postnummer, lev.pakkeshop_by].filter(Boolean).join(" ")]
         .filter((x) => x && x.trim())
@@ -348,6 +409,7 @@ export async function hentDokumentationData(
     : null;
 
   const data: DokumentationData = {
+    afkortet,
     sag: {
       id: s.id,
       type: s.type,
@@ -383,13 +445,13 @@ export async function hentDokumentationData(
         }
       : null,
     auktionBilleder,
-    betaling: betalingR.data
+    betaling: betaling
       ? {
-          budOere: betalingR.data.bud_oere === null ? null : Number(betalingR.data.bud_oere),
-          fragtOere: betalingR.data.fragt_oere === null ? null : Number(betalingR.data.fragt_oere),
-          totalOere: betalingR.data.total_oere === null ? null : Number(betalingR.data.total_oere),
-          betaltKl: betalingR.data.betalt_kl,
-          status: betalingR.data.status,
+          budOere: betaling.bud_oere === null ? null : Number(betaling.bud_oere),
+          fragtOere: betaling.fragt_oere === null ? null : Number(betaling.fragt_oere),
+          totalOere: betaling.total_oere === null ? null : Number(betaling.total_oere),
+          betaltKl: betaling.betalt_kl,
+          status: betaling.status,
         }
       : null,
     koeberNavn: navn.get(koeberId) ?? null,
@@ -468,8 +530,8 @@ async function hentPolitiData(admin: Admin, parter: HentetSag): Promise<NonNulla
   const staffIds = [...new Set(logRaekker.map((x) => x.medarbejder_id))];
 
   const [titler, staff, udleveringer, sagerSomKoeber, sagerSomSaelger] = await Promise.all([
-    auktionIds.length ? admin.from("auctions").select("id, titel").in("id", auktionIds) : Promise.resolve({ data: [] }),
-    staffIds.length ? admin.from("users").select("id, navn").in("id", staffIds) : Promise.resolve({ data: [] }),
+    auktionIds.length ? admin.from("auctions").select("id, titel").in("id", auktionIds) : Promise.resolve({ data: [], error: null }),
+    staffIds.length ? admin.from("users").select("id, navn").in("id", staffIds) : Promise.resolve({ data: [], error: null }),
     admin
       .from("sag_dokumentation_udlevering")
       .select("udgave, givet_til, journalnummer, lavet_af, lavet_kl")
@@ -479,8 +541,9 @@ async function hentPolitiData(admin: Admin, parter: HentetSag): Promise<NonNulla
     andreSager(admin, sagId, "buyer_id", [koeberId, saelgerId]),
     andreSager(admin, sagId, "seller_id", [koeberId, saelgerId]),
   ]);
-  const titel = new Map(((titler.data ?? []) as { id: string; titel: string | null }[]).map((x) => [x.id, x.titel]));
-  const udlRaekker = (udleveringer.data ?? []) as {
+  const titel = new Map(((tjek("auctions (titler)", titler) ?? []) as { id: string; titel: string | null }[]).map((x) => [x.id, x.titel]));
+  tjek("users (staff)", staff);
+  const udlRaekker = (tjek("sag_dokumentation_udlevering", udleveringer) ?? []) as {
     udgave: "saelger" | "politi";
     givet_til: string;
     journalnummer: string | null;
@@ -488,9 +551,10 @@ async function hentPolitiData(admin: Admin, parter: HentetSag): Promise<NonNulla
     lavet_kl: string;
   }[];
   const ekstraStaff = [...new Set(udlRaekker.map((x) => x.lavet_af).filter((x) => !staffIds.includes(x)))];
-  const { data: ekstra } = ekstraStaff.length
-    ? await admin.from("users").select("id, navn").in("id", ekstraStaff)
-    : { data: [] };
+  const ekstra = tjek(
+    "users (staff)",
+    ekstraStaff.length ? await admin.from("users").select("id, navn").in("id", ekstraStaff) : { data: [], error: null },
+  );
   const staffNavn = new Map(
     ([...(staff.data ?? []), ...(ekstra ?? [])] as { id: string; navn: string | null }[]).map((x) => [x.id, x.navn]),
   );
