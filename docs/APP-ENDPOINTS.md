@@ -108,11 +108,11 @@ appen). Grænser: `handel_app_ip`, `handel_app_laes_bruger` (`muligheder`) og `h
 | Handling | Krop | Svar (200) |
 |---|---|---|
 | `muligheder` | `{ trade_id }` (kun køberen) | `{ ok, muligheder: SagMuligheder, tekster }` |
-| `opret` | `{ trade_id, type, beskrivelse, billeder: [{ sti, kategori }], pakke_smidt_ud?: boolean, smidt_ud_begrundelse?: string }` | `{ ok, sag_id }` |
+| `opret` | `{ trade_id, type, beskrivelse, billeder: [{ sti, kategori }], pakke_smidt_ud?: boolean, smidt_ud_begrundelse?: string, valg?: string }` | `{ ok, sag_id }` |
 | `svar` | `{ sag_id, tekst, billeder: [{ sti, kategori }] }` (kun sælgeren) | `{ ok }` |
 
 Fejl: `{ fejl, kode }` – 400 (`ugyldig`, `ugyldig_type`, `ugyldig_beskrivelse`, `ugyldig_tekst`, `ugyldige_billeder`,
-`smidt_ud_begrundelse`, `kontaktinfo`), 401 `ikke_logget_ind`, 404 `ikke_fundet` (også når kalderen ikke er køberen),
+`smidt_ud_begrundelse`, `kontaktinfo`, `ugyldigt_valg`), 401 `ikke_logget_ind`, 404 `ikke_fundet` (også når kalderen ikke er køberen),
 409 med databasens kode (`findes`, `for_sent`, `for_tidligt`, `forkert_trin`, `kraever_beskyttelse`, `billeder_kraeves`,
 `smidt_ud_ikke_mulig`, `ikke_betalt`, `lukket`, `billede_mangler` …), 429, 500. `fejl` er dansk og kan vises direkte
 (`SAG_OPRET_FEJL` / `SAG_SVAR_FEJL` i `src/lib/sager.ts`).
@@ -154,8 +154,14 @@ sender", kvitteringen, Stripe-linjen og sælgerens svar – med min./maks. tegn 
 - **Billeder (regel 1):** ét billede af pakken med labelen (`kategori: "pakke_label"`) + ét af indholdet (`"indhold"`).
   `"andet"` er valgfri ekstra billeder. Gamle kategorier (`pakke`, `label`) virker stadig. "Jeg har ikke fået pakken"
   kræver ingen billeder.
-- **Pakken er smidt ud (regel 2):** `pakke_smidt_ud: true` + `smidt_ud_begrundelse` (20-2000 tegn). Pakkebilledet kræves
-  så ikke (indholdet gør). Sagen markeres til staffs vurdering.
+- **Pakken er smidt ud (regel 2):** `pakke_smidt_ud: true` + `smidt_ud_begrundelse` (20-2000 tegn, ingen
+  telefonnummer/e-mail – kode `kontaktinfo`). Pakkebilledet kræves så ikke, men billedet af varen (`indhold`) gør.
+  Sagen markeres til staffs vurdering. Ikke muligt ved "Pakken var tom" (`smidt_ud_ikke_mulig`).
+- **Send valget (20261102350000):** send `valg` (id fra `muligheder.valg`, fx `"tom"`) sammen med `type`. Ved
+  `"tom"` kræves **kun** billedet af pakken med labelen (`pakke_label`); billedet af den åbne pakke er valgfrit (se
+  `billeder[].paakraevet`). Uden `valg` gælder de almindelige krav for typen (så kræves indholdet også ved svindel).
+  `valg` skal passe til `type` (ellers `ugyldigt_valg`).
+- **Beskrivelsen:** ingen telefonnummer/e-mail (kode `kontaktinfo`) – sælgeren kan læse den.
 - **"Noget andet" (regel 4):** `type: "andet"`. BidHamr retter typen bagefter (sagen viser `oprindelig_type`,
   `type_rettet_kl`).
 - **Fristen (regel 8):** 72 timer efter levering. Læs `trades.problem_frist_kl` (parterne har læseadgang) eller brug
@@ -176,14 +182,23 @@ supabase.storage.from("sag-billeder").createSignedUrls(stier, 3600)
 ```
 
 Nye læsbare kolonner på `sager`: `pakke_smidt_ud`, `pakke_smidt_ud_begrundelse`, `oprindelig_type`, `type_rettet_kl`.
+Fra 20261102350000 også `koeber_valg` (køberens valg, fx `"tom"`; `null` for sager fra før).
 `returfragt_betaler` kan nu også være `"saelger"` (transportskade med dårlig indpakning).
 
 ### Returfragt ved transportskade (regel 7)
 
 Har køberen fået medhold i en transportskade, betaler han **ikke** returfragten. `POST /api/fragt/app/returfragt`
-svarer da `{ ok: true, daekket: true, betaler: "saelger" | "bidhamr", clientSecret: null, label }` – **åbn ikke
-PaymentSheet**; adressen er gemt, og returkoden laves med det samme (`label` er resultatet af første forsøg; ellers hent
-den som efter en betaling). Ved "ikke som beskrevet" betaler køberen som før.
+svarer da:
+
+```ts
+{ "ok": true, "daekket": true, "clientSecret": null, "betaler": "saelger" | "bidhamr", "beloebOere": 4200,
+  "customerId": null, "customerSessionClientSecret": null, "label": { ... } | null, "publishableKey": "pk_test_..." }
+```
+
+**Når `daekket` er `true`, må appen ALDRIG åbne PaymentSheet** (`clientSecret` er `null` – der er intet at betale, og
+køberen må ikke blive bedt om at betale returfragten). Adressen er gemt, og returkoden laves med det samme (`label` er
+resultatet af første forsøg; ellers hent den som efter en betaling med `label`). Tjek altid `daekket` før
+`clientSecret`. Ved "ikke som beskrevet" betaler køberen som før (`daekket` mangler eller er `false`).
 
 ## POST /api/bud/app
 

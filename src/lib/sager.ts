@@ -29,9 +29,12 @@ export const SAG_SMIDT_UD_BEGRUNDELSE_MIN = 20;
 export const SAG_SMIDT_UD_BEGRUNDELSE_MAKS = 2000;
 
 // Opfylder billederne kravet (når pakken er modtaget, ikke "ikke kommet frem")?
-export function sagBillederOpfylder(kategorier: readonly string[], pakkeSmidtUd: boolean): boolean {
-  const pakke = pakkeSmidtUd || kategorier.some((k) => (SAG_PAKKE_KATEGORIER as readonly string[]).includes(k));
-  return pakke && kategorier.includes("indhold");
+// Samme regel som sag_opret (20261102350000): ved en tom pakke (valget "tom")
+// kræves kun pakken med labelen, og "smidt ud" er ikke mulig.
+export function sagBillederOpfylder(kategorier: readonly string[], pakkeSmidtUd: boolean, tomPakke = false): boolean {
+  const harPakke = kategorier.some((k) => (SAG_PAKKE_KATEGORIER as readonly string[]).includes(k));
+  if (tomPakke) return harPakke && !pakkeSmidtUd;
+  return (pakkeSmidtUd || harPakke) && kategorier.includes("indhold");
 }
 
 export const SAG_BUCKET = "sag-billeder";
@@ -211,7 +214,9 @@ export const SAG_OPRET_FEJL: Record<string, string> = {
   for_sent: "Fristen for at melde et problem er udløbet. Den løber fra, at pakken er leveret.",
   for_tidligt: `Du kan melde pakken bortkommet, når der er gået ${SAG_BORTKOMMET_EFTER_DAGE} dage, siden sælgeren sendte den.`,
   forkert_trin: "Den type sag kan ikke oprettes på handlen lige nu.",
-  billeder_kraeves: "Tilføj et billede af pakken med labelen og et billede af indholdet.",
+  billeder_kraeves: "Tilføj de billeder, der mangler: pakken med labelen og – medmindre pakken var tom – indholdet.",
+  kontaktinfo: "Skriv ikke telefonnummer, e-mail eller andre kontaktoplysninger. Al kontakt foregår i sagen hos BidHamr.",
+  ugyldigt_valg: "Vælg, hvad sagen drejer sig om.",
   smidt_ud_begrundelse: `Forklar med mindst ${SAG_SMIDT_UD_BEGRUNDELSE_MIN} tegn, hvorfor du ikke har pakken længere.`,
   smidt_ud_ikke_mulig: "Du skal ikke bruge billeder af pakken til denne sag.",
   ugyldige_billeder: "Et eller flere billeder er ugyldige. Upload dem igen.",

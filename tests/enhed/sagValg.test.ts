@@ -7,6 +7,7 @@ import {
   SAG_VALG,
   SAG_VALG_IDER,
   sagBilledKrav,
+  sagSmidtUdMulig,
   sagHvisDuFaarRet,
   sagValgFor,
 } from "@/lib/tekster/sagValg";
@@ -53,6 +54,21 @@ describe("billedkrav (regel 1 og 2)", () => {
     expect(sagBillederOpfylder(["label", "indhold"], false)).toBe(false);
     expect(sagBillederOpfylder(["indhold"], true)).toBe(true);
     expect(sagBillederOpfylder(["pakke_label"], true)).toBe(false);
+    // Tom pakke (20261102350000): kun pakken med labelen; ikke "smidt ud".
+    expect(sagBillederOpfylder(["pakke_label"], false, true)).toBe(true);
+    expect(sagBillederOpfylder(["indhold"], false, true)).toBe(false);
+    expect(sagBillederOpfylder(["indhold"], true, true)).toBe(false);
+  });
+
+  it("tom pakke: pakken med labelen påkrævet, indholdet valgfrit, ingen 'smidt ud'", () => {
+    const k = sagBilledKrav(SAG_VALG.tom, true);
+    expect(k.map((x) => [x.kategori, x.paakraevet])).toEqual([
+      ["pakke_label", true],
+      ["indhold", false],
+    ]);
+    expect(sagSmidtUdMulig(SAG_VALG.tom, k)).toBe(false);
+    expect(sagSmidtUdMulig(SAG_VALG.anden_vare, sagBilledKrav(SAG_VALG.anden_vare, true))).toBe(true);
+    expect(sagSmidtUdMulig(SAG_VALG.stykker, sagBilledKrav(SAG_VALG.stykker, false))).toBe(false);
   });
 });
 

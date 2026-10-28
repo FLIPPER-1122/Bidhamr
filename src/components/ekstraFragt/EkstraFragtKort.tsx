@@ -21,7 +21,7 @@ import {
   startEkstraFragtBetalingAction,
   type MinEkstraFragt,
 } from "@/app/actions/ekstraFragt";
-import { EKSTRA_FRAGT_FRIST_OVERSKREDET_UENIG, EKSTRA_FRAGT_SPAERRET_TEKST } from "@/lib/ekstraFragt/tekster";
+import { EKSTRA_FRAGT_FRIST_OVERSKREDET_UENIG, ekstraFragtSpaerretTekst } from "@/lib/ekstraFragt/tekster";
 import { ekstraFragtDato, erReturfragtRegning, maalingTekst, valgtStoerrelseNavn } from "@/lib/ekstraFragt/visning";
 import { transportoerNavn } from "@/lib/fragt/types";
 import { kroner } from "@/lib/kroner";
@@ -183,7 +183,7 @@ export default function EkstraFragtKort({
       )}
       {r.spaerrer && (
         <p role="alert" className="mt-3 rounded-lg border border-fejl-kant bg-white px-3 py-2 text-sm font-medium text-fejl-tekst">
-          {EKSTRA_FRAGT_SPAERRET_TEKST}
+          {ekstraFragtSpaerretTekst({ returfragt: erReturfragtRegning(r), ekstra: !erReturfragtRegning(r) })}
         </p>
       )}
       <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 text-[13px] text-tekst-daempet sm:grid-cols-2">
@@ -193,10 +193,13 @@ export default function EkstraFragtKort({
             <dd className="inline break-all font-medium text-tekst">{r.sporingsnummer}</dd>
           </div>
         )}
-        <div className="min-w-0">
-          <dt className="inline">{firma}s fakturanummer: </dt>
-          <dd className="inline break-all font-medium text-tekst">{r.fragtfirma_fakturanummer}</dd>
-        </div>
+        {/* En regning for returfragt har ingen faktura fra fragtfirmaet. */}
+        {r.fragtfirma_fakturanummer && (
+          <div className="min-w-0">
+            <dt className="inline">{firma}s fakturanummer: </dt>
+            <dd className="inline break-all font-medium text-tekst">{r.fragtfirma_fakturanummer}</dd>
+          </div>
+        )}
       </dl>
 
       {kanHandle ? (
