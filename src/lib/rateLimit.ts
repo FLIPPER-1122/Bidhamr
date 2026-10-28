@@ -261,6 +261,13 @@ export const GRAENSER = {
   // Admin -> Fakturaer -> "Test Dinero-forbindelse" (hvert tryk logger ind i
   // Dinero; Dinero tillader 60 kald i minuttet for hele regnskabet).
   dinero_test_chef: { maks: 10, vindueSek: 10 * 60 },
+  // Fakturaer fra firma til køber (src/app/actions/firmaFaktura.ts og
+  // ruterne under /firma/fakturaer og /api/firma-faktura). Pr. bruger.
+  firma_faktura_send: { maks: 200, vindueSek: 60 * 60 },
+  firma_faktura_mail_igen: { maks: 20, vindueSek: 60 * 60 },
+  firma_faktura_gem: { maks: 300, vindueSek: 60 * 60 },
+  firma_faktura_pdf: { maks: 300, vindueSek: 60 * 60 },
+  firma_faktura_eksport: { maks: 30, vindueSek: 60 * 60 },
 } satisfies Record<string, Graense>;
 
 export type GraenseNavn = keyof typeof GRAENSER;
