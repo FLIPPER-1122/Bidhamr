@@ -862,7 +862,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           {feltFejl.startpris && <FeltFejl id="startpris-fejl">{feltFejl.startpris}</FeltFejl>}
         </div>
 
-        {erFirma && <MomsordningValg vaerdi={momsValg} onChange={setMomsValg} />}
+        {erFirma && <MomsordningValg vaerdi={momsValg} onChange={setMomsValg} stand={stand} />}
 
         <fieldset>
           <legend className="mb-1.5 text-sm font-medium text-tekst">Varighed</legend>

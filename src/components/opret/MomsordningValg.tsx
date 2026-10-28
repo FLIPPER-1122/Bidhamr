@@ -3,16 +3,21 @@
 // Momsordning pr. erhvervsauktion (kun firmaer). "Standard" = firmaets valg
 // under Fakturaer -> Indstillinger. Låses, når der er budt / varen er solgt
 // (databasen: firma_saet_auktion_momsordning og auctions_momsordning_laas).
+import { FIRMA_FAKTURA_TEKST, erNyVare } from "@/lib/erhverv/firmaFaktura";
+
 export type MomsValg = "standard" | "moms" | "brugtmoms";
 
 export default function MomsordningValg({
   vaerdi,
   onChange,
   laast = false,
+  stand = null,
 }: {
   vaerdi: MomsValg;
   onChange: (v: MomsValg) => void;
   laast?: boolean;
+  // Varens stand: brugtmoms på en ny vare giver en advarsel (blokerer ikke).
+  stand?: string | null;
 }) {
   return (
     <div>
@@ -29,8 +34,13 @@ export default function MomsordningValg({
       >
         <option value="standard">Brug mit standardvalg</option>
         <option value="moms">Almindelig moms (25 % vises)</option>
-        <option value="brugtmoms">Brugtmoms (ingen moms vises)</option>
+        <option value="brugtmoms">Brugtmoms – fortjenstmargenordning (ingen moms vises)</option>
       </select>
+      {vaerdi === "brugtmoms" && erNyVare(stand) && (
+        <p role="alert" className="mt-2 border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
+          {FIRMA_FAKTURA_TEKST.brugtmomsNyAdvarsel}
+        </p>
+      )}
       <p id="momsordning-hjaelp" className="mt-1 text-sm text-tekst-daempet">
         {laast
           ? "Momsordningen kan ikke ændres, når der er budt."

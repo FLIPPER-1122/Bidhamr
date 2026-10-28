@@ -13,7 +13,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 //   navn:    MitID (når køberen er verificeret) -> navnet til handlen ->
 //            profilens navn
 //   adresse: kontoens adresse (public.bruger_adresser, 20261102340000) ->
-//            checkout (levering til døren) -> users.adresse (gammel fri tekst)
+//            checkout (levering til døren). users.adresse bruges ikke
+//            (20261102390000). Refunderet/annulleret handel: ingen adresse.
 //   e-mail:  e-mailen til handlen -> kontoens e-mail
 // Firmaets rettelser i kladden og købers egne firmanavn/CVR lægges
 // ovenpå i public.firma_faktura_byg.
@@ -30,7 +31,8 @@ export type KoeberFakturaOplysninger = {
   firmanavn: string | null;
   cvr: string | null;
   navn_kilde: "mitid" | "konto";
-  adresse_kilde: "konto" | "checkout" | "konto_fritekst" | "konto_ufuldstaendig" | null;
+  // "skjult": handlen er refunderet eller annulleret - ingen adresse.
+  adresse_kilde: "konto" | "checkout" | "skjult" | null;
 };
 
 export async function hentKoeberFakturaOplysninger(tradeId: string): Promise<KoeberFakturaOplysninger | null> {
@@ -42,6 +44,5 @@ export async function hentKoeberFakturaOplysninger(tradeId: string): Promise<Koe
 export const ADRESSE_KILDE_TEKST: Record<NonNullable<KoeberFakturaOplysninger["adresse_kilde"]>, string> = {
   konto: "Adressen er købers egen adresse fra kontoen.",
   checkout: "Adressen er den, køberen gav ved betalingen.",
-  konto_fritekst: "Adressen er fra købers profil.",
-  konto_ufuldstaendig: "Købers adresse på kontoen er ikke fuldstændig. Tilføj postnummer og by.",
+  skjult: "Købet er betalt tilbage eller annulleret, så købers adresse vises ikke.",
 };

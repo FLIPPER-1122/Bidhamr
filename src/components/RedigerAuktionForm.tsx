@@ -422,7 +422,7 @@ export default function RedigerAuktionForm({
             {STARTPRIS_ANBEFALING} Startprisen er også den laveste pris, du sælger til.
           </Hjaelp>
         </div>
-        {erFirma && <MomsordningValg vaerdi={momsValg} onChange={setMomsValg} />}
+        {erFirma && <MomsordningValg vaerdi={momsValg} onChange={setMomsValg} stand={stand} />}
         <PakkestoerrelseVaelger
           stoerrelser={stoerrelser}
           hentFejl={fragtHentFejl}

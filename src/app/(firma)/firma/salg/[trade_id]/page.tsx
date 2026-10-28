@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { hentFirmaFakturaer, hentFirmaFakturaSalg, kraevFirma } from "@/lib/erhverv/firmaData";
 import FirmaFakturaKnapper from "@/components/firma/FirmaFakturaKnapper";
-import { FIRMA_FAKTURA_TEKST, MANGLER_TEKST } from "@/lib/erhverv/firmaFaktura";
+import { FIRMA_FAKTURA_TEKST, aktuelFaktura, fakturaKnapperProps } from "@/lib/erhverv/firmaFaktura";
 import { Kort } from "@/components/firma/dele";
 import { FakturaOplysningerListe } from "@/components/firma/FakturaOplysninger";
 import { FAKTURA_TEKST } from "@/lib/erhverv/fakturaOplysninger";
@@ -38,7 +38,7 @@ export default async function FirmaHandel({
   const [faktura, liste] = await Promise.all([hentFirmaFakturaSalg(null, null, trade_id), hentFirmaFakturaer()]);
   const salg = faktura?.salg[0];
   // Fakturakladden fra firmaet til køberen (sendes kun ved firmaets tryk).
-  const kladde = liste?.fakturaer.find((f) => f.trade_id === trade_id && f.type === "faktura");
+  const kladde = liste ? aktuelFaktura(liste.fakturaer, trade_id) : undefined;
   return (
     <>
       <HandelDetalje
@@ -51,17 +51,7 @@ export default async function FirmaHandel({
         <div className="mx-auto mt-6 max-w-3xl">
           <Kort id="firma-faktura" titel={FIRMA_FAKTURA_TEKST.titel} forklaring={FIRMA_FAKTURA_TEKST.intro}>
             <FirmaFakturaKnapper
-              id={kladde.id}
-              type={kladde.type}
-              status={kladde.status}
-              fakturanummer={kladde.fakturanummer}
-              naesteNummer={liste?.indstillinger.naeste_fakturanummer ?? ""}
-              koeberEmail={kladde.data?.koeber.email ?? null}
-              mangler={(kladde.data?.mangler ?? []).map((k) => MANGLER_TEKST[k] ?? k)}
-              sendtKl={kladde.sendt_kl}
-              mailFejl={kladde.mail_fejl}
-              mailSendtKl={kladde.mail_sendt_kl}
-              kreditnotaId={kladde.kreditnota_id}
+              {...fakturaKnapperProps(kladde, liste?.indstillinger.naeste_fakturanummer ?? "", liste?.indstillinger.kun_laes ?? false)}
             />
           </Kort>
         </div>

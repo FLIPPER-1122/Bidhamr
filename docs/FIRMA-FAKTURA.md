@@ -21,7 +21,13 @@ Migration: `supabase/migrations/20261102330000_firma_fakturaer.sql` (kørt på t
 4. **Send er spærret**, så længe der mangler noget: købers navn, adresse, postnummer, by eller e-mail. Det samme gælder, hvis købet er betalt tilbage. Et spærret forsøg bruger intet nummer.
 5. **"Send" + bekræftelse.** I én transaktion låses firmaets indstillinger (`for update`). Næste nummer tages, øjebliksbilledet (`data`) gemmes, og status bliver `sendt`. Derefter laves PDF'en, som gemmes i den private bucket `firma-fakturaer`, og mailen sendes via Resend.
 6. **Mail:** afsender `"Firmanavn via BidHamr" <noreply@bidhamr.dk>`, reply-to og bcc (kopi) til firmaets svar-e-mail (indstillinger, ellers `firmaer.kontakt_email`) og PDF'en vedhæftet. Fejler mailen, er fakturaen stadig udstedt. Firmaet ser en advarsel og kan selv trykke "Send mailen igen".
-7. **Rettelser:** en sendt faktura kan aldrig ændres eller slettes (trigger). Det eneste, der kan ændres, er PDF-stien (én gang) og mailstatus. Rettelser sker med "Lav kreditnota": en fuld kreditnota med modsat fortegn, et eget nummer i samme serie og en henvisning til fakturaen. Der kan laves én kreditnota pr. faktura.
+7. **Rettelser:** en sendt faktura kan aldrig ændres eller slettes (trigger). Det eneste, der kan ændres, er PDF-stien og logoets hash (én gang), "krediteret" (én gang, når kreditnotaen sendes) og mailstatus. Rettelser sker med "Lav kreditnota": en fuld kreditnota med modsat fortegn, et eget nummer i samme serie og en henvisning til fakturaen. Der kan laves én kreditnota pr. faktura, og den arver fakturaens momsordning.
+8. **Ny faktura efter kreditnota (20261102390000):** når kreditnotaen er sendt, er fakturaen *krediteret* (`krediteret_kl`), og firmaet kan trykke "Lav ny faktura" (`firma_faktura_ny`). Det laver en ny **kladde** på handlen – der laves aldrig en ny faktura af sig selv. Unikheden er "én ikke-krediteret faktura pr. handel" (`firma_fakturaer_trade_aktiv_unik`). Ikke ved refunderede/annullerede handler. Det almindelige forløb er kreditnota + ny faktura.
+9. **Momsordning på kladden:** firmaet kan skifte mellem almindelig moms og brugtmoms på en fakturakladde (`firma_faktura_kladde_momsordning`), kun mens den er kladde. Kladder uden eget valg (`momsordning_fra_standard`, fx backfill-kladderne) følger firmaets aktuelle standard, til de sendes. Brugtmoms på en ny vare giver en advarsel, men blokerer ikke.
+10. **Mangler efter låsen:** `firma_faktura_send` bygger fakturaen igen efter låsen. Mangler der så noget, rulles alt tilbage med BHF12 – også nummeret.
+11. **Log:** `firma_faktura_log` (append-only) gemmer, når firmaet sætter en modtager-e-mail, der afviger fra købers, når momsordningen skiftes, og når en ny faktura laves. Bekræftelsen før Send viser modtageren tydeligt og advarer, hvis e-mailen er ændret.
+12. **Lukket firmakonto:** kan stadig se og eksportere sine fakturaer (opbevaringspligt, `firma_faktura_mit_firma_laes`), men ikke sende, rette eller lave nye. Eksporten er side for side (`firma_fakturaer_eksport`, 1000 ad gangen) uden loft; ZIP højst 500 PDF'er pr. fil.
+13. **PDF og logo:** PDF'en gemmes med `upsert: false` og læses fra lageret, hvis den findes. Logoet hentes kun fra avatar-bucketten (`new URL()`, ingen `..`/`%2e`, højst 2 MB efter `content-length`). Stien står i øjebliksbilledet (`saelger.logo_sti`), og hashen gemmes ved første PDF (`logo_sha256`), så et senere skiftet profilbillede aldrig kommer på en sendt faktura.
 
 ## Nummerserie
 
@@ -35,8 +41,8 @@ Migration: `supabase/migrations/20261102330000_firma_fakturaer.sql` (kørt på t
 - **Linjer:** kun varen. Beløbet er buddet inkl. moms (`betalinger.bud_oere`), antal 1, med titel og stand. Firmaet får hele buddet (prismodel `erhverv2`).
 - **Fragt står ikke på firmaets faktura.** Fragten betales til BidHamr (application fee) og går videre til fragtfirmaet, så firmaet modtager aldrig fragtbetalingen (`src/lib/betaling/beregn.ts`).
 - **BidHamrs gebyrer står heller ikke på firmaets faktura.** Dem fakturerer BidHamr selv (docs/FAKTURA.md).
-- **Almindelig moms:** netto = round(beløb × 4/5) pr. linje, moms = beløb − netto (samme regel som `public.faktura_moms`). Fakturaen viser beløb ekskl. moms, moms 25 % og total.
-- **Brugtmoms:** ingen moms vises. Fakturaen viser i stedet teksten "Brugtmoms – særordning for brugte varer".
+- **Almindelig moms:** netto = round(beløb × 4/5) pr. linje, moms = beløb − netto (samme regel som `public.faktura_moms`). Hver linje viser enhedspris og beløb ekskl. moms, momssats og beløb inkl. moms (§ 58, stk. 1); bunden viser beløb ekskl. moms, moms 25 % og total.
+- **Brugtmoms:** ingen moms vises. Fakturaen viser i stedet lovens ordlyd "Fortjenstmargenordning – brugte genstande" (momssystemdirektivets art. 226, nr. 14) og en kort forklaring. Fakturaer sendt før 20261102390000 beholder deres gamle tekst.
 - Samme beregning findes i `src/lib/erhverv/firmaFaktura.ts` (`beregnFaktura`) og kontrolleres ved afsendelse (`fakturaTalStemmer`).
 
 ## Købers oplysninger (ét sted)
@@ -47,9 +53,8 @@ Migration: `supabase/migrations/20261102330000_firma_fakturaer.sql` (kørt på t
 - **Adresse:** findes i denne rækkefølge:
   1. `public.bruger_adresser` (kontoen, 20261102340000)
   2. `handel_levering` (levering til døren)
-  3. `users.adresse` (gammel fri tekst)
 
-  Har køberen ingen række i `bruger_adresser`, bruges de næste kilder. Findes der ingen adresse, laves kladden alligevel, men Send er spærret, indtil firmaet har skrevet adressen ind. Selve handlen påvirkes aldrig.
+  `users.adresse` bruges ikke (20261102390000). Er handlen refunderet eller annulleret, vises købers adresse ikke på kladden. Har køberen ingen række i `bruger_adresser`, bruges de næste kilder. Findes der ingen adresse, laves kladden alligevel, men Send er spærret, indtil firmaet har skrevet adressen ind. Selve handlen påvirkes aldrig.
 - **E-mail:** e-mailen til handlen, ellers kontoens e-mail.
 - **Firmanavn og CVR:** udfyldes af køberen selv på handlen (hjemmesiden eller `POST /api/firma-faktura`) eller af firmaet i kladden.
 - Alt låses i øjebliksbilledet ved afsendelsen.
@@ -94,12 +99,13 @@ PDF'en og øjebliksbilledet har:
 | Købers navn og adresse | `koeber.*` (Send spærret uden) |
 | Mængde og art af varen | linjen: antal 1 + titel og stand |
 | Leveringsdato | `leveringsdato` (modtaget → afsendt → betalt; kan rettes) |
-| Beløb ekskl. moms, momssats, momsbeløb | `beloeb_ekskl_moms_oere`, 25 %, `moms_oere` |
+| Enhedspris ekskl. moms (pr. linje) | `linjer[].enhedspris_ekskl_moms_oere` |
+| Beløb ekskl. moms, momssats, momsbeløb | pr. linje `netto_oere`, `moms_sats`, `moms_oere`, `beloeb_oere` (inkl.); i alt `beloeb_ekskl_moms_oere`, 25 %, `moms_oere` |
 | Henvisning ved brugtmoms (og ingen moms) | `brugtmoms_tekst` |
 
 **Kilder, der skal tjekkes:** jeg kunne ikke slå kilderne op online, da jeg byggede det (ingen netadgang). Henvisningerne herunder skal derfor tjekkes mod den gældende tekst, før vi går live. Det er spørgsmål 26–32 til revisor.
 
-- **Momsbekendtgørelsen § 58, stk. 1 (fuld faktura) og § 58, stk. 1, nr. 14 (særordningerne, herunder brugte genstande).** Retsinformation.dk: søg "momsbekendtgørelsen". Tjek især den præcise formulering for brugtmoms. Direktivets ordlyd (momssystemdirektivet art. 226, nr. 14) er "Fortjenstmargenordning – brugte genstande". Den valgte tekst "Brugtmoms – særordning for brugte varer" skal bekræftes.
+- **Momsbekendtgørelsen § 58, stk. 1 (fuld faktura) og § 58, stk. 1, nr. 14 (særordningerne, herunder brugte genstande).** Retsinformation.dk: søg "momsbekendtgørelsen". Tjek især den præcise formulering for brugtmoms. Direktivets ordlyd (momssystemdirektivet art. 226, nr. 14) er "Fortjenstmargenordning – brugte genstande". Den tekst bruges nu (20261102390000); revisor bekræfter (spørgsmål 28).
 - **Momsloven § 52 (fakturapligt) og § 69-71 (brugtmoms).**
 - **Skattestyrelsens Juridiske Vejledning**, afsnittet om fakturakrav (skat.dk → Den juridiske vejledning → Moms → fakturering).
 - **Bogføringsloven:** opbevaring i 5 år fra udgangen af regnskabsåret.

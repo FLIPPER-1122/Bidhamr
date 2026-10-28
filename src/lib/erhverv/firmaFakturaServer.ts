@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getResend } from "@/lib/resend";
 import { logDriftFejl } from "@/lib/drift";
@@ -29,6 +30,8 @@ export type SendtRaekke = {
   koeber_id: string;
   status: "kladde" | "sendt";
   pdf_sti: string | null;
+  mail_sendt_kl?: string | null;
+  logo_sha256?: string | null;
   data: FirmaFakturaData | null;
 };
 
@@ -36,35 +39,65 @@ function erPdf(b: Uint8Array): boolean {
   return b.length > 4 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46;
 }
 
+export function sha256Hex(b: Uint8Array): string {
+  return createHash("sha256").update(b).digest("hex");
+}
+
 // Kladde (forhåndsvisning) - laves altid frisk, gemmes ikke.
 export async function kladdePdf(d: FirmaFakturaData): Promise<Uint8Array> {
   return lavFirmaFakturaPdf(d, await hentLogo(d.saelger.logo_url));
 }
 
+async function hentGemt(admin: ReturnType<typeof createAdminClient>, sti: string): Promise<Uint8Array | null> {
+  const { data: fil, error } = await admin.storage.from(BUCKET).download(sti);
+  if (error || !fil) return null;
+  const pdf = new Uint8Array(await fil.arrayBuffer());
+  return erPdf(pdf) ? pdf : null;
+}
+
 // Sendt faktura: den gemte PDF, ellers laves den ud fra øjebliksbilledet og
-// gemmes (én gang).
+// gemmes én gang (upsert: false - en gemt PDF overskrives aldrig; findes
+// filen allerede, bruges den). Logoets hash gemmes sammen med stien, så en
+// senere genskabelse kun bruger logoet, hvis det er præcis det samme billede.
 export async function sendtPdf(r: SendtRaekke): Promise<Uint8Array> {
   if (r.status !== "sendt" || !r.data) throw new Error("Fakturaen er ikke sendt.");
   const admin = createAdminClient();
-  if (r.pdf_sti) {
-    const { data: fil, error } = await admin.storage.from(BUCKET).download(r.pdf_sti);
-    if (!error && fil) {
-      const pdf = new Uint8Array(await fil.arrayBuffer());
-      if (erPdf(pdf)) return pdf;
+  const sti = r.pdf_sti ?? `${r.firma_id}/${r.id}.pdf`;
+  const gemt = await hentGemt(admin, sti);
+  if (gemt) {
+    if (!r.pdf_sti) {
+      const { error } = await admin.rpc("firma_faktura_gem_pdf", { p_id: r.id, p_sti: sti, p_logo_sha256: null });
+      if (error) await logDriftFejl({ kilde: "server", hvor: "firma_faktura_gem_pdf", fejl: error });
     }
+    return gemt;
   }
-  const pdf = await lavFirmaFakturaPdf(r.data, await hentLogo(r.data.saelger.logo_url));
+
+  let logo = await hentLogo(r.data.saelger.logo_url);
+  const logoHash = logo ? sha256Hex(logo.bytes) : null;
+  if (logo && r.logo_sha256 && r.logo_sha256 !== logoHash) {
+    // Profilbilledet er skiftet siden afsendelsen: ikke et andet logo på en
+    // sendt faktura.
+    await logDriftFejl({ kilde: "server", hvor: "firma_faktura_logo_skiftet", fejl: new Error(`Logoet er ændret for ${r.id}`) });
+    logo = null;
+  }
+  const pdf = await lavFirmaFakturaPdf(r.data, logo);
   if (!r.pdf_sti) {
-    const sti = `${r.firma_id}/${r.id}.pdf`;
     const { error: opFejl } = await admin.storage
       .from(BUCKET)
-      .upload(sti, pdf, { contentType: "application/pdf", upsert: true, cacheControl: "0" });
-    if (!opFejl) {
-      const { error } = await admin.rpc("firma_faktura_gem_pdf", { p_id: r.id, p_sti: sti });
-      if (error) await logDriftFejl({ kilde: "server", hvor: "firma_faktura_gem_pdf", fejl: error });
-    } else {
+      .upload(sti, pdf, { contentType: "application/pdf", upsert: false, cacheControl: "0" });
+    if (opFejl) {
+      // Fx en samtidig afsendelse, der nåede først: brug den gemte.
+      const anden = await hentGemt(admin, sti);
+      if (anden) {
+        const { error } = await admin.rpc("firma_faktura_gem_pdf", { p_id: r.id, p_sti: sti, p_logo_sha256: null });
+        if (error) await logDriftFejl({ kilde: "server", hvor: "firma_faktura_gem_pdf", fejl: error });
+        return anden;
+      }
       await logDriftFejl({ kilde: "server", hvor: "firma_faktura_upload", fejl: opFejl });
+      return pdf;
     }
+    const { error } = await admin.rpc("firma_faktura_gem_pdf", { p_id: r.id, p_sti: sti, p_logo_sha256: logo ? logoHash : null });
+    if (error) await logDriftFejl({ kilde: "server", hvor: "firma_faktura_gem_pdf", fejl: error });
   }
   return pdf;
 }
@@ -74,7 +107,7 @@ export async function sendtPdf(r: SendtRaekke): Promise<Uint8Array> {
 export async function hentSendtRaekke(id: string): Promise<SendtRaekke | null> {
   const { data, error } = await createAdminClient()
     .from("firma_fakturaer")
-    .select("id, firma_id, saelger_id, koeber_id, status, pdf_sti, data")
+    .select("id, firma_id, saelger_id, koeber_id, status, pdf_sti, mail_sendt_kl, logo_sha256, data")
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -127,6 +160,8 @@ export function fakturaMail(d: FirmaFakturaData): { subject: string; html: strin
 export async function sendFakturaMail(r: SendtRaekke): Promise<boolean> {
   const d = r.data;
   if (!d || r.status !== "sendt") return false;
+  // Mailen sendes højst én gang (ingen dobbelt-mail ved "Send mailen igen").
+  if (r.mail_sendt_kl) return true;
   const admin = createAdminClient();
   const gem = async (ok: boolean, fejl: string | null) => {
     const { error } = await admin.rpc("firma_faktura_mail_resultat", { p_id: r.id, p_ok: ok, p_fejl: fejl });

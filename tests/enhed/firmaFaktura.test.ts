@@ -7,7 +7,12 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BRUGTMOMS_FAKTURA_TEKST,
+  aktuelFaktura,
   beregnFaktura,
+  beregnLinje,
+  enhedsprisEksklMoms,
+  erNyVare,
+  type FirmaFakturaRaekke,
   fakturaTalStemmer,
   fakturanummerTekst,
   firmaFakturaCsv,
@@ -17,7 +22,7 @@ import {
 } from "@/lib/erhverv/firmaFaktura";
 import { crc32, lavZip } from "@/lib/zip";
 import { afsender, fakturaMail } from "@/lib/erhverv/firmaFakturaServer";
-import { lavFirmaFakturaPdf } from "@/lib/pdf/firmaFakturaPdf";
+import { gyldigLogoUrl, lavFirmaFakturaPdf } from "@/lib/pdf/firmaFakturaPdf";
 
 const ROD = path.resolve(import.meta.dirname, "../..");
 
@@ -67,14 +72,42 @@ describe("moms og brugtmoms", () => {
   });
 
   it("brugtmoms: ingen moms vises, men teksten", () => {
-    expect(beregnFaktura([50000], "brugtmoms")).toEqual({ beloeb_ekskl_moms_oere: null, moms_oere: null, total_oere: 50000, moms_sats: null, brugtmoms_tekst: "Brugtmoms – særordning for brugte varer" });
-    expect(BRUGTMOMS_FAKTURA_TEKST).toBe("Brugtmoms – særordning for brugte varer");
+    expect(beregnFaktura([50000], "brugtmoms")).toEqual({ beloeb_ekskl_moms_oere: null, moms_oere: null, total_oere: 50000, moms_sats: null, brugtmoms_tekst: "Fortjenstmargenordning – brugte genstande" });
+    // Lovens ordlyd - samme tekst som databasen.
+    expect(BRUGTMOMS_FAKTURA_TEKST).toBe("Fortjenstmargenordning – brugte genstande");
+    const mig = readFileSync(path.join(ROD, "supabase/migrations/20261102390000_firma_fakturaer_rettelser.sql"), "utf8");
+    expect(mig).toContain(`'${BRUGTMOMS_FAKTURA_TEKST}'`);
+  });
+
+  it("pr. linje: enhedspris og beløb ekskl. moms, momssats og beløb inkl. moms (§ 58, stk. 1)", () => {
+    expect(beregnLinje(12345, 1, "moms")).toEqual({ enhedspris_ekskl_moms_oere: 9876, netto_oere: 9876, moms_sats: 25, moms_oere: 2469, beloeb_oere: 12345 });
+    expect(beregnLinje(10000, 2, "moms")).toEqual({ enhedspris_ekskl_moms_oere: 4000, netto_oere: 8000, moms_sats: 25, moms_oere: 2000, beloeb_oere: 10000 });
+    expect(beregnLinje(-12345, 1, "moms")).toMatchObject({ enhedspris_ekskl_moms_oere: -9876, netto_oere: -9876, moms_oere: -2469 });
+    expect(beregnLinje(50000, 1, "brugtmoms")).toEqual({ enhedspris_ekskl_moms_oere: null, netto_oere: null, moms_sats: null, moms_oere: null, beloeb_oere: 50000 });
+    // Ældre øjebliksbilleder uden enhedspris ekskl. moms: = netto / antal.
+    expect(enhedsprisEksklMoms({ tekst: "x", antal: 1, enhedspris_oere: 12345, beloeb_oere: 12345, netto_oere: 9876, moms_oere: 2469 })).toBe(9876);
+    expect(enhedsprisEksklMoms({ tekst: "x", antal: 1, enhedspris_oere: 1, beloeb_oere: 1, netto_oere: null, moms_oere: null })).toBeNull();
+    // Kontrollen fanger en forkert linje, selv når totalerne stemmer.
+    const d = data();
+    expect(fakturaTalStemmer(data({ linjer: [{ ...d.linjer[0], enhedspris_ekskl_moms_oere: 9876, moms_sats: 25 }] }))).toBe(true);
+    expect(fakturaTalStemmer(data({ linjer: [{ ...d.linjer[0], enhedspris_ekskl_moms_oere: 9877 }] }))).toBe(false);
+    expect(fakturaTalStemmer(data({ linjer: [{ ...d.linjer[0], netto_oere: 9875, moms_oere: 2470 }] }))).toBe(false);
+  });
+
+  it("advarsel ved brugtmoms på nye varer", () => {
+    expect(erNyVare("ny_med_maerke")).toBe(true);
+    expect(erNyVare("Ny")).toBe(true);
+    expect(erNyVare("som_ny")).toBe(false);
+    expect(erNyVare(null)).toBe(false);
   });
 
   it("kontrollen fanger tal, der ikke stemmer", () => {
     expect(fakturaTalStemmer(data())).toBe(true);
     expect(fakturaTalStemmer(data({ moms_oere: 2470 }))).toBe(false);
-    expect(fakturaTalStemmer(data({ momsordning: "brugtmoms", moms_oere: null, beloeb_ekskl_moms_oere: null, moms_sats: null }))).toBe(true);
+    const brugt = { ...data().linjer[0], netto_oere: null, moms_oere: null };
+    expect(fakturaTalStemmer(data({ momsordning: "brugtmoms", linjer: [brugt], moms_oere: null, beloeb_ekskl_moms_oere: null, moms_sats: null }))).toBe(true);
+    // Brugtmoms med moms på linjen stemmer ikke.
+    expect(fakturaTalStemmer(data({ momsordning: "brugtmoms", moms_oere: null, beloeb_ekskl_moms_oere: null, moms_sats: null }))).toBe(false);
   });
 });
 
@@ -96,6 +129,42 @@ describe("nummer, CSV og filnavne", () => {
   it("filnavne er sikre", () => {
     expect(pdfFilnavn(data({ fakturanummer: "BH/0001" }))).toBe("Faktura-BH_0001.pdf");
     expect(pdfFilnavn(data({ type: "kreditnota", fakturanummer: null }))).toBe("Kreditnota-kladde-11111111.pdf");
+  });
+});
+
+describe("logo og den aktuelle faktura", () => {
+  const BASE = "https://abc.supabase.co";
+  const OK = `${BASE}/storage/v1/object/public/avatarer/u1/logo.png`;
+
+  it("logoet skal ligge i avatar-bucketten - ingen .., %2e eller andre værter", () => {
+    expect(gyldigLogoUrl(OK, BASE)).toBe(OK);
+    for (const ond of [
+      `${BASE}/storage/v1/object/public/avatarer/../private/x.png`,
+      `${BASE}/storage/v1/object/public/avatarer/%2e%2e/private/x.png`,
+      `${BASE}/storage/v1/object/public/avatarer/%2E%2E%2Fprivate/x.png`,
+      `${BASE}/storage/v1/object/public/avatarer/u1%2flogo.png`,
+      `${BASE}/storage/v1/object/public/avatarer/u1\\logo.png`,
+      `${BASE}/storage/v1/object/public/avatarer/`,
+      `${BASE}/storage/v1/object/public/andet/x.png`,
+      `${BASE}.ond.dk/storage/v1/object/public/avatarer/x.png`,
+      `https://ond.dk/storage/v1/object/public/avatarer/x.png`,
+      `https://bruger@abc.supabase.co/storage/v1/object/public/avatarer/x.png`,
+      `${OK}?x=1`,
+      `http://abc.supabase.co/storage/v1/object/public/avatarer/x.png`,
+      "ikke en url",
+    ]) {
+      expect(gyldigLogoUrl(ond, BASE), ond).toBeNull();
+    }
+  });
+
+  it("efter kreditnota er den aktuelle faktura den ikke-krediterede", () => {
+    const r = (o: Partial<FirmaFakturaRaekke>) => ({ trade_id: "t", type: "faktura", krediteret_kl: null, oprettet_kl: "2026-10-01", ...o }) as FirmaFakturaRaekke;
+    const gl = r({ id: "gl", krediteret_kl: "2026-10-02", oprettet_kl: "2026-10-01" });
+    const ny = r({ id: "ny", oprettet_kl: "2026-10-03" });
+    const kredit = r({ id: "k", type: "kreditnota" });
+    expect(aktuelFaktura([ny, kredit, gl], "t")?.id).toBe("ny");
+    expect(aktuelFaktura([kredit, gl], "t")?.id).toBe("gl");
+    expect(aktuelFaktura([gl], "x")).toBeUndefined();
   });
 });
 
@@ -195,15 +264,40 @@ describe("ingen automatisk afsendelse", () => {
   });
 
   it("databasen: kun firma_faktura_send sætter status 'sendt', og den kræver auth.uid()", () => {
-    const mig = readFileSync(path.join(ROD, "supabase/migrations/20261102330000_firma_fakturaer.sql"), "utf8");
-    const saetter = mig.match(/set\s+status\s*=\s*'sendt'/gi) ?? [];
-    expect(saetter.length).toBe(1);
-    const fn = mig.slice(mig.indexOf("create or replace function public.firma_faktura_send("));
-    expect(fn.slice(0, fn.indexOf("$fn$;", fn.indexOf("$fn$") + 4))).toMatch(/if v_uid is null or v_firma is null then\s+raise exception/);
+    for (const navn of ["20261102330000_firma_fakturaer.sql", "20261102390000_firma_fakturaer_rettelser.sql"]) {
+      const mig = readFileSync(path.join(ROD, "supabase/migrations", navn), "utf8");
+      const saetter = mig.match(/set\s+status\s*=\s*'sendt'/gi) ?? [];
+      expect(saetter.length, navn).toBe(1);
+      const fn = mig.slice(mig.indexOf("create or replace function public.firma_faktura_send("));
+      const krop = fn.slice(0, fn.indexOf("$fn$;", fn.indexOf("$fn$") + 4));
+      expect(krop, navn).toMatch(/if v_uid is null or v_firma is null then\s+raise exception/);
+      // Den eneste 'set status = sendt' ligger i firma_faktura_send.
+      expect(krop, navn).toMatch(/set\s+status\s*=\s*'sendt'/i);
+      expect(mig, navn).not.toMatch(/grant execute on function public\.firma_faktura_send\([^)]*\) to [^;]*service_role/);
+    }
+    const ret = readFileSync(path.join(ROD, "supabase/migrations/20261102390000_firma_fakturaer_rettelser.sql"), "utf8");
+    // Manglerne tjekkes igen efter låsen (for update) og ruller tilbage.
+    const send = ret.slice(ret.indexOf("create or replace function public.firma_faktura_send("));
+    const efterLaas = send.slice(send.indexOf("for update;", send.indexOf("firma_faktura_indstillinger s")));
+    expect(efterLaas.slice(0, efterLaas.indexOf("set status = 'sendt'"))).toMatch(/jsonb_array_length\(v_data -> 'mangler'\) > 0 then[\s\S]*?raise exception[\s\S]*?BHF12/);
+    // "Lav ny faktura" og momsskift laver kun kladder.
+    for (const fnNavn of ["firma_faktura_ny(", "firma_faktura_kladde_momsordning(", "firma_faktura_opret_kladder("]) {
+      const f = ret.slice(ret.indexOf(`create or replace function public.${fnNavn}`));
+      const krop = f.slice(0, f.indexOf("$fn$;", f.indexOf("$fn$") + 4));
+      expect(krop, fnNavn).not.toMatch(/'sendt'\s*,|status\s*=\s*'sendt'/);
+    }
     // Ingen planlagt kørsel.
     const alle = readdirSync(path.join(ROD, "supabase/migrations")).map((n) => readFileSync(path.join(ROD, "supabase/migrations", n), "utf8"));
     for (const t of alle) expect(t).not.toMatch(/cron\.schedule[^;]*firma_faktura/i);
-    // Service role må ikke kalde send.
-    expect(mig).not.toMatch(/grant execute on function public\.firma_faktura_send\([^)]*\) to [^;]*service_role/);
+  });
+
+  it("Lav ny faktura og momsskift kaldes kun fra knapperne, aldrig automatisk", () => {
+    for (const navn of ["lavNyFirmaFaktura", "skiftFirmaFakturaMomsordning"]) {
+      const brug = SRC.filter((f) => new RegExp(`\\b${navn}\\b`).test(f.t) && f.p !== "src/app/actions/firmaFaktura.ts").map((f) => f.p);
+      expect(brug.length, navn).toBe(1);
+      expect(brug[0], navn).toMatch(/^src\/components\/firma\//);
+    }
+    const auto = SRC.filter((f) => /^src\/app\/api\/(cron|webhooks|app)\//.test(f.p) || /cron/i.test(f.p));
+    for (const f of auto) expect(f.t, f.p).not.toMatch(/firma_faktura_ny|firma_faktura_kladde_momsordning/);
   });
 });
