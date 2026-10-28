@@ -158,11 +158,48 @@ export function fakturaMail(d: FirmaFakturaData): { subject: string; html: strin
 // Sender mailen med PDF'en til køberen (kopi til firmaet som bcc) og gemmer
 // resultatet. Returnerer true, hvis Resend tog imod den.
 export async function sendFakturaMail(r: SendtRaekke): Promise<boolean> {
+  return (await sendFakturaMailLaast(r)) === "sendt";
+}
+
+type MailUdfald = "sendt" | "fejl" | "i_gang";
+
+// Som sendFakturaMail, men "i_gang", hvis et andet forsøg sender mailen
+// lige nu (to samtidige tryk på "Send mailen igen"). Låsen tages under
+// rækkelåsen på fakturaen (firma_faktura_mail_tag, 20261102410000) og
+// slippes, når forsøget er slut (ellers efter 5 minutter).
+export async function sendFakturaMailLaast(r: SendtRaekke): Promise<MailUdfald> {
   const d = r.data;
-  if (!d || r.status !== "sendt") return false;
+  if (!d || r.status !== "sendt") return "fejl";
   // Mailen sendes højst én gang (ingen dobbelt-mail ved "Send mailen igen").
-  if (r.mail_sendt_kl) return true;
+  if (r.mail_sendt_kl) return "sendt";
   const admin = createAdminClient();
+  const { data: laast, error: laasFejl } = await admin.rpc("firma_faktura_mail_tag", { p_id: r.id });
+  // Migrationen er ikke kørt: som før (uden lås).
+  const udenLaas = laasFejl?.code === "PGRST202" || laasFejl?.code === "42883";
+  if (laasFejl && !udenLaas) {
+    await logDriftFejl({ kilde: "server", hvor: "firma_faktura_mail_tag", fejl: laasFejl });
+    return "fejl";
+  }
+  if (!laasFejl && laast !== true) {
+    // Allerede sendt (af det andet forsøg) eller i gang.
+    const nu = await hentSendtRaekke(r.id);
+    return nu?.mail_sendt_kl ? "sendt" : "i_gang";
+  }
+  try {
+    return (await sendFakturaMailNu(admin, r, d)) ? "sendt" : "fejl";
+  } finally {
+    if (!udenLaas) {
+      const { error } = await admin.rpc("firma_faktura_mail_frigiv", { p_id: r.id });
+      if (error) await logDriftFejl({ kilde: "server", hvor: "firma_faktura_mail_frigiv", fejl: error });
+    }
+  }
+}
+
+async function sendFakturaMailNu(
+  admin: ReturnType<typeof createAdminClient>,
+  r: SendtRaekke,
+  d: FirmaFakturaData,
+): Promise<boolean> {
   const gem = async (ok: boolean, fejl: string | null) => {
     const { error } = await admin.rpc("firma_faktura_mail_resultat", { p_id: r.id, p_ok: ok, p_fejl: fejl });
     if (error) await logDriftFejl({ kilde: "server", hvor: "firma_faktura_mail_resultat", fejl: error });

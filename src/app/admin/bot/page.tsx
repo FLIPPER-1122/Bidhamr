@@ -7,7 +7,7 @@ import AdminTom from "@/components/admin/AdminTom";
 import AdminSideskift, { adminHref, laesSide } from "@/components/admin/AdminSideskift";
 import { HenvendelserFaner } from "@/components/admin/OmraadeFaner";
 import BotLofterForm from "@/components/admin/BotLofterForm";
-import { botAktiv, botMaksPrisUsd, botModel } from "@/lib/bot/konfig";
+import { botAktiv, botMaksPrisUsd, botModel, botSvarOverBrugerLoft } from "@/lib/bot/konfig";
 
 // BidHamr-bot i admin: samtalerne (medarbejder og op) og det samlede
 // forbrug og den samlede pris (kun chef). Samtaler, hvor brugeren bad om en
@@ -110,6 +110,13 @@ export default async function AdminBotSide({ searchParams }: { searchParams: Pro
                 bruger og {antal(indstillinger.doegnloft_anon)} beskeder uden login. Svar, der er i gang, tælles med som højst{" "}
                 {usd(botMaksPrisUsd(botModel() ?? ""))} pr. svar.
               </p>
+              {botSvarOverBrugerLoft(botModel() ?? "", Number(indstillinger.bruger_loft_usd)) && (
+                <p className="border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-sm text-advarsel-tekst">
+                  Ét svar med {botModel() ?? "den valgte model"} kan koste op til {usd(botMaksPrisUsd(botModel() ?? ""))}, mere end
+                  loftet pr. bruger på {usd(indstillinger.bruger_loft_usd)}. Loftet tjekkes, før svaret begynder, så én bruger kan
+                  komme over sit loft med ét svar. Hæv loftet pr. bruger, eller vælg en billigere model.
+                </p>
+              )}
               <BotLofterForm
                 doegnloftUsd={Number(indstillinger.doegnloft_usd)}
                 anonAndel={Number(indstillinger.anon_andel)}

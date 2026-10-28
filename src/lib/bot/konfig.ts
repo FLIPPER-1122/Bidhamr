@@ -27,7 +27,9 @@ export const BOT_LOFT_PR_DOEGN = 30;
 // Groft loft over input-tokens pr. runde (systemprompt, værktøjer, op til
 // BOT_MAKS_HISTORIK beskeder og værktøjsresultater) - kun til skønnet over
 // den højeste pris for ét svar (botMaksPrisUsd). Hellere for højt end for lavt.
-export const BOT_SKOEN_INPUT_PR_RUNDE = 30_000;
+// Hævet fra 30.000 (review 27. okt. 2026): værktøjsresultater og en lang
+// historik kan fylde mere end skønnet.
+export const BOT_SKOEN_INPUT_PR_RUNDE = 60_000;
 // Siden /kontakt (kontaktformularen) - linket ved lofterne.
 export const BOT_KONTAKT_STI = "/kontakt";
 
@@ -121,6 +123,8 @@ export function loftFejl(kode: string, grund?: string | null): { status: number;
         kode,
         fejl: "BidHamr-bot holder en kort pause lige nu. Prøv igen senere, eller skriv til os via kontaktformularen på /kontakt.",
       };
+    case "svar_i_gang":
+      return { status: 409, kode, fejl: "BidHamr-bot svarer stadig på din sidste besked. Vent, til svaret er kommet, og skriv så igen." };
     case "samtale_fuld":
       return { status: 409, kode, fejl: "Samtalen er blevet lang. Start en ny samtale, eller kontakt en rigtig medarbejder." };
     case "ukendt_samtale":
@@ -154,6 +158,13 @@ export function botMaksPrisUsd(model: string): number {
     cacheRead: 0,
     cacheWrite: 0,
   });
+}
+
+// Kan ét svar med modellen koste mere end loftet pr. bruger pr. døgn? Så
+// kan én bruger komme over sit loft med ét svar (loftet tjekkes, før svaret
+// begynder). Vises som advarsel på /admin/bot (fx ved Opus).
+export function botSvarOverBrugerLoft(model: string, brugerLoftUsd: number): boolean {
+  return botMaksPrisUsd(model) > brugerLoftUsd;
 }
 
 // Chefens indstillinger på /admin/bot (bot_indstillinger). Samme grænser

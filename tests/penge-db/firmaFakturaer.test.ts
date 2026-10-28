@@ -24,6 +24,7 @@ import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 import { funktion, MIG } from "./prismodelStub";
+import { huskelisteAfsnit } from "./huskelisteAfsnit";
 import { beregnFaktura } from "@/lib/erhverv/firmaFaktura";
 
 const MIGRATION = readFileSync(path.join(MIG, "20261102330000_firma_fakturaer.sql"), "utf8");
@@ -785,5 +786,89 @@ describe("eksport uden loft (side for side)", () => {
     expect(numre.length).toBe(alle);
     expect([...numre].sort((a, b) => a - b)).toEqual(numre);
     expect(await fejlSom(FREMMED, `select public.firma_fakturaer_eksport('2020-01-01', '2100-01-01')`)).toBe("42501");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 20261102410000 (afsnit "faktura"): låserækkefølge i send og lås på
+// "Send mailen igen".
+// ---------------------------------------------------------------------------
+describe("20261102410000: låse", () => {
+  let sendt: string;
+  let kladde: string;
+
+  beforeAll(async () => {
+    const afsnit = huskelisteAfsnit("faktura");
+    await db.exec(afsnit);
+    await db.exec(afsnit); // idempotent
+    sendt = await kladdeFor((await salg({ bud: 15000, levering: KASPER_DOER })).trade);
+    kladde = await kladdeFor((await salg({ bud: 16000, levering: KASPER_DOER })).trade);
+  });
+
+  it("send låser firmaets indstillinger FØR fakturaen (samme rækkefølge som standard-momsordningen)", async () => {
+    const def = (await en<{ d: string }>(`select pg_get_functiondef('public.firma_faktura_send(uuid)'::regprocedure) d`)).d;
+    const indst = def.indexOf("from public.firma_faktura_indstillinger s where s.firma_id = v_firma for update");
+    const faktura = def.indexOf("select * into x from public.firma_fakturaer f");
+    expect(indst).toBeGreaterThan(0);
+    expect(faktura).toBeGreaterThan(indst);
+    // Ændring af standard-momsordningen låser også indstillinger -> kladder
+    // (triggeren firma_faktura_indst_standard_synk).
+    const synk = await en<{ n: number }>(
+      `select count(*)::int n from pg_trigger where tgname = 'firma_faktura_indst_standard_synk' and tgrelid = 'public.firma_faktura_indstillinger'::regclass`,
+    );
+    expect(synk.n).toBe(1);
+    // Send virker som før.
+    const r = await send(sendt);
+    expect(r.kode).toBe("sendt");
+    expect((await send(sendt)).kode).toBe("allerede_sendt");
+  });
+
+  it("mail-låsen: kun ét forsøg ad gangen; sluppet igen efter forsøget; aldrig efter en sendt mail", async () => {
+    const tag = async (id: string) => (await en<{ r: boolean }>(`select public.firma_faktura_mail_tag($1) r`, [id])).r;
+    expect(await tag(kladde)).toBe(false); // ikke sendt
+    expect(await tag(sendt)).toBe(true);
+    // Et samtidigt tryk på "Send mailen igen" får ikke lov.
+    expect(await tag(sendt)).toBe(false);
+    // Forsøget fejlede (Resend nede): låsen slippes, og man kan prøve igen.
+    expect((await en<{ r: boolean }>(`select public.firma_faktura_mail_resultat($1, false, 'Resend nede') r`, [sendt])).r).toBe(true);
+    expect((await en<{ r: boolean }>(`select public.firma_faktura_mail_frigiv($1) r`, [sendt])).r).toBe(true);
+    expect(await tag(sendt)).toBe(true);
+    // En lås, der er udløbet (serveren døde), kan tages igen.
+    await db.query(`update public.firma_faktura_mail_laas set laast_til = now() - interval '1 second' where faktura_id = $1`, [sendt]);
+    expect(await tag(sendt)).toBe(true);
+    // Mailen er sendt: ingen flere forsøg.
+    await db.query(`select public.firma_faktura_mail_resultat($1, true, null)`, [sendt]);
+    await db.query(`select public.firma_faktura_mail_frigiv($1)`, [sendt]);
+    expect(await tag(sendt)).toBe(false);
+    // Ukendt id.
+    expect(await tag("00000000-0000-4000-8000-000000000999")).toBe(false);
+  });
+
+  it("kun service role", async () => {
+    for (const rolle of ["authenticated", "anon"]) {
+      await db.exec(`set role ${rolle}`);
+      try {
+        await som(FIRMA_U);
+        expect(await fejlkode(`select public.firma_faktura_mail_tag($1)`, [sendt])).toBe("42501");
+        expect(await fejlkode(`select public.firma_faktura_mail_frigiv($1)`, [sendt])).toBe("42501");
+        expect(await fejlkode(`select * from public.firma_faktura_mail_laas`)).toBe("42501");
+      } finally {
+        await som(null);
+        await db.exec(`reset role`);
+      }
+    }
+  });
+
+  it("md5-drift-tjek: en ændret firma_faktura_send stopper afsnittet", async () => {
+    const d = new PGlite();
+    await d.exec(STUB);
+    await d.exec(funktion("20261010030000_erhverv.sql", "create or replace function public.erhverv_har_adgang"));
+    await d.exec(funktion("20261006040000_auktionsfunktioner.sql", "create or replace function public.stand_normaliser"));
+    await d.exec(MIGRATION);
+    await d.exec(RETTELSER);
+    const fn = (await d.query<{ def: string }>(`select pg_get_functiondef('public.firma_faktura_send(uuid)'::regprocedure) def`)).rows[0].def;
+    await d.exec(fn.replace("'Fakturaen findes ikke.'", "'Ukendt faktura.'"));
+    await expect(d.exec(huskelisteAfsnit("faktura"))).rejects.toThrow(/firma_faktura_send.*md5/);
+    await d.close();
   });
 });

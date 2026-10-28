@@ -246,8 +246,10 @@ export const GRAENSER = {
   admin_login_ip: { maks: 20, vindueSek: 15 * 60 },
   admin_login_email_ip: { maks: 5, vindueSek: 15 * 60 },
   // Pr. e-mail alene (uden IP), så mange IP'er ikke kan gætte løs på samme
-  // konto. Tælles før e-mailen slås op (også for e-mails, der ikke er staff),
-  // og nulstilles ikke ved succes.
+  // konto. Tælles for alle e-mails (også dem, der ikke er staff), men IKKE
+  // fra en kendt enhed for netop den medarbejder (bh_enhed), så en angriber
+  // ikke kan spærre en medarbejder ude (src/lib/adgang.ts, graensePrEmail).
+  // Nulstilles ikke ved succes. Samme for admin_gendan_email.
   admin_login_email: { maks: 10, vindueSek: 15 * 60 },
   admin_kode_bruger: { maks: 5, vindueSek: 15 * 60 },
   admin_kode_ip: { maks: 30, vindueSek: 15 * 60 },

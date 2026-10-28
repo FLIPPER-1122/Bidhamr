@@ -35,6 +35,32 @@ export async function nuvaerendeEnhedHash(): Promise<string | null> {
   return gyldigVaerdi(v) ? hashEnhed(v) : null;
 }
 
+// Er denne browser en kendt enhed for brugeren (cookien bh_enhed er
+// registreret ved et tidligere gennemført login på samme vært)? false ved
+// fejl, ingen cookie eller en ugyldig cookie. Bruges på admin-hosten, så en
+// medarbejder på sin egen enhed ikke kan spærres ude af loftet pr. e-mail
+// (src/lib/adgang.ts). Cookien er 32 tilfældige bytes - den kan ikke gættes.
+export async function erKendtEnhed(brugerId: string): Promise<boolean> {
+  try {
+    const hash = await nuvaerendeEnhedHash();
+    if (!hash) return false;
+    const { data, error } = await createAdminClient()
+      .from("kendte_enheder")
+      .select("bruger_id")
+      .eq("bruger_id", brugerId)
+      .eq("enhed_hash", hash)
+      .limit(1);
+    if (error) {
+      console.error("erKendtEnhed: opslag fejlede:", error.message);
+      return false;
+    }
+    return Array.isArray(data) && data.length === 1;
+  } catch (err) {
+    console.error("erKendtEnhed kastede:", err);
+    return false;
+  }
+}
+
 // Henter (eller opretter) enhedens cookie og returnerer dens hash.
 async function enhedHash(): Promise<string> {
   const jar = await cookies();

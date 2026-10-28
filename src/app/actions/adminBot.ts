@@ -2,7 +2,9 @@
 
 // Admin -> Henvendelser -> BidHamr-bot (kun chef): døgnlofterne i
 // bot_indstillinger (én række, kun service-role). Databasen tjekker
-// grænserne igen (bot_indstillinger_vaerdier).
+// grænserne igen (bot_indstillinger_vaerdier). Hver ændring logges i
+// moderation_log ('bot_lofter_aendret', gamle og nye værdier) af en trigger
+// i samme transaktion (20261102410000) - med opdateret_af som medarbejder.
 
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";

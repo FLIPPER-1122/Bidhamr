@@ -7,7 +7,9 @@ import { createHash, createHmac } from "node:crypto";
 import { NextRequest } from "next/server";
 
 const BRUGER = "33333333-3333-4333-8333-333333333333";
-const TOKEN = "aaa.bbb.ccc";
+const SESSION = "44444444-4444-4444-8444-444444444444";
+// Et access token med session_id (kun payloaden læses - appBruger er mocket).
+const TOKEN = `aaa.${Buffer.from(JSON.stringify({ session_id: SESSION })).toString("base64url")}.ccc`;
 
 const m = vi.hoisted(() => ({
   graense: "ok" as "ok" | "for_mange" | "fejl",
@@ -77,9 +79,11 @@ const bekraeftRute = await import("@/app/api/konto/email/bekraeft/route");
 const bruger = { id: BRUGER, email: "ida@test.bidhamr.dk" };
 
 // rpc-svar pr. funktionsnavn.
-function rpcSvar(svar: Record<string, unknown>) {
-  m.rpc.mockImplementation(async (navn: string) => ({ data: svar[navn] ?? null, error: null }));
+function rpcSvar(svar: Record<string, unknown>, fejl: Record<string, { code: string; message: string }> = {}) {
+  m.rpc.mockImplementation(async (navn: string) => ({ data: svar[navn] ?? null, error: fejl[navn] ?? null }));
 }
+// Databasen uden 20261102410000 (koden skal virke, før migrationen er kørt).
+const UDEN_OUTBOX = { email_skift_behold_session: { code: "PGRST202", message: "Could not find the function" } };
 
 function req(sti: string, krop: unknown, token: string | null = TOKEN, origin?: string) {
   const headers: Record<string, string> = { "content-type": "application/json", host: "localhost" };
@@ -238,23 +242,23 @@ describe("bekraeftEmailSkiftFor", () => {
   const logUdAndre = vi.fn(async () => null);
 
   it("forkert format og forkert kode ændrer intet", async () => {
-    expect(await lib.bekraeftEmailSkiftFor({ bruger, kode: "12", logUdAndre })).toMatchObject({ kode: "kode_forkert" });
+    expect(await lib.bekraeftEmailSkiftFor({ bruger, kode: "12", sessionId: SESSION, logUdAndre })).toMatchObject({ kode: "kode_forkert" });
     rpcSvar({ email_skift_tjek: { kode: "forkert" } });
-    expect(await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", logUdAndre })).toMatchObject({ kode: "kode_forkert" });
+    expect(await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: SESSION, logUdAndre })).toMatchObject({ kode: "kode_forkert" });
     rpcSvar({ email_skift_tjek: { kode: "for_mange" } });
-    expect(await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", logUdAndre })).toMatchObject({ kode: "kode_udloebet" });
+    expect(await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: SESSION, logUdAndre })).toMatchObject({ kode: "kode_udloebet" });
     rpcSvar({ email_skift_tjek: { kode: "optaget" } });
-    expect(await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", logUdAndre })).toMatchObject({ kode: "optaget" });
+    expect(await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: SESSION, logUdAndre })).toMatchObject({ kode: "optaget" });
     rpcSvar({ email_skift_tjek: { kode: "staff" } });
-    expect(await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", logUdAndre })).toMatchObject({ kode: "staff" });
+    expect(await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: SESSION, logUdAndre })).toMatchObject({ kode: "staff" });
     expect(m.updateUserById).not.toHaveBeenCalled();
     expect(logUdAndre).not.toHaveBeenCalled();
     expect(m.send).not.toHaveBeenCalled();
   });
 
-  it("rigtig kode: auth skiftes, andre logges ud, gammel adresse får mail, Stripe opdateres", async () => {
-    rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } });
-    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123 456", logUdAndre });
+  it("uden 20261102410000: auth skiftes, andre logges ud, gammel adresse får mail, Stripe opdateres (som før)", async () => {
+    rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } }, UDEN_OUTBOX);
+    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123 456", sessionId: SESSION, logUdAndre });
     expect(r).toEqual({ ok: true, email: "ny@test.bidhamr.dk" });
     expect(m.rpc).toHaveBeenCalledWith("email_skift_tjek", { p_bruger: BRUGER, p_hash: lib.hashEmailKode(BRUGER, "123456") });
     expect(m.updateUserById).toHaveBeenCalledWith(BRUGER, { email: "ny@test.bidhamr.dk", email_confirm: true });
@@ -271,7 +275,7 @@ describe("bekraeftEmailSkiftFor", () => {
   it("updateUserById kaster: anmodningen afsluttes som fejl (sidder ikke fast)", async () => {
     rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } });
     m.updateUserById.mockRejectedValueOnce(new Error("timeout"));
-    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", logUdAndre });
+    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: SESSION, logUdAndre });
     expect(r).toEqual({ fejl: lib.EMAIL_SKIFT.generisk, kode: "fejl" });
     expect(m.rpc).toHaveBeenCalledWith("email_skift_afslut", { p_id: "s1", p_status: "fejl" });
     expect(m.drift).toHaveBeenCalledWith(expect.objectContaining({ hvor: "emailSkift/updateUserById" }));
@@ -280,9 +284,9 @@ describe("bekraeftEmailSkiftFor", () => {
   });
 
   it("Express-konto: e-mailen sendes ikke til Connect (sælgerens eget Stripe-login)", async () => {
-    rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } });
+    rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } }, UDEN_OUTBOX);
     m.kontoRetrieve.mockResolvedValue({ type: "express", controller: { requirement_collection: "stripe" } });
-    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", logUdAndre });
+    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: SESSION, logUdAndre });
     expect(r).toMatchObject({ ok: true });
     expect(m.kundeUpdate).toHaveBeenCalledWith("cus_1", { email: "ny@test.bidhamr.dk" });
     expect(m.kontoUpdate).not.toHaveBeenCalled();
@@ -292,7 +296,7 @@ describe("bekraeftEmailSkiftFor", () => {
   it("adressen blev taget i mellemtiden: optaget, intet andet sker", async () => {
     rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } });
     m.updateUserById.mockResolvedValue({ error: { code: "email_exists", status: 422, message: "exists" } });
-    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", logUdAndre });
+    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: SESSION, logUdAndre });
     expect(r).toMatchObject({ kode: "optaget" });
     expect(m.rpc).toHaveBeenCalledWith("email_skift_afslut", { p_id: "s1", p_status: "optaget" });
     expect(logUdAndre).not.toHaveBeenCalled();
@@ -300,11 +304,112 @@ describe("bekraeftEmailSkiftFor", () => {
   });
 
   it("en Stripe-fejl stopper ikke skiftet (logges)", async () => {
-    rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } });
+    rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } }, UDEN_OUTBOX);
     m.kontoUpdate.mockRejectedValueOnce(new Error("stripe nej"));
-    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", logUdAndre });
+    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: SESSION, logUdAndre });
     expect(r).toMatchObject({ ok: true });
     expect(m.drift).toHaveBeenCalledWith(expect.objectContaining({ hvor: "emailSkift/stripe-connect" }));
+  });
+});
+
+describe("outbox (20261102410000)", () => {
+  const logUdAndre = vi.fn(async () => null);
+  const raekke = (ekstra: Record<string, unknown> = {}) => ({
+    id: "o1",
+    bruger_id: BRUGER,
+    skiftet_kl: "2026-10-28T10:00:00.000Z",
+    gammel_email: "ida@test.bidhamr.dk",
+    ny_email: "ny@test.bidhamr.dk",
+    log_ud: false,
+    mail: false,
+    stripe: false,
+    forsoeg: 1,
+    ...ekstra,
+  });
+  const kald = (navn: string) => m.rpc.mock.calls.filter((c) => c[0] === navn);
+
+  it("rigtig kode: sessionen gemmes FØR auth, derefter log ud + mail + Stripe via outboxen", async () => {
+    rpcSvar({
+      email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" },
+      email_skift_behold_session: true,
+      email_skift_outbox_tag: [raekke()],
+      email_skift_outbox_log_ud: { kode: "ok", sessioner: 2, tokens: 1 },
+      email_skift_outbox_trin: true,
+    });
+    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: SESSION, logUdAndre });
+    expect(r).toEqual({ ok: true, email: "ny@test.bidhamr.dk" });
+    const navne = m.rpc.mock.calls.map((c) => c[0]);
+    expect(navne.indexOf("email_skift_behold_session")).toBeLessThan(navne.indexOf("email_skift_outbox_tag"));
+    expect(m.updateUserById.mock.invocationCallOrder[0]).toBeGreaterThan(
+      m.rpc.mock.invocationCallOrder[navne.indexOf("email_skift_behold_session")],
+    );
+    expect(kald("email_skift_behold_session")[0][1]).toEqual({ p_id: "s1", p_bruger: BRUGER, p_session: SESSION });
+    expect(kald("email_skift_outbox_tag")[0][1]).toEqual({ p_skift: "s1", p_graense: 20 });
+    expect(kald("email_skift_outbox_log_ud")[0][1]).toEqual({ p_id: "o1" });
+    expect(kald("email_skift_outbox_trin").map((c) => c[1].p_trin)).toEqual(["mail", "stripe"]);
+    expect(logUdAndre).not.toHaveBeenCalled();
+    expect(m.send).toHaveBeenCalledTimes(1);
+    expect(m.send.mock.calls[0][0]).toBe("ida@test.bidhamr.dk");
+    expect(m.send.mock.calls[0][1].subject).toBe("Din e-mail er ændret");
+    expect(m.kundeUpdate).toHaveBeenCalledWith("cus_1", { email: "ny@test.bidhamr.dk" });
+  });
+
+  it("ugyldig eller manglende session: null til databasen (alle sessioner fra før skiftet logges ud)", async () => {
+    rpcSvar({
+      email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" },
+      email_skift_behold_session: true,
+      email_skift_outbox_tag: [],
+    });
+    await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: "ikke-en-uuid", logUdAndre });
+    expect(kald("email_skift_behold_session")[0][1]).toMatchObject({ p_session: null });
+  });
+
+  it("mailen fejler: skiftet lykkes, fejlen gemmes på rækken (cron prøver igen), Stripe venter", async () => {
+    rpcSvar({
+      email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" },
+      email_skift_behold_session: true,
+      email_skift_outbox_tag: [raekke()],
+      email_skift_outbox_log_ud: { kode: "ok" },
+      email_skift_outbox_trin: true,
+    });
+    m.send.mockResolvedValueOnce({ ok: false, fejl: "Resend nede for ida@test.bidhamr.dk" });
+    const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: SESSION, logUdAndre });
+    expect(r).toMatchObject({ ok: true });
+    expect(kald("email_skift_outbox_trin")).toHaveLength(0);
+    const fejl = kald("email_skift_outbox_fejl");
+    expect(fejl).toHaveLength(1);
+    // Ingen e-mailadresser i fejlteksten.
+    expect(fejl[0][1].p_fejl).not.toContain("@");
+    expect(m.drift).toHaveBeenCalledWith(expect.objectContaining({ hvor: "emailSkift/outbox" }));
+  });
+
+  it("cron: kun de trin, der mangler; slettet konto får ingen mail; opgivet efter 12 forsøg", async () => {
+    rpcSvar({
+      email_skift_outbox_tag: [
+        raekke({ id: "o2", log_ud: true }),
+        raekke({ id: "o3", log_ud: true, gammel_email: null, ny_email: null }),
+      ],
+      email_skift_outbox_trin: true,
+    });
+    expect(await lib.koerEmailSkiftOutbox()).toEqual({ behandlet: 2, fejl: 0 });
+    expect(kald("email_skift_outbox_tag")[0][1]).toEqual({ p_skift: null, p_graense: 20 });
+    expect(kald("email_skift_outbox_log_ud")).toHaveLength(0);
+    expect(m.send).toHaveBeenCalledTimes(1);
+    expect(kald("email_skift_outbox_trin")).toHaveLength(4);
+
+    vi.clearAllMocks();
+    rpcSvar(
+      { email_skift_outbox_tag: [raekke({ id: "o4", forsoeg: 12 })] },
+      { email_skift_outbox_log_ud: { code: "XX000", message: "nede" } },
+    );
+    expect(await lib.koerEmailSkiftOutbox()).toEqual({ behandlet: 0, fejl: 1 });
+    expect(m.drift).toHaveBeenCalledWith(expect.objectContaining({ hvor: expect.stringContaining("opgivet efter 12") }));
+  });
+
+  it("uden migrationen: cron-trinnet gør intet (null)", async () => {
+    rpcSvar({}, { email_skift_outbox_tag: { code: "PGRST202", message: "Could not find the function" } });
+    expect(await lib.koerEmailSkiftOutbox()).toBeNull();
+    expect(m.drift).not.toHaveBeenCalled();
   });
 });
 
@@ -328,8 +433,13 @@ describe("appens endpoints", () => {
     expect(await r2.json()).toEqual({ ok: true, besked: lib.EMAIL_SKIFT.kodeSendt });
   });
 
-  it("POST /api/konto/email/bekraeft: logger andre enheder ud med appens eget token", async () => {
+  it("POST /api/konto/email/bekraeft: appens egen session beholdes (outbox), uden migrationen logges andre ud med tokenet", async () => {
     rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } });
+    const r0 = await bekraeftRute.POST(req("/api/konto/email/bekraeft", { kode: "123456" }));
+    expect(r0.status).toBe(200);
+    expect(m.rpc).toHaveBeenCalledWith("email_skift_behold_session", { p_id: "s1", p_bruger: BRUGER, p_session: SESSION });
+    expect(m.signOut).not.toHaveBeenCalled();
+    rpcSvar({ email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" } }, UDEN_OUTBOX);
     const r = await bekraeftRute.POST(req("/api/konto/email/bekraeft", { kode: "123456" }));
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({ ok: true, email: "ny@test.bidhamr.dk" });

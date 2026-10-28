@@ -30,6 +30,7 @@ import {
   opsaet,
   opsaetRettelser,
 } from "./sagsreglerStub";
+import { huskelisteAfsnit } from "./huskelisteAfsnit";
 
 let db: PGlite;
 
@@ -1018,4 +1019,98 @@ describe("md5-drift-tjek", () => {
     expect(r.rows[0].f).toBeNull();
     await d.close();
   }, 60_000);
+});
+
+// ------------------------------------------------------------------ 20261102410000
+
+describe("20261102410000: billede før sælgerens regning og markering ved frafald", () => {
+  beforeAll(async () => {
+    const afsnit = huskelisteAfsnit("sag");
+    await db.exec(afsnit);
+    await db.exec(afsnit); // idempotent
+  });
+
+  const GRUND = "Jeg smed pakken ud, før jeg så skaden på stolen.";
+  const afgoer = (sag: string, betaler: string | null) =>
+    j(`select public.sag_afgoer($1, $2, 'koeber', 'Medhold', null, false, $3) as v`, [MEDARBEJDER, sag, betaler]);
+
+  it("sælgeren betaler returfragten kræver et billede af pakken eller labelen: billeder_mangler", async () => {
+    const h = await handel();
+    const s = await opret(h.tradeId, "skadet", [{ sti: await billede(KOEBER, h.tradeId), kategori: "indhold" }], {
+      smidt: true,
+      grund: GRUND,
+    });
+    expect(s.kode).toBe("ok");
+    const sagId = s.sag_id as string;
+    expect((await afgoer(sagId, "saelger")).kode).toBe("billeder_mangler");
+    expect(await sagFelt<string>(sagId, "status")).toBe("aaben");
+    // BidHamr som betaler kræver intet billede.
+    expect((await afgoer(sagId, "bidhamr")).kode).toBe("ok");
+  });
+
+  it("billede af labelen eller pakken er nok", async () => {
+    const h = await handel();
+    const s = await opret(
+      h.tradeId,
+      "skadet",
+      [
+        { sti: await billede(KOEBER, h.tradeId), kategori: "label" },
+        { sti: await billede(KOEBER, h.tradeId), kategori: "indhold" },
+      ],
+      { smidt: true, grund: GRUND },
+    );
+    expect((await afgoer(s.sag_id as string, "saelger")).kode).toBe("ok");
+    const h2 = await handel();
+    const s2 = await opret(h2.tradeId, "skadet", await toBilleder(h2.tradeId));
+    expect((await afgoer(s2.sag_id as string, "saelger")).kode).toBe("ok");
+  });
+
+  it("anke omgjort til køberen: også billeder_mangler uden pakkebillede", async () => {
+    const h = await handel();
+    const s = await opret(h.tradeId, "skadet", [{ sti: await billede(KOEBER, h.tradeId), kategori: "indhold" }], {
+      smidt: true,
+      grund: GRUND,
+    });
+    const sagId = s.sag_id as string;
+    await j(`select public.sag_afgoer($1, $2, 'saelger', 'Ingen skade', null) as v`, [MEDARBEJDER, sagId]);
+    const anke = await en<{ id: string }>(
+      `insert into public.sag_anker (sag_id, trade_id, status, part, indgivet_af, ankede_afgjort_af)
+       values ($1, $2, 'afventer', 'koeber', $3, $4) returning id`,
+      [sagId, h.tradeId, KOEBER, MEDARBEJDER],
+    );
+    expect(
+      (await j(`select public.sag_anke_afgoer($1, $2, 'omgoer', 'Skaden er dokumenteret', null, false, 'saelger') as v`, [ADMIN, anke.id]))
+        .kode,
+    ).toBe("billeder_mangler");
+  });
+
+  it("genåbning efter retur: frafaldet regning markerer sagen hos staff (BidHamr kan stå med returfragten)", async () => {
+    const h = await saelgerRetur({ label: true });
+    expect(await sagFelt<boolean>(h.sagId, "kraever_opmaerksomhed")).toBe(false);
+    const g = await j(`select public.sag_genaabn($1, $2, 'Ny dokumentation') as v`, [ADMIN, h.sagId]);
+    expect(g.kode).toBe("ok");
+    expect(g.returfragt_regning).toMatchObject({ frafaldet: 1, alarm: 0 });
+    expect(await sagFelt<boolean>(h.sagId, "kraever_opmaerksomhed")).toBe(true);
+    const tekst = await sagFelt<string>(h.sagId, "opmaerksomhed_tekst");
+    expect(tekst).toContain("frafaldet");
+    expect(tekst).toContain("BidHamr kan stå med returfragten");
+    // Regningen selv er frafaldet som før.
+    expect((await en<{ status: string }>(`select status from public.ekstra_fragt_regninger where sag_id = $1`, [h.sagId])).status).toBe(
+      "frafaldet",
+    );
+  });
+
+  it("md5-drift-tjek: en ændret funktion stopper afsnittet", async () => {
+    const d = new PGlite();
+    await opsaet(d);
+    await d.exec(SAGSREGLER);
+    await opsaetRettelser(d);
+    await d.exec(RETTELSER);
+    const fn = (await d.query<{ def: string }>(
+      `select pg_get_functiondef('public.sag_indpakning_ved_afgoerelse(uuid,uuid,uuid,uuid,text)'::regprocedure) def`,
+    )).rows[0].def;
+    await d.exec(fn.replace("'ugyldig_returfragt_betaler'", "'ugyldig'"));
+    await expect(d.exec(huskelisteAfsnit("sag"))).rejects.toThrow(/sag_indpakning_ved_afgoerelse.*md5/);
+    await d.close();
+  });
 });

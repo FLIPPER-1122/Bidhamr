@@ -8,6 +8,7 @@ import { koerReturfragtCron } from "@/lib/betaling/returfragt";
 import { koerBoostCron } from "@/lib/betaling/boost";
 import { koerHenvisningCron } from "@/lib/henvisning/server";
 import { koerIapCron } from "@/lib/iap/server";
+import { koerEmailSkiftOutbox } from "@/lib/emailSkift";
 import { koerUgensButikCron } from "@/lib/betaling/ugensButik";
 import { koerEkstraFragtCron } from "@/lib/betaling/ekstraFragt";
 import { harCronAdgang } from "@/lib/cronAdgang";
@@ -291,7 +292,16 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "cron", sti: JOB, hvor: "boost/iap-cron", fejl: err });
     }
-    const r = { ...betaling, fragt, returfragt, boost, ugensButik, ekstraFragt, dac7, erhvervLuk, erhvervSynk, betaFejlOprydning, ekstraFragtOprydning, henvisning, iap };
+    // Skift af e-mail (20261102410000): log ud af andre enheder, mail til den
+    // gamle adresse og Stripe for skift, hvor serveren døde midt i det.
+    // Flytter ingen penge - fejl her tæller ikke som trinfejl, men logges.
+    let emailSkift: Awaited<ReturnType<typeof koerEmailSkiftOutbox>> = null;
+    try {
+      emailSkift = await koerEmailSkiftOutbox();
+    } catch (err) {
+      await logDriftFejl({ kilde: "server", sti: JOB, hvor: "Skift af e-mail: outbox", fejl: err });
+    }
+    const r = { ...betaling, fragt, returfragt, boost, ugensButik, ekstraFragt, dac7, erhvervLuk, erhvervSynk, betaFejlOprydning, ekstraFragtOprydning, henvisning, iap, emailSkift };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);
