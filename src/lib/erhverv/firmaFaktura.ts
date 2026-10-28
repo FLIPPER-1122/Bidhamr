@@ -12,12 +12,19 @@
 
 export type Momsordning = "moms" | "brugtmoms";
 
+// Beløb i øre. enhedspris_oere og beloeb_oere er inkl. moms (buddet).
+// Ved almindelig moms har linjen også enhedspris og beløb ekskl. moms
+// (netto_oere), momssats og momsbeløb (momsbekendtgørelsen § 58, stk. 1).
+// Ældre øjebliksbilleder (før 20261102390000) mangler
+// enhedspris_ekskl_moms_oere og moms_sats.
 export type FirmaFakturaLinje = {
   tekst: string;
   antal: number;
   enhedspris_oere: number;
   beloeb_oere: number;
+  enhedspris_ekskl_moms_oere?: number | null;
   netto_oere: number | null;
+  moms_sats?: number | null;
   moms_oere: number | null;
 };
 
@@ -31,6 +38,8 @@ export type FirmaFakturaPart = {
   email: string | null;
   telefon?: string | null;
   logo_url?: string | null;
+  // Stien i avatar-bucketten, fastholdt i øjebliksbilledet (20261102390000).
+  logo_sti?: string | null;
 };
 
 export type ManglerKode =
@@ -56,12 +65,15 @@ export type FirmaFakturaData = {
   saelger: FirmaFakturaPart & { firmanavn: string; cvr: string };
   koeber: FirmaFakturaPart & { navn: string | null };
   linjer: FirmaFakturaLinje[];
+  // Varens stand (stand_normaliser), fx "ny_med_maerke".
+  vare_stand?: string | null;
   momsordning: Momsordning;
   moms_sats: number | null;
   beloeb_ekskl_moms_oere: number | null;
   moms_oere: number | null;
   total_oere: number;
   brugtmoms_tekst: string | null;
+  brugtmoms_forklaring?: string | null;
   leveringsdato: string | null;
   betalingstekst: string;
   mangler: ManglerKode[];
@@ -75,6 +87,15 @@ export type FirmaFakturaRaekke = {
   krediterer_id: string | null;
   kreditnota_id: string | null;
   kreditnota_status: "kladde" | "sendt" | null;
+  // Sat, når kreditnotaen til fakturaen er sendt.
+  krediteret_kl: string | null;
+  // Den nye faktura på handlen efter kreditnotaen (hvis lavet).
+  ny_faktura_id: string | null;
+  // Vis "Lav ny faktura" (krediteret, ingen ny endnu, handlen ikke refunderet).
+  kan_lave_ny: boolean;
+  momsordning_fra_standard: boolean;
+  // Firmaet har sat en modtager-e-mail, der afviger fra købers.
+  email_afviger: boolean;
   fakturanummer: string | null;
   nummer: number | null;
   sendt_kl: string | null;
@@ -94,12 +115,34 @@ export type FirmaFakturaIndstillinger = {
   svar_email: string | null;
   vis_logo: boolean;
   nummer_laast: boolean;
+  // Lukket firmakonto: kan se og eksportere, men ikke sende eller rette.
+  kun_laes: boolean;
 };
 
 export type FirmaFakturaListe = { indstillinger: FirmaFakturaIndstillinger; fakturaer: FirmaFakturaRaekke[] };
 
-export const BRUGTMOMS_FAKTURA_TEKST = "Brugtmoms – særordning for brugte varer";
+// Lovens ordlyd: momssystemdirektivets art. 226, nr. 14 / momsbekendtgørelsen
+// § 58. Samme tekst som public.firma_faktura_byg (20261102390000).
+export const BRUGTMOMS_FAKTURA_TEKST = "Fortjenstmargenordning – brugte genstande";
+export const BRUGTMOMS_FORKLARING =
+  "Varen sælges efter brugtmomsordningen. Momsen står ikke på fakturaen og kan ikke trækkes fra.";
 export const MOMS_SATS = 25;
+
+// Brugtmoms gælder kun brugte varer købt uden moms. Advarsel (blokerer ikke),
+// når varen er ny.
+export function erNyVare(stand: string | null | undefined): boolean {
+  const s = (stand ?? "").trim().toLowerCase();
+  return s === "ny_med_maerke" || s === "ny" || s === "ny med mærke" || s === "ny med maerke";
+}
+
+// Den aktuelle faktura på en handel: den ikke-krediterede, ellers den nyeste.
+export function aktuelFaktura(fakturaer: FirmaFakturaRaekke[], tradeId: string): FirmaFakturaRaekke | undefined {
+  const paaHandel = fakturaer.filter((f) => f.trade_id === tradeId && f.type === "faktura");
+  return (
+    paaHandel.find((f) => !f.krediteret_kl) ??
+    [...paaHandel].sort((a, b) => (a.oprettet_kl < b.oprettet_kl ? 1 : -1))[0]
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Beregning (samme som databasen: netto = round(inkl * 4/5), halv væk fra 0)
@@ -133,13 +176,57 @@ export function beregnFaktura(linjerInkl: number[], momsordning: Momsordning): B
   return { beloeb_ekskl_moms_oere: netto, moms_oere: total - netto, total_oere: total, moms_sats: MOMS_SATS, brugtmoms_tekst: null };
 }
 
+export type LinjeBeregning = {
+  enhedspris_ekskl_moms_oere: number | null;
+  netto_oere: number | null;
+  moms_sats: number | null;
+  moms_oere: number | null;
+  beloeb_oere: number;
+};
+
+// Én linje (beløb inkl. moms, antal). Almindelig moms: beløb ekskl. moms =
+// round(inkl * 4/5), moms = resten, enhedspris ekskl. moms = netto / antal.
+// Brugtmoms: kun beløbet.
+export function beregnLinje(beloebInklOere: number, antal: number, momsordning: Momsordning): LinjeBeregning {
+  if (momsordning === "brugtmoms") {
+    return { enhedspris_ekskl_moms_oere: null, netto_oere: null, moms_sats: null, moms_oere: null, beloeb_oere: beloebInklOere };
+  }
+  const netto = nettoAfInkl(beloebInklOere);
+  const n = Math.max(1, Math.trunc(antal) || 1);
+  return {
+    enhedspris_ekskl_moms_oere: rundHalvVaekFraNul(netto / n),
+    netto_oere: netto,
+    moms_sats: MOMS_SATS,
+    moms_oere: beloebInklOere - netto,
+    beloeb_oere: beloebInklOere,
+  };
+}
+
+// Enhedspris ekskl. moms til visning - også for ældre øjebliksbilleder.
+export function enhedsprisEksklMoms(l: FirmaFakturaLinje): number | null {
+  if (l.enhedspris_ekskl_moms_oere !== undefined && l.enhedspris_ekskl_moms_oere !== null) return Number(l.enhedspris_ekskl_moms_oere);
+  if (l.netto_oere === null || l.netto_oere === undefined) return null;
+  return rundHalvVaekFraNul(Number(l.netto_oere) / Math.max(1, Number(l.antal) || 1));
+}
+
 // Kontrol: stemmer databasens tal med samme regel? (Bruges før PDF/mail.)
+// Både pr. linje og i alt.
 export function fakturaTalStemmer(d: FirmaFakturaData): boolean {
   const b = beregnFaktura(
     d.linjer.map((l) => Number(l.beloeb_oere)),
     d.momsordning,
   );
+  const linjerOk = d.linjer.every((l) => {
+    const f = beregnLinje(Number(l.beloeb_oere), Number(l.antal), d.momsordning);
+    const tal = (v: number | null | undefined) => (v === null || v === undefined ? null : Number(v));
+    return (
+      tal(l.netto_oere) === f.netto_oere &&
+      tal(l.moms_oere) === f.moms_oere &&
+      (l.enhedspris_ekskl_moms_oere === undefined || tal(l.enhedspris_ekskl_moms_oere) === f.enhedspris_ekskl_moms_oere)
+    );
+  });
   return (
+    linjerOk &&
     b.total_oere === Number(d.total_oere) &&
     (b.moms_oere ?? null) === (d.moms_oere === null ? null : Number(d.moms_oere)) &&
     (b.beloeb_ekskl_moms_oere ?? null) === (d.beloeb_ekskl_moms_oere === null ? null : Number(d.beloeb_ekskl_moms_oere))
@@ -187,7 +274,7 @@ export function pdfFilnavn(d: Pick<FirmaFakturaData, "type" | "fakturanummer" | 
 // ---------------------------------------------------------------------------
 export const MANGLER_TEKST: Record<ManglerKode, string> = {
   ikke_betalt: "Køberen har ikke betalt endnu.",
-  refunderet: "Købet er betalt tilbage til køberen. Der skal ikke sendes en faktura.",
+  refunderet: "Købet er betalt tilbage til køberen eller annulleret. Der skal ikke sendes en faktura.",
   beloeb: "Beløbet mangler.",
   koeber_navn: "Købers navn mangler.",
   koeber_adresse: "Købers adresse (vej og nr.) mangler.",
@@ -204,10 +291,26 @@ export const FIRMA_FAKTURA_TEKST = {
   seKreditnota: "Se kreditnota",
   send: "Send",
   sender: "Sender …",
-  sendBekraeft: (nr: string, email: string, kredit: boolean) =>
-    `Send ${kredit ? "kreditnota" : "faktura"} nr. ${nr} til ${email}?`,
+  sendBekraeft: (kredit: boolean) => `Send ${kredit ? "kreditnotaen" : "fakturaen"}?`,
+  modtager: "Modtager",
+  modtagerMangler: "Ingen e-mail",
+  naesteLedige: (nr: string) => `Næste ledige nummer (fx ${nr})`,
+  emailAfviger:
+    "Du har ændret modtagerens e-mail, så den ikke er købers e-mail på BidHamr. Tjek, at den er rigtig.",
   sendBekraeftForklaring:
-    "Nummeret gives, når du trykker Send. Når den er sendt, kan den ikke ændres – kun rettes med en kreditnota.",
+    "Det endelige nummer gives, når du trykker Send, og vises bagefter. Når den er sendt, kan den ikke ændres – kun rettes med en kreditnota.",
+  sendtSom: (nr: string, email: string) => `Sendt som nr. ${nr} til ${email}.`,
+  lavNyFaktura: "Lav ny faktura",
+  seNyFaktura: "Se den nye faktura",
+  krediteret: "Krediteret",
+  kunLaes: "Firmakontoen er lukket. Du kan stadig se og hente dine fakturaer, men ikke sende eller rette dem.",
+  momsTitel: "Moms på fakturaen",
+  momsAlmindelig: "Almindelig moms (25 %)",
+  momsBrugt: "Brugtmoms (fortjenstmargenordning)",
+  momsFraStandard: "Følger dit standardvalg, indtil du vælger her.",
+  momsKunKladde: "Kan ændres, indtil fakturaen er sendt.",
+  brugtmomsNyAdvarsel:
+    "Varen er angivet som ny. Brugtmoms gælder kun brugte varer, som du har købt uden moms. Spørg din revisor, hvis du er i tvivl.",
   sendJa: "Ja, send",
   fortryd: "Fortryd",
   sendt: (dato: string) => `Sendt ${dato}`,
@@ -232,7 +335,7 @@ export const FIRMA_FAKTURA_TEKST = {
   gemt: "Gemt.",
   fejl: "Det lykkedes ikke. Prøv igen om lidt.",
   nummer: "Fakturanummer",
-  naesteNummer: (nr: string) => `Næste nummer bliver ${nr}`,
+  naesteNummer: (nr: string) => `Næste ledige nummer er ${nr}`,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -307,3 +410,27 @@ export function renTekst(v: unknown, maks: number): string | null {
 
 export const PRAEFIKS = /^[A-Za-z0-9ÆØÅæøå/_.-]{0,12}$/;
 export const EMAIL_FAKTURA = /^[^@\s<>",;]+@[^@\s<>",;]+\.[^@\s<>",;]+$/;
+
+// Props til FirmaFakturaKnapper ud fra en række i fakturalisten (samme på
+// Fakturaer, Salg og den enkelte handel).
+export function fakturaKnapperProps(f: FirmaFakturaRaekke, naesteNummer: string, kunLaes: boolean) {
+  return {
+    id: f.id,
+    type: f.type,
+    status: f.status,
+    fakturanummer: f.fakturanummer,
+    naesteNummer,
+    koeberEmail: f.data?.koeber.email ?? null,
+    mangler: (f.data?.mangler ?? []).map((k) => MANGLER_TEKST[k] ?? k),
+    sendtKl: f.sendt_kl,
+    mailFejl: f.mail_fejl,
+    mailSendtKl: f.mail_sendt_kl,
+    kreditnotaId: f.kreditnota_id,
+    tradeId: f.trade_id,
+    krediteretKl: f.krediteret_kl,
+    nyFakturaId: f.ny_faktura_id,
+    kanLaveNy: f.kan_lave_ny,
+    emailAfviger: f.email_afviger,
+    kunLaes,
+  };
+}

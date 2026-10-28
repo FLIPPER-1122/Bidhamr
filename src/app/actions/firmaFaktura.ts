@@ -45,8 +45,10 @@ function genopfrisk() {
 // Send
 // ---------------------------------------------------------------------------
 export type SendSvar =
-  | { ok: true; fakturanummer: string; mailSendt: boolean; alleredeSendt: boolean }
+  | { ok: true; fakturanummer: string; modtager: string; mailSendt: boolean; alleredeSendt: boolean }
   | { fejl: string; mangler?: string[] };
+
+const MANGLER_FEJL = "Fakturaen kan ikke sendes endnu. Udfyld de manglende oplysninger.";
 
 export async function sendFirmaFaktura(id: string): Promise<SendSvar> {
   try {
@@ -59,16 +61,28 @@ export async function sendFirmaFaktura(id: string): Promise<SendSvar> {
     if (error) {
       if (error.code === "42501") return { fejl: "Kun firmaet selv kan sende sine fakturaer." };
       if (error.code === "22023") return { fejl: "Fakturaen kan ikke sendes endnu." };
+      // Manglerne tjekkes igen efter låsen; databasen har rullet alt tilbage
+      // (intet nummer brugt).
+      if (error.code === "BHF12") {
+        let koder: ManglerKode[] = [];
+        try {
+          koder = JSON.parse(error.message.replace(/^.*?mangler_efter_laas:\s*/, "")) as ManglerKode[];
+        } catch {
+          koder = [];
+        }
+        return { fejl: MANGLER_FEJL, mangler: koder.map((k) => MANGLER_TEKST[k] ?? k) };
+      }
       await logDriftFejl({ kilde: "action", hvor: "sendFirmaFaktura", fejl: error, brugerId: user.id });
       return { fejl: GENERISK };
     }
     const svar = data as { kode: string; fakturanummer?: string; mangler?: ManglerKode[]; data?: FirmaFakturaData };
     if (svar.kode === "mangler") {
       return {
-        fejl: "Fakturaen kan ikke sendes endnu. Udfyld de manglende oplysninger.",
+        fejl: MANGLER_FEJL,
         mangler: (svar.mangler ?? []).map((k) => MANGLER_TEKST[k] ?? k),
       };
     }
+    const modtager = svar.data?.koeber.email ?? "";
     const alleredeSendt = svar.kode === "allerede_sendt";
     if (svar.data && !fakturaTalStemmer(svar.data)) {
       // Bør aldrig ske (samme regel i databasen og koden) - men sig det.
@@ -76,11 +90,11 @@ export async function sendFirmaFaktura(id: string): Promise<SendSvar> {
     }
     genopfrisk();
     // Et dobbeltklik giver ikke to mails: mailen sendes kun ved den første.
-    if (alleredeSendt) return { ok: true, fakturanummer: svar.fakturanummer ?? "", mailSendt: true, alleredeSendt };
+    if (alleredeSendt) return { ok: true, fakturanummer: svar.fakturanummer ?? "", modtager, mailSendt: true, alleredeSendt };
     const raekke = await hentSendtRaekke(id);
     const mailSendt = raekke ? await sendFakturaMail(raekke) : false;
     genopfrisk();
-    return { ok: true, fakturanummer: svar.fakturanummer ?? "", mailSendt, alleredeSendt };
+    return { ok: true, fakturanummer: svar.fakturanummer ?? "", modtager, mailSendt, alleredeSendt };
   } catch (err) {
     await logDriftFejl({ kilde: "action", hvor: "sendFirmaFaktura", fejl: err });
     return { fejl: GENERISK };
@@ -100,10 +114,13 @@ export async function sendFirmaFakturaMailIgen(id: string): Promise<{ ok: true }
       await logDriftFejl({ kilde: "action", hvor: "sendFirmaFakturaMailIgen", fejl: error, brugerId: user.id });
       return { fejl: GENERISK };
     }
-    const f = data as { status?: string } | null;
+    const f = data as { status?: string; mail_sendt_kl?: string | null; kun_laes?: boolean } | null;
     if (!f || f.status !== "sendt") return { fejl: "Fakturaen er ikke sendt." };
+    if (f.kun_laes) return { fejl: "Firmakontoen er lukket. Download PDF'en, og send den selv." };
+    if (f.mail_sendt_kl) return { fejl: "Mailen er allerede sendt til køberen." };
     const raekke = await hentSendtRaekke(id);
     if (!raekke || raekke.saelger_id !== user.id) return { fejl: "Fakturaen findes ikke." };
+    if (raekke.mail_sendt_kl) return { fejl: "Mailen er allerede sendt til køberen." };
     const ok = await sendFakturaMail(raekke);
     genopfrisk();
     return ok ? { ok: true } : { fejl: "Mailen kunne ikke sendes. Download PDF'en, og send den selv, eller prøv igen senere." };
@@ -184,6 +201,66 @@ export async function lavFirmaKreditnota(fakturaId: string): Promise<{ ok: true;
     return { ok: true, id: String(data) };
   } catch (err) {
     await logDriftFejl({ kilde: "action", hvor: "lavFirmaKreditnota", fejl: err });
+    return { fejl: GENERISK };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Momsordning på en kladde (kun mens den er kladde - databasen afviser resten)
+// ---------------------------------------------------------------------------
+export async function skiftFirmaFakturaMomsordning(
+  id: string,
+  momsordning: "moms" | "brugtmoms",
+): Promise<{ ok: true; mangler: string[] } | { fejl: string }> {
+  try {
+    if (typeof id !== "string" || !UUID.test(id)) return { fejl: "Fakturaen findes ikke." };
+    if (momsordning !== "moms" && momsordning !== "brugtmoms") return { fejl: "Vælg momsordning." };
+    const { supabase, user } = await bruger();
+    if (!user) return { fejl: "Du skal være logget ind." };
+    if (!(await indenForGraense("firma_faktura_gem", user.id))) return { fejl: FOR_MANGE_FORSOEG };
+    const { data, error } = await supabase.rpc("firma_faktura_kladde_momsordning", { p_id: id, p_momsordning: momsordning });
+    if (error) {
+      if (error.code === "BHF10") return { fejl: "Fakturaen er sendt og kan ikke ændres. Lav en kreditnota." };
+      if (error.code === "22023") return { fejl: "En kreditnota har altid samme momsordning som fakturaen." };
+      if (error.code === "42501") return { fejl: "Fakturaen findes ikke." };
+      await logDriftFejl({ kilde: "action", hvor: "skiftFirmaFakturaMomsordning", fejl: error, brugerId: user.id });
+      return { fejl: GENERISK };
+    }
+    genopfrisk();
+    const d = data as FirmaFakturaData | null;
+    return { ok: true, mangler: (d?.mangler ?? []).map((k) => MANGLER_TEKST[k] ?? k) };
+  } catch (err) {
+    await logDriftFejl({ kilde: "action", hvor: "skiftFirmaFakturaMomsordning", fejl: err });
+    return { fejl: GENERISK };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// "Lav ny faktura" efter en sendt kreditnota (laver kun en KLADDE)
+// ---------------------------------------------------------------------------
+export async function lavNyFirmaFaktura(tradeId: string): Promise<{ ok: true; id: string } | { fejl: string }> {
+  try {
+    if (typeof tradeId !== "string" || !UUID.test(tradeId)) return { fejl: "Handlen findes ikke." };
+    const { supabase, user } = await bruger();
+    if (!user) return { fejl: "Du skal være logget ind." };
+    if (!(await indenForGraense("firma_faktura_gem", user.id))) return { fejl: FOR_MANGE_FORSOEG };
+    const { data, error } = await supabase.rpc("firma_faktura_ny", { p_trade: tradeId, p_momsordning: null });
+    if (error) {
+      if (error.code === "22023") {
+        return {
+          fejl: /kreditnota_mangler/.test(error.message)
+            ? "Send en kreditnota på fakturaen først."
+            : "Købet er betalt tilbage eller annulleret. Der skal ikke laves en ny faktura.",
+        };
+      }
+      if (error.code === "42501") return { fejl: "Fakturaen findes ikke." };
+      await logDriftFejl({ kilde: "action", hvor: "lavNyFirmaFaktura", fejl: error, brugerId: user.id });
+      return { fejl: GENERISK };
+    }
+    genopfrisk();
+    return { ok: true, id: String(data) };
+  } catch (err) {
+    await logDriftFejl({ kilde: "action", hvor: "lavNyFirmaFaktura", fejl: err });
     return { fejl: GENERISK };
   }
 }

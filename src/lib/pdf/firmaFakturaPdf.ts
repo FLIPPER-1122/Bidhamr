@@ -4,9 +4,12 @@ import path from "node:path";
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, degrees, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import {
+  BRUGTMOMS_FAKTURA_TEKST,
+  MOMS_SATS,
   adresseLinjer,
   datoTekst,
   dokumentNavn,
+  enhedsprisEksklMoms,
   kroner,
   type FirmaFakturaData,
 } from "@/lib/erhverv/firmaFaktura";
@@ -18,9 +21,10 @@ import {
 // Indholdet følger momsbekendtgørelsens § 58, stk. 1 (fuld faktura) - se
 // docs/FIRMA-FAKTURA.md: udstedelsesdato, fortløbende nummer, sælgers CVR,
 // navn og adresse, købers navn og adresse, mængde og art af varen,
-// leveringsdato, beløb ekskl. moms, momssats og momsbeløb - eller ved
-// brugtmoms teksten "Brugtmoms – særordning for brugte varer" (§ 58, stk. 1,
-// nr. 14) og ingen moms.
+// leveringsdato, pr. linje enhedspris og beløb ekskl. moms, momssats og beløb
+// inkl. moms, samt beløb ekskl. moms og momsbeløb i alt - eller ved brugtmoms
+// teksten "Fortjenstmargenordning – brugte genstande" (momssystemdirektivets
+// art. 226, nr. 14) og ingen moms.
 
 const SKRIFT_MAPPE = path.join(process.cwd(), "src", "lib", "pdf", "skrifter");
 let skrifter: Promise<[Uint8Array, Uint8Array]> | null = null;
@@ -51,17 +55,48 @@ const UDEN_FEATURES: Record<string, boolean> = Object.fromEntries(
   ["liga", "kern", "calt", "clig", "rlig"].map((k) => [k, false]),
 );
 
-// Logo: kun billeder fra BidHamrs egen offentlige avatar-bucket (ingen
-// vilkårlige URL'er), PNG/JPEG, højst 2 MB, 5 sekunder.
-export async function hentLogo(url: string | null | undefined): Promise<{ bytes: Uint8Array; type: "png" | "jpg" } | null> {
-  if (!url) return null;
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!base || !url.startsWith(`${base}/storage/v1/object/public/avatarer/`)) return null;
+export const MAKS_LOGO_BYTES = 2 * 1024 * 1024;
+const AVATAR_STI = "/storage/v1/object/public/avatarer/";
+
+// Er URL'en et billede i BidHamrs egen offentlige avatar-bucket? Parses med
+// new URL(): samme protokol og vært som Supabase, stien under avatarer/, ingen
+// ".." eller kodede punktummer/skråstreger (%2e, %2f, %5c), ingen
+// brugeroplysninger, query eller fragment. Returnerer den rensede URL.
+export function gyldigLogoUrl(url: string | null | undefined, base = process.env.NEXT_PUBLIC_SUPABASE_URL): string | null {
+  if (!url || !base) return null;
+  let u: URL;
+  let b: URL;
   try {
-    const svar = await fetch(url, { signal: AbortSignal.timeout(5000), redirect: "error" });
+    u = new URL(url);
+    b = new URL(base);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && b.protocol === "http:")) return null;
+  if (u.protocol !== b.protocol || u.host !== b.host || u.username || u.password || u.search || u.hash) return null;
+  // Tjek den rå tekst (URL normaliserer "..", men ikke kodede tegn).
+  const raa = url.slice(url.indexOf(u.host) + u.host.length);
+  if (/%2e|%2f|%5c|\\/i.test(raa) || raa.split("/").some((d) => d === ".." || d === ".")) return null;
+  if (!u.pathname.startsWith(AVATAR_STI) || u.pathname.length <= AVATAR_STI.length) return null;
+  return u.toString();
+}
+
+// Logo: kun billeder fra BidHamrs egen offentlige avatar-bucket (ingen
+// vilkårlige URL'er), PNG/JPEG, højst 2 MB (tjekkes på content-length, før
+// indholdet læses, og igen bagefter), 5 sekunder.
+export async function hentLogo(url: string | null | undefined): Promise<{ bytes: Uint8Array; type: "png" | "jpg" } | null> {
+  const ren = gyldigLogoUrl(url);
+  if (!ren) return null;
+  try {
+    const svar = await fetch(ren, { signal: AbortSignal.timeout(5000), redirect: "error" });
     if (!svar.ok) return null;
+    const laengde = Number(svar.headers.get("content-length") ?? "");
+    if (!Number.isFinite(laengde) || laengde <= 0 || laengde > MAKS_LOGO_BYTES) {
+      await svar.body?.cancel().catch(() => undefined);
+      return null;
+    }
     const buf = new Uint8Array(await svar.arrayBuffer());
-    if (buf.byteLength > 2 * 1024 * 1024) return null;
+    if (buf.byteLength > MAKS_LOGO_BYTES) return null;
     if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return { bytes: buf, type: "png" };
     if (buf[0] === 0xff && buf[1] === 0xd8) return { bytes: buf, type: "jpg" };
     return null;
@@ -215,30 +250,60 @@ export async function lavFirmaFakturaPdf(
 
   // --- Linjer ---
   const kol = { tekst: M + 8, antal: M + 300, pris: M + 400, beloeb: xH - 8 };
-  side.drawRectangle({ x: M, y: y - 6, width: B - 2 * M, height: 22, color: FLADE });
-  skriv("Beskrivelse", kol.tekst, y, { font: F, str: 9.5 });
-  hoejre("Antal", kol.antal + 30, y, { font: F, str: 9.5 });
-  hoejre("Pris", kol.pris + 50, y, { font: F, str: 9.5 });
-  hoejre("Beløb", kol.beloeb, y, { font: F, str: 9.5 });
-  y -= 24;
-  const inklTekst = d.momsordning === "moms" ? " inkl. moms" : "";
-  for (const l of d.linjer) {
-    const tekstLinjer = ombryd(l.tekst, R, 10, 280);
-    nySideHvis(tekstLinjer.length * 13 + 10);
-    hoejre(String(l.antal), kol.antal + 30, y, { str: 10 });
-    hoejre(kroner(l.enhedspris_oere), kol.pris + 50, y, { str: 10 });
-    hoejre(kroner(l.beloeb_oere), kol.beloeb, y, { str: 10 });
-    for (const t of tekstLinjer) {
-      skriv(t, kol.tekst, y, { str: 10 });
-      y -= 13;
+  const moms = d.momsordning === "moms";
+  if (moms) {
+    // § 58, stk. 1: enhedspris og beløb ekskl. moms, momssats og beløb inkl.
+    // moms pr. linje.
+    const mk = { antal: M + 205, enhed: M + 280, netto: M + 355, sats: M + 400, inkl: xH - 8 };
+    side.drawRectangle({ x: M, y: y - 16, width: B - 2 * M, height: 32, color: FLADE });
+    skriv("Beskrivelse", kol.tekst, y, { font: F, str: 8.5 });
+    hoejre("Antal", mk.antal, y, { font: F, str: 8.5 });
+    hoejre("Enhedspris", mk.enhed, y, { font: F, str: 8.5 });
+    hoejre("ekskl. moms", mk.enhed, y - 10, { font: F, str: 8.5 });
+    hoejre("Beløb", mk.netto, y, { font: F, str: 8.5 });
+    hoejre("ekskl. moms", mk.netto, y - 10, { font: F, str: 8.5 });
+    hoejre("Moms", mk.sats, y, { font: F, str: 8.5 });
+    hoejre("Beløb", mk.inkl, y, { font: F, str: 8.5 });
+    hoejre("inkl. moms", mk.inkl, y - 10, { font: F, str: 8.5 });
+    y -= 34;
+    for (const l of d.linjer) {
+      const tekstLinjer = ombryd(l.tekst, R, 9.5, 150);
+      nySideHvis(tekstLinjer.length * 12 + 10);
+      const enhed = enhedsprisEksklMoms(l);
+      hoejre(String(l.antal), mk.antal, y, { str: 9.5 });
+      hoejre(enhed === null ? "" : kroner(enhed), mk.enhed, y, { str: 9.5 });
+      hoejre(l.netto_oere === null ? "" : kroner(Number(l.netto_oere)), mk.netto, y, { str: 9.5 });
+      hoejre(`${l.moms_sats ?? d.moms_sats ?? MOMS_SATS} %`, mk.sats, y, { str: 9.5 });
+      hoejre(kroner(l.beloeb_oere), mk.inkl, y, { str: 9.5 });
+      for (const t of tekstLinjer) {
+        skriv(t, kol.tekst, y, { str: 9.5 });
+        y -= 12;
+      }
+      y -= 6;
+      side.drawLine({ start: { x: M, y: y + 4 }, end: { x: xH, y: y + 4 }, thickness: 0.5, color: KANT });
+      y -= 6;
     }
-    y -= 6;
-    side.drawLine({ start: { x: M, y: y + 4 }, end: { x: xH, y: y + 4 }, thickness: 0.5, color: KANT });
-    y -= 6;
-  }
-  if (inklTekst) {
-    skriv("Priserne er inkl. moms.", kol.tekst, y, { str: 8.5, farve: DAEMPET });
-    y -= 14;
+  } else {
+    side.drawRectangle({ x: M, y: y - 6, width: B - 2 * M, height: 22, color: FLADE });
+    skriv("Beskrivelse", kol.tekst, y, { font: F, str: 9.5 });
+    hoejre("Antal", kol.antal + 30, y, { font: F, str: 9.5 });
+    hoejre("Pris", kol.pris + 50, y, { font: F, str: 9.5 });
+    hoejre("Beløb", kol.beloeb, y, { font: F, str: 9.5 });
+    y -= 24;
+    for (const l of d.linjer) {
+      const tekstLinjer = ombryd(l.tekst, R, 10, 280);
+      nySideHvis(tekstLinjer.length * 13 + 10);
+      hoejre(String(l.antal), kol.antal + 30, y, { str: 10 });
+      hoejre(kroner(l.enhedspris_oere), kol.pris + 50, y, { str: 10 });
+      hoejre(kroner(l.beloeb_oere), kol.beloeb, y, { str: 10 });
+      for (const t of tekstLinjer) {
+        skriv(t, kol.tekst, y, { str: 10 });
+        y -= 13;
+      }
+      y -= 6;
+      side.drawLine({ start: { x: M, y: y + 4 }, end: { x: xH, y: y + 4 }, thickness: 0.5, color: KANT });
+      y -= 6;
+    }
   }
 
   // --- Totaler ---
@@ -256,8 +321,15 @@ export async function lavFirmaFakturaPdf(
   } else {
     total(d.type === "kreditnota" ? "Krediteret i alt" : "I alt", kroner(Number(d.total_oere)), true);
     y -= 4;
-    skriv(d.brugtmoms_tekst ?? "Brugtmoms – særordning for brugte varer", M, y, { font: F, str: 10 });
+    // Ældre øjebliksbilleder har deres egen tekst - den ændres aldrig.
+    skriv(d.brugtmoms_tekst ?? BRUGTMOMS_FAKTURA_TEKST, M, y, { font: F, str: 10 });
     y -= 15;
+    if (d.brugtmoms_forklaring) {
+      for (const l of ombryd(d.brugtmoms_forklaring, R, 9, B - 2 * M)) {
+        skriv(l, M, y, { str: 9, farve: DAEMPET });
+        y -= 12;
+      }
+    }
   }
 
   y -= 14;

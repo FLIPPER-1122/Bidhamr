@@ -3,18 +3,22 @@ import { createClient } from "@/lib/supabase/server";
 import { logDriftFejl } from "@/lib/drift";
 import { indenForGraense } from "@/lib/rateLimit";
 import { sendtPdf, type SendtRaekke } from "@/lib/erhverv/firmaFakturaServer";
-import { firmaFakturaCsv, pdfFilnavn, type FirmaFakturaListe } from "@/lib/erhverv/firmaFaktura";
+import { firmaFakturaCsv, pdfFilnavn, type FirmaFakturaData } from "@/lib/erhverv/firmaFaktura";
 import { lavZip } from "@/lib/zip";
 
 // Eksport til firmaets regnskab: alle SENDTE fakturaer og kreditnotaer med
 // udstedelsesdato i perioden - som CSV eller PDF'er i en ZIP. Kun firmaet
-// selv (firma_fakturaer_liste filtrerer på auth.uid()). Kun GET.
+// selv (firma_fakturaer_eksport filtrerer på auth.uid() - også en lukket
+// firmakonto, opbevaringspligt). Kun GET.
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const DATO = /^\d{4}-\d{2}-\d{2}$/;
 const MAKS_ZIP = 500;
+const SIDE = 1000;
+
+type EksportRaekke = Omit<SendtRaekke, "status" | "data"> & { nummer: number; data: FirmaFakturaData };
 
 function gyldigDato(v: string | null): string | null {
   if (!v || !DATO.test(v)) return null;
@@ -40,16 +44,26 @@ export async function GET(req: NextRequest) {
   if (!(await indenForGraense("firma_faktura_eksport", user.id))) return tekst(429, "Du har hentet mange filer på kort tid. Vent lidt, og prøv igen.");
 
   try {
-    const { data, error } = await supabase.rpc("firma_fakturaer_liste");
-    if (error) throw error;
-    const liste = data as FirmaFakturaListe | null;
-    if (!liste) return tekst(404, "Siden findes ikke.");
-    const sendte = liste.fakturaer
-      .filter((f) => f.status === "sendt" && f.data && f.data.udstedt_dato && f.data.udstedt_dato >= fra && f.data.udstedt_dato <= til)
-      .sort((a, b) => (a.nummer ?? 0) - (b.nummer ?? 0));
+    // Side for side efter nummer (firma_fakturaer_eksport) - intet samlet
+    // loft. Også lukkede firmakonti (opbevaringspligt).
+    const sendte: EksportRaekke[] = [];
+    let efter = 0;
+    for (;;) {
+      const { data, error } = await supabase.rpc("firma_fakturaer_eksport", { p_fra: fra, p_til: til, p_efter: efter, p_antal: SIDE });
+      if (error) {
+        if (error.code === "42501") return tekst(404, "Siden findes ikke.");
+        throw error;
+      }
+      const side = (data as EksportRaekke[] | null) ?? [];
+      if (side.length === 0) break;
+      sendte.push(...side);
+      if (format === "zip" && sendte.length > MAKS_ZIP) break;
+      if (side.length < SIDE) break;
+      efter = side[side.length - 1].nummer;
+    }
 
     if (format === "csv") {
-      return new NextResponse(firmaFakturaCsv(sendte.map((f) => f.data!)), {
+      return new NextResponse(firmaFakturaCsv(sendte.map((f) => f.data)), {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="fakturaer-${fra}-til-${til}.csv"`,
@@ -60,24 +74,13 @@ export async function GET(req: NextRequest) {
     }
 
     if (sendte.length === 0) return tekst(404, "Der er ingen sendte fakturaer i perioden.");
-    if (sendte.length > MAKS_ZIP) return tekst(400, `Vælg en kortere periode (højst ${MAKS_ZIP} fakturaer ad gangen).`);
-    // Rækkerne er firmaets egne (RLS: saelger_id = auth.uid()).
-    const { data: rader, error: raderFejl } = await supabase
-      .from("firma_fakturaer")
-      .select("id, firma_id, saelger_id, koeber_id, pdf_sti")
-      .eq("saelger_id", user.id)
-      .eq("status", "sendt")
-      .in(
-        "id",
-        sendte.map((f) => f.id),
-      );
-    if (raderFejl) throw raderFejl;
-    const vedId = new Map((rader as Omit<SendtRaekke, "status" | "data">[]).map((r) => [r.id, r]));
+    // ZIP'en bygges i hukommelsen: højst MAKS_ZIP PDF'er pr. fil (CSV'en har
+    // intet loft). Firmaet deler perioden op.
+    if (sendte.length > MAKS_ZIP) return tekst(400, `Vælg en kortere periode (højst ${MAKS_ZIP} fakturaer pr. ZIP-fil). CSV-filen har ingen grænse.`);
     const filer = [];
     for (const f of sendte) {
-      const r = vedId.get(f.id);
-      if (!r || r.saelger_id !== user.id) continue;
-      filer.push({ navn: pdfFilnavn(f.data!), data: await sendtPdf({ ...r, status: "sendt", data: f.data }) });
+      if (f.saelger_id !== user.id) continue;
+      filer.push({ navn: pdfFilnavn(f.data), data: await sendtPdf({ ...f, status: "sendt" }) });
     }
     return new NextResponse(Buffer.from(lavZip(filer)), {
       headers: {

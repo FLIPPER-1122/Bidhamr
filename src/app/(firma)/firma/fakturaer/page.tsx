@@ -3,7 +3,7 @@ import { hentFirmaFakturaer, kraevFirma } from "@/lib/erhverv/firmaData";
 import { FirmaSide, Kort, StatusMaerke } from "@/components/firma/dele";
 import { E_KNAP_SEKUNDAER, E_LABEL, E_TEKST, E_TEKST_DAEMPET, eFelt } from "@/components/erhverv/stil";
 import FirmaFakturaKnapper from "@/components/firma/FirmaFakturaKnapper";
-import { FIRMA_FAKTURA_TEKST as T, MANGLER_TEKST, kroner } from "@/lib/erhverv/firmaFaktura";
+import { FIRMA_FAKTURA_TEKST as T, fakturaKnapperProps, kroner } from "@/lib/erhverv/firmaFaktura";
 
 // Fakturaer fra firmaet til køberne: alle kladder, sendte fakturaer og
 // kreditnotaer + eksport til regnskabet. Intet sendes uden firmaets tryk.
@@ -16,6 +16,7 @@ export default async function FirmaFakturaerSide() {
   const liste = await hentFirmaFakturaer();
   const fakturaer = liste?.fakturaer ?? [];
   const naeste = liste?.indstillinger.naeste_fakturanummer ?? "";
+  const kunLaes = liste?.indstillinger.kun_laes ?? false;
   const idag = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Copenhagen" });
   const aarStart = `${idag.slice(0, 4)}-01-01`;
 
@@ -48,24 +49,12 @@ export default async function FirmaFakturaerSide() {
                       </p>
                     </div>
                     <StatusMaerke
-                      tekst={f.status === "sendt" ? "Sendt" : T.kladde}
+                      tekst={f.krediteret_kl ? T.krediteret : f.status === "sendt" ? "Sendt" : T.kladde}
                       farve={f.status === "sendt" ? "border-succes-kant bg-succes-bg text-succes-tekst" : "border-advarsel-kant bg-advarsel-bg text-advarsel-tekst"}
                     />
                   </div>
                   <div className="mt-3">
-                    <FirmaFakturaKnapper
-                      id={f.id}
-                      type={f.type}
-                      status={f.status}
-                      fakturanummer={f.fakturanummer}
-                      naesteNummer={naeste}
-                      koeberEmail={d?.koeber.email ?? null}
-                      mangler={(d?.mangler ?? []).map((k) => MANGLER_TEKST[k] ?? k)}
-                      sendtKl={f.sendt_kl}
-                      mailFejl={f.mail_fejl}
-                      mailSendtKl={f.mail_sendt_kl}
-                      kreditnotaId={f.kreditnota_id}
-                    />
+                    <FirmaFakturaKnapper {...fakturaKnapperProps(f, naeste, kunLaes)} />
                   </div>
                 </li>
               );
