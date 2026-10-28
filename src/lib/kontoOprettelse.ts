@@ -46,6 +46,7 @@ import { vurderAdgangskode } from "@/lib/adgangskode";
 import { betaAuthBruger, betaTilmeldingTilladt } from "@/lib/beta";
 import { hentKontoStatus, type KontoStatus } from "@/lib/kontoStatus";
 import { knytHenvisning } from "@/lib/henvisning/server";
+import { gemAdresseVedOprettelse } from "@/lib/adresse/server";
 
 export function renEmail(email: unknown): string | null {
   if (typeof email !== "string") return null;
@@ -287,9 +288,14 @@ export async function sendNyKodePaaServeren(email: string): Promise<"ok" | "vent
   return "ok";
 }
 
-// Navn og vilkårsaccept fra den, der har koden (cookien på hjemmesiden, selve
-// kaldet fra appen).
-export type SignupProfil = { fornavn: string; efternavn: string; vilkaarVersion: string };
+// Navn, vilkårsaccept og adresse (til fakturaer, 20261102340000) fra den, der
+// har koden (cookien på hjemmesiden, selve kaldet fra appen).
+export type SignupProfil = {
+  fornavn: string;
+  efternavn: string;
+  vilkaarVersion: string;
+  adresse?: { adresse: string; postnummer: string } | null;
+};
 
 type AuthKlient = { auth: Pick<SupabaseClient["auth"], "verifyOtp" | "updateUser" | "signOut"> };
 
@@ -307,6 +313,10 @@ export type BekraeftSvar =
       // false = vilkårene er ikke accepteret af den, der har koden:
       // accept-vinduet vises, og databasen afviser bud og salg (BHV02).
       vilkaarSat: boolean;
+      // false = adressen mangler eller kunne ikke gemmes: brugeren bliver
+      // bedt om den før første bud og første betaling (og kan udfylde den
+      // under Min konto -> Min adresse).
+      adresseSat: boolean;
     }
   | { fejl: "kode_forkert" | "for_mange" | "graense_fejl" | "fejl" }
   | { fejl: "konto"; status: Exclude<KontoStatus, { kode: "ok" }> };
@@ -457,7 +467,9 @@ export async function bekraeftKode(
   }
 
   const { navnSat, vilkaarSat } = await gemProfil(data.user.id, profil);
+  // Adressen til fakturaer - også kun fra den, der har koden.
+  const adresseSat = await gemAdresseVedOprettelse(data.user.id, profil?.adresse);
   // Kun den, der har koden fra mailen, kan knytte kontoen til en henviser.
   if (henvisningskode) await knytHenvisning(data.user.id, henvisningskode);
-  return { ok: true, user: data.user, session: data.session, adgangskodeSat, navnSat, vilkaarSat };
+  return { ok: true, user: data.user, session: data.session, adgangskodeSat, navnSat, vilkaarSat, adresseSat };
 }

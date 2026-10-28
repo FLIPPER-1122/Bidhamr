@@ -26,8 +26,11 @@ import { erVilkaarFejl } from "@/lib/vilkaar";
 import { KUNST_TEKST, erKunstBudFejl } from "@/lib/kunstForbud";
 import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
 import { MAKS_BUD, beloebForHoejtTekst } from "@/lib/auktionRegler";
+import { ADRESSE_TEKST, erAdresseFejl } from "@/lib/adresse/regler";
 
-export type BudFejl = { fejl: string; kode: string; auktionAendret?: true; mitid?: true };
+// adresse: brugeren mangler sin adresse (BHY01, 20261102340000) - budpanelet
+// viser adresseformularen, og buddet kan sendes igen bagefter.
+export type BudFejl = { fejl: string; kode: string; auktionAendret?: true; mitid?: true; adresse?: true };
 
 // handle_new_bid afviser et bud, hvis sælgeren har redigeret auktionen,
 // siden byderen hentede siden (bids.auktion_redigeret_kl).
@@ -75,6 +78,8 @@ function faellesFejl(error: PostgrestError, besked: string): BudFejl | null {
   if (erMitIdFejl(error.code, besked)) return { fejl: MITID.fejlMangler, kode: bh ?? "BHV01", mitid: true };
   // Brugerbetingelserne er ikke accepteret (BHV02).
   if (erVilkaarFejl(error.code, besked)) return { fejl: VILKAAR_TEKST.fejlMangler, kode: bh ?? "BHV02" };
+  // Adressen mangler (BHY01): budpanelet viser adresseformularen.
+  if (erAdresseFejl(error.code, besked)) return { fejl: ADRESSE_TEKST.kraevesBud, kode: bh ?? "BHY01", adresse: true };
   // Auktionen afventer kunst-kontrol (BHK01, 20261023010000_kunst_forbudt.sql).
   if (erKunstBudFejl(error.code, besked)) return { fejl: KUNST_TEKST.budAfvist, kode: bh ?? "BHK01" };
   if (besked.includes("own_auction")) return { fejl: "Du kan ikke byde på din egen auktion.", kode: "own_auction" };

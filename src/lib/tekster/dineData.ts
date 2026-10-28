@@ -49,6 +49,7 @@ export const DINE_DATA_PDF = {
 export const DINE_DATA_AFSNIT: ReadonlyArray<readonly [string, string]> = [
   ["profil", "Profil"],
   ["mitid", "MitID-verificering"],
+  ["adresse", "Adresse til kvitteringer og fakturaer"],
   ["betalingsindstillinger", "Betalingsindstillinger"],
   ["dac7", "Skatteoplysninger (DAC7)"],
   ["firmakonto", "Firmakonto"],

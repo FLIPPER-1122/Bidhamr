@@ -152,6 +152,36 @@ update public.users u
    and u.vilkaar_version is distinct from public.vilkaar_aktuel_version();
 
 -- ---------------------------------------------------------
+-- Adresse til fakturaer (20261102340000_bruger_adresse.sql): de private
+-- testbrugere har en adresse, så de kan byde og betale med det samme - og så
+-- buddene herunder kan oprettes (a4_bids_adresse, BHY01). Firmakontoen har
+-- sin adresse på firmaet. Test af "Udfyld din adresse" før bud og betaling:
+-- opret en ny bruger, eller slet rækken i public.bruger_adresser.
+-- ---------------------------------------------------------
+do $$
+begin
+  if to_regclass('public.bruger_adresser') is not null then
+    insert into public.bruger_adresser (bruger_id, adresse, postnummer, bynavn)
+    select u.id, v.adresse, v.postnummer, v.bynavn
+      from (values
+        ('11111111-1111-4111-8111-000000000001'::uuid, 'Testvej 1', '4700', 'Næstved'),
+        ('11111111-1111-4111-8111-000000000002'::uuid, 'Købervej 2, 1. tv.', '2100', 'København Ø'),
+        ('11111111-1111-4111-8111-000000000003'::uuid, 'Adminvej 3', '8000', 'Aarhus C'),
+        ('11111111-1111-4111-8111-000000000004'::uuid, 'Chefvej 4', '5000', 'Odense C'),
+        ('11111111-1111-4111-8111-000000000005'::uuid, 'Testervej 5', '9000', 'Aalborg'),
+        ('11111111-1111-4111-8111-000000000006'::uuid, 'Nielsvej 6', '2200', 'København N'),
+        ('11111111-1111-4111-8111-000000000007'::uuid, 'Nielsvej 7', '2200', 'København N'),
+        ('11111111-1111-4111-8111-000000000008'::uuid, 'Erhvervsvej 8', '4700', 'Næstved'),
+        ('11111111-1111-4111-8111-000000000010'::uuid, 'MitID-vej 10', '6000', 'Kolding'),
+        ('11111111-1111-4111-8111-000000000011'::uuid, 'MitID-vej 11', '6000', 'Kolding'),
+        ('11111111-1111-4111-8111-000000000012'::uuid, 'Macvej 12', '7100', 'Vejle')
+      ) as v(id, adresse, postnummer, bynavn)
+      join public.users u on u.id = v.id
+    on conflict (bruger_id) do nothing;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------
 -- Auktioner (sælger)
 -- Seed koerer som postgres uden JWT og er derfor undtaget fra
 -- auctions_kraev_udbetalingskonto. Via UI/appen kraever oprettelse en

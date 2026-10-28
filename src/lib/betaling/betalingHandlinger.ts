@@ -33,6 +33,8 @@ import {
   type BetalingsKanal,
   type OnboardingRetur,
 } from "@/lib/betaling/stripeBetaling";
+import { harAdresse } from "@/lib/adresse/server";
+import { ADRESSE_TEKST } from "@/lib/adresse/regler";
 
 export const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,7 +47,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 //   afvist          - kan ikke betales (fx frist overskredet, annulleret)
 //   ikke_fundet     - handlen findes ikke (eller er ikke din)
 //   fejl            - uventet fejl (logget i /admin/drift)
-export type BetalingsFejlKode = "betalt" | "vaelg_levering" | "venter" | "pause" | "afvist" | "ikke_fundet" | "fejl";
+// adresse_mangler: køberen har ingen adresse til fakturaer endnu
+// (20261102340000) - vis adresseformularen og prøv igen.
+export type BetalingsFejlKode =
+  | "betalt"
+  | "vaelg_levering"
+  | "venter"
+  | "pause"
+  | "afvist"
+  | "ikke_fundet"
+  | "adresse_mangler"
+  | "fejl";
 export type HandlingsFejl = { fejl: string; kode: BetalingsFejlKode };
 
 // ------------------------------------------------------------------ betal
@@ -87,6 +99,9 @@ export async function startBetalingFor(
     if (new Date(b.betal_senest).getTime() < Date.now()) {
       return { fejl: "Fristen for at betale er overskredet.", kode: "afvist" };
     }
+    // Adressen til kvittering/faktura kræves før første betaling (Filip,
+    // 27. okt. 2026). Tjekkes før PaymentIntenten laves.
+    if (!(await harAdresse(brugerId))) return { fejl: ADRESSE_TEKST.kraevesBetaling, kode: "adresse_mangler" };
 
     const pi = await sikrPaymentIntent(b);
     if (pi.status === "succeeded" || pi.status === "processing") {

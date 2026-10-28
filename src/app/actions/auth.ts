@@ -25,6 +25,7 @@ import { tjekTurnstile } from "@/lib/turnstileServer";
 import { hentKontoStatus } from "@/lib/kontoStatus";
 import { VILKAAR_VERSION } from "@/lib/vilkaar";
 import { HENVISNING_TEKST } from "@/lib/tekster/henvisning";
+import { validerAdresse } from "@/lib/adresse/regler";
 import {
   bekraeftKode,
   opretKontoPaaServeren,
@@ -191,9 +192,16 @@ export async function opretKonto(input: {
   // Tjekkes kun for formen her - koden gemmes ikke, men sendes med igen fra
   // "Indtast koden" (verificerSignupKode) og knyttes først efter verifyOtp.
   henvisningskode?: string;
+  // Adressen til fakturaer (påkrævet, Filip 27. okt. 2026). Byen udfyldes
+  // altid ud fra postnummeret. Gemmes som navnet først efter koden.
+  adresse: string;
+  postnummer: string;
 }): Promise<
   | { ok: true; bekraeftMail: boolean; beta?: true }
-  | { fejl: string; felt?: "email" | "password" | "fornavn" | "efternavn" | "vilkaar" | "henvisningskode" }
+  | {
+      fejl: string;
+      felt?: "email" | "password" | "fornavn" | "efternavn" | "adresse" | "postnummer" | "vilkaar" | "henvisningskode";
+    }
 > {
   const email = renEmail(input?.email);
   const fornavn = renNavn(input?.fornavn);
@@ -204,6 +212,8 @@ export async function opretKonto(input: {
   // naar actionen kaldes direkte. renNavn trimmer og skaerer ved 100 tegn.
   if (!fornavn) return { fejl: "Skriv dit fornavn.", felt: "fornavn" };
   if (!efternavn) return { fejl: "Skriv dit efternavn.", felt: "efternavn" };
+  const adr = validerAdresse({ adresse: input?.adresse, postnummer: input?.postnummer });
+  if ("fejl" in adr) return { fejl: adr.fejl, felt: adr.felt };
   if (!email) return { fejl: "Indtast en gyldig e-mail.", felt: "email" };
   const v = vurderAdgangskode(password, { email, navn: [fornavn, efternavn] });
   if (!v.ok) return { fejl: v.fejl ?? GENERISK, felt: "password" };
@@ -226,7 +236,12 @@ export async function opretKonto(input: {
   if (gem === "ja" || (gem === "kun_hvis_ventende" && (await harVentendeAdgangskode(email)))) {
     await gemVentendeAdgangskode(email, {
       adgangskode: password,
-      profil: { fornavn, efternavn, vilkaarVersion: VILKAAR_VERSION },
+      profil: {
+        fornavn,
+        efternavn,
+        vilkaarVersion: VILKAAR_VERSION,
+        adresse: { adresse: adr.adresse.adresse, postnummer: adr.adresse.postnummer },
+      },
     });
   }
   await saetTjekEmailCookie(email);
