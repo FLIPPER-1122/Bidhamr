@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition, type FormEvent } from "react";
+import { useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { sendPakke, markerModtaget, godkendPakke } from "@/app/actions/trades";
 import BekraeftDialog from "@/components/BekraeftDialog";
@@ -199,7 +199,17 @@ const KOMMENTAR_MAKS = 1000;
 // TRIN 2: godkendelse udbetaler til sælgeren og kan ikke fortrydes - derfor
 // bekræftelsesdialogen. Køberen bedømmer sælgeren i samme trin
 // (ROADMAP-BESLUTNINGER afsnit 6): stjerner er påkrævet, kommentaren valgfri.
-export function GodkendPakkeKnap({ tradeId }: { tradeId: string }) {
+// triggerLabel/triggerClassName: "Alt er i orden" som stort valg i boksen
+// "Hvordan er varen?" (src/components/sager/HvordanErVaren.tsx).
+export function GodkendPakkeKnap({
+  tradeId,
+  triggerLabel = "Godkend pakke",
+  triggerClassName,
+}: {
+  tradeId: string;
+  triggerLabel?: ReactNode;
+  triggerClassName?: string;
+}) {
   const router = useRouter();
   const [stjerner, setStjerner] = useState(0);
   const [kommentar, setKommentar] = useState("");
@@ -207,7 +217,8 @@ export function GodkendPakkeKnap({ tradeId }: { tradeId: string }) {
 
   return (
     <BekraeftDialog
-      triggerLabel="Godkend pakke"
+      triggerLabel={triggerLabel}
+      triggerClassName={triggerClassName}
       title="Godkend varen og bedøm sælgeren"
       description="Din bedømmelse vises på sælgerens profil. Når du godkender, får sælgeren pengene. Betalingen håndteres af vores betalingspartner Stripe. Du kan ikke fortryde en godkendelse."
       confirmLabel="Godkend og bedøm"

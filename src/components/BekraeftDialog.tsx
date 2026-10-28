@@ -12,7 +12,7 @@ import { NETVAERKSFEJL } from "@/lib/auktionRegler";
 export type BekraeftSvar = { fejl?: string; rolig?: string; bliv?: boolean } | void;
 
 type Props = {
-  triggerLabel: string;
+  triggerLabel: ReactNode;
   triggerClassName?: string;
   triggerIcon?: ReactNode;
   title: string;

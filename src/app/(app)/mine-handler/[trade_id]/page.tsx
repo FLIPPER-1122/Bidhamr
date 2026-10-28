@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import HandelDetalje from "@/components/handel/HandelDetalje";
 
 // Handelssiden for private. Indholdet deles med firma-dashboardet
@@ -16,10 +17,14 @@ export default async function HandelDetaljePage({
   searchParams,
 }: {
   params: Promise<{ trade_id: string }>;
-  searchParams: Promise<{ betaling?: string; vis?: string; returfragt?: string; ekstrafragt?: string; payment_intent?: string }>;
+  searchParams: Promise<{ meld?: string; betaling?: string; vis?: string; returfragt?: string; ekstrafragt?: string; payment_intent?: string }>;
 }) {
   const { trade_id } = await params;
-  const { betaling, vis, returfragt, ekstrafragt, payment_intent } = await searchParams;
+  const { meld, betaling, vis, returfragt, ekstrafragt, payment_intent } = await searchParams;
+  // Linket i beskeden "Pakken er leveret" (?meld=problem#sag) åbner "Meld et
+  // problem". Siden dér viser sagen, hvis den findes, eller at fristen er
+  // udløbet.
+  if (meld === "problem") redirect(`/mine-handler/${encodeURIComponent(trade_id)}/sag`);
   return (
     <HandelDetalje
       trade_id={trade_id}
