@@ -197,3 +197,7 @@ Svar til Claude Code, når du har besluttet dig, fx:
   - Kører `20261102340000_bruger_adresse.sql` før den nye kode, kan alle eksisterende private brugere ikke byde (BHY01 uden formular).
   - Det samme gælder sagsreglerne (`20261102210000`).
 - Undtagelse: `20261102310000_bot_loft_pr_gruppe.sql` skal køres **før** den nye bot-kode, ellers svarer botten ikke. Den gamle kode tåler migrationen. Kør den sammen med de andre lige efter deployet; botten er alligevel skjult, indtil `ANTHROPIC_API_KEY` er sat i produktion.
+
+## Sagsregler – småting fra review (28. okt. 2026)
+- `sag_indpakning_ved_afgoerelse`: giv `billeder_mangler`, når staff vælger "sælgeren betaler returfragt", og sagen ikke har et pakke-/labelbillede. Ellers kan sælgeren få en regning uden bevis.
+- Genåbning efter retur: markér hos staff, at BidHamr kan stå med returfragten, når sælgerens regning er frafaldet.
