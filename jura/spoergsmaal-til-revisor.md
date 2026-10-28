@@ -58,3 +58,5 @@ Samlet 10. okt. 2026 til mødet med revisor. Numrene i parentes henviser til `ju
 21. Skal BidHamr momsregistreres med det samme, selv om omsætningen er lav i starten (grænse 50.000 kr.)?
 22. Hvordan bogføres opstartsudgifter som Stripe, Idura (MitID), Vercel, Supabase og domæne?
 23. Hvad koster revisorens hjælp, og hvad kan BidHamr selv klare i Dinero?
+24. Apple (App Store Connect): vi har udfyldt W-8BEN-E som "Corporation", FATCA "Active NFFE", dobbeltbeskatningsaftale Danmark-USA artikel 12 (royalties) 0 %, og "active trade or business" under limitation on benefits. Er det korrekt for BidHamr ApS?
+25. Køb af boost-point i appen via Apple og Google: Apple og Google er sælger over for køberen og opkræver selv momsen. BidHamr modtager beløbet efter gebyr (15 %). Hvordan bogføres det (omsætning brutto eller netto, moms, EU-ydelse)? Se docs/IAP.md.
