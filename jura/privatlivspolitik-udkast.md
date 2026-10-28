@@ -214,12 +214,12 @@ Vores medarbejdere har adgang til de oplysninger, de skal bruge til fx sager, an
 | **Supabase** | Database, login, filer (billeder) og planlagte opgaver | Data lagres i EU – AWS-region eu-west-1 (Irland) | Supabase Inc. er en amerikansk virksomhed. Mulig adgang fra USA (support/drift) [ADVOKAT] |
 | **Vercel** | Hosting af hjemmesiden, billedvisning og serverkode | Serverkoden kører i EU – Vercel-region dub1 (Dublin, Irland) [TODO Filip: tjek, hvor Vercel gemmer logs, og om sider og billeder også leveres fra servere uden for EU via Vercels netværk] | Vercel Inc. er en amerikansk virksomhed. Overførsel eller adgang fra USA kan forekomme (fx support, drift og logs) [ADVOKAT] |
 | **Resend** | Afsendelse af mails (fx bekræftelse, notifikationer, kvitteringer) | [TODO Filip: tjek, om bidhamr.dk-domænet i Resend er sat op i en EU-region] | Resend Inc., USA |
-| **Idura ApS** (tidligere Criipto) | MitID-login (broker): bekræfter din identitet og sender os navn, fødselsdato og MitID-id | Danmark/EU | Nej [TODO Filip: bekræft i Iduras databehandleraftale, hvor data behandles] |
+| **Idura ApS** (tidligere Criipto) | MitID-login (broker): bekræfter din identitet og sender os navn, fødselsdato og MitID-id. Idura er **selvstændig dataansvarlig** for selve MitID-login (Idura, mail 28. okt. 2026, med juridisk notat) – derfor ingen databehandleraftale | Danmark/EU | Nej |
 | **Expo** (650 Industries) | Sender push-beskeder til appen videre til Apple og Google | USA | Ja |
 | **Apple** og **Google** | Levering af push-beskeder til din telefon | – | [ADVOKAT: databehandlere eller selvstændigt dataansvarlige?] |
 | **Anthropic PBC** | AI-modellen bag BidHamr-bot (afsnit 3.12): modtager dine beskeder til botten, samtalen indtil nu og de af dine egne data, botten slår op, og sender svaret tilbage. Vi sender ikke din e-mail, dit navn eller din IP-adresse | USA | Ja – EU-US Data Privacy Framework, hvis Anthropic er certificeret, ellers EU-Kommissionens standardkontraktbestemmelser (SCC) i Anthropics databehandleraftale [TODO Filip: tjek certificeringen og acceptér Anthropics DPA] [ADVOKAT] |
 
-[TODO Filip: bekræft databehandleraftale (DPA) med Supabase, Vercel, Resend, Idura, Expo og Anthropic – de fleste har en standardaftale, der skal accepteres i deres dashboard.]
+[TODO Filip: bekræft databehandleraftale (DPA) med Supabase, Vercel, Resend, Expo og Anthropic (Idura er selvstændig dataansvarlig – ingen DPA) – de fleste har en standardaftale, der skal accepteres i deres dashboard.]
 
 Vi bruger ikke Google Analytics, Facebook Pixel, reklamenetværk eller andre sporingsværktøjer. Skrifttyper og billeder hentes fra vores eget domæne.
 

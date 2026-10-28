@@ -48,21 +48,21 @@ Princippet:
 **Filip**
 - [ ] Stripe: live-aktiveringen sendt ind (firma, bank, ID).
 - [ ] Advokat og revisor: materialet sendt, svar aftalt senest 30. nov.
-- [x] Idura: ringede 28. okt. – godkendelse tager kun ca. 20 min. Bestilles først tæt på lancering (uge 49, sammen med Stripe live), så vi ikke betaler 500 kr./md. for tidligt.
+- [x] Idura: ringede 28. okt. – godkendelse tager kun ca. 20 min. Bestilles ca. en uge før den bløde lancering (uge 49), så vi ikke betaler 500 kr./md. for tidligt. Trinene står i HUSKELISTE.md. Ingen databehandleraftale (Idura er selvstændig dataansvarlig).
 - [x] Google Play-udviklerkonto oprettet og betalt (27. okt.); afventer Googles verificering.
 - [x] Anthropic API: konto, 20 US$ kredit og test-nøgle i bidhamr-test (27. okt.).
 - [x] Apple: Paid Applications Agreement, bank, W-8BEN-E og DSA klaret; Small Business Program ansøgt (28. okt.) – afventer Apples svar.
 - Dinero (betalt plan) og Resend-opgradering flyttet til uge 49 (Filip, 28. okt.).
 - [ ] DAO-kontrakt underskrevet, og Shipmondo bekræftet med Dea. Plan og nøgler sendt til mig.
 - [ ] Firma-delen testet på test.bidhamr.dk, især opret auktion og bankkonto-trinnet. Appen testet via TestFlight.
-- [ ] `main` pushet, og ja givet til produktionsmigrationerne.
+- [x] `main` pushet og 34 produktionsmigrationer kørt (28. okt.).
 
 **Mig** (færdigt, reviewet, testet og på produktion)
-- [ ] Måned 1-regel og fakturarettelser.
-- [ ] Skift af e-mail.
-- [ ] Kontaktinfo blokeret i beskrivelser.
-- [ ] Glidende gebyrer.
-- [ ] Sikkerhedsstramningen, med push-funktionen deployet igen.
+- [x] Måned 1-regel og fakturarettelser.
+- [x] Skift af e-mail.
+- [x] Kontaktinfo blokeret i beskrivelser.
+- [x] Glidende gebyrer.
+- [x] Sikkerhedsstramningen, med push-funktionen deployet igen.
 - [ ] Fragt via Shipmondo med rigtige nøgler (labels, retur, sporing, ikke-afhentet). Kræver nøglerne.
 - [ ] Appen: CAPTCHA, fejlkoden for indsigelse, visningsnavn, nye gebyrer og blokering. Nyt TestFlight-build + første Android-build.
 - [ ] Admin: staff kan ikke spærres ude via login-loftet.

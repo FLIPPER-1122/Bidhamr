@@ -134,7 +134,13 @@ Rækkefølgen af migration og hjemmeside-deploy er ligegyldig (koden tåler, at 
 
 ## MitID (Idura) – før det går live (se docs/MITID.md, "Go-live")
 - **www.bidhamr.dk SKAL omdirigere til bidhamr.dk** (Vercel → Project → Settings → Domains: sæt `bidhamr.dk` som primært domæne og `www.bidhamr.dk` til "Redirect to bidhamr.dk"). Ellers virker MitID ikke for dem, der kommer ind via www (cookien sættes på www, men Idura sender tilbage til bidhamr.dk).
-- Idura: opret produktions-application, callback `https://bidhamr.dk/api/mitid/callback`, godkend databehandleraftalen og MitID-ansøgningen.
+- Idura (Alfredo Paladino, mail 28. okt. 2026): tegn abonnementet **ca. en uge før den bløde lancering i uge 50** (ikke før – 500 kr./md.). Rækkefølge:
+  1. Billing → **Verify Small** (500 kr./md., 1.000 verificeringer; 10 % rabat ved årlig betaling).
+  2. Skift til **Production**, og registrér `bidhamr.dk` under **Domains**.
+  3. Opret en **produktions-application** under Applications (nyt client ID), callback `https://bidhamr.dk/api/mitid/callback`.
+  4. Under **eID providers** → **DK MitID**: log ind med **MitID Erhverv** (Filip som tegningsberettiget), udfyld ansøgningen, **Company alias: BidHamr**, og acceptér MitIDs særlige vilkår. MitID er typisk oprettet på 15-20 minutter.
+  5. Læg domæne, client ID, client secret og en ny `MITID_HASH_NOEGLE` i Vercel (se docs/MITID.md), og test i produktion.
+- Ingen databehandleraftale med Idura: de er selvstændig dataansvarlige. Support: support@idura.eu (de opretter også en fælles Slack-kanal til lanceringen).
 - Vercel-variabler: `CRIIPTO_DOMAIN`, `CRIIPTO_CLIENT_ID`, `CRIIPTO_CLIENT_SECRET`, `MITID_HASH_NOEGLE` (ny, tilfældig, mindst 32 tegn – må aldrig skiftes).
 - (Lokalt er `MITID_HASH_NOEGLE` allerede sat i `.env.local`.)
 - Før lancering (fra reviewer): brug et verificeret Universal Link/App Link (`https://bidhamr.dk/...`) som returadresse for appen i stedet for `bidhamr://`, og kør `mitid_flow_oprydning` fra betalings-cron, så MitID-data fra uafsluttede app-forløb slettes efter 5 min.
@@ -210,3 +216,11 @@ Svar til Claude Code, når du har besluttet dig, fx:
 
 ## BidHamr-bot og App Store (review 28. okt. 2026)
 - ~~Botten må ALDRIG sige "køb point på bidhamr.dk" eller nævne BidHamrs pointpriser i appen (Apple 3.1.1/3.1.3). Tilføj det i systemprompten (`src/lib/bot/viden.ts`), og et filter, når samtalen kommer fra appen (`kilde = 'app'`).~~ (rettet 28. okt.: systemprompt + filter i `src/lib/bot/filter.ts`)
+
+## CAPTCHA i appen (bygget 28. okt. 2026, app-commit 023ae40)
+- Appen sender nu Turnstile-token ved login, glemt adgangskode, opret konto og "Send en ny kode". Uden `EXPO_PUBLIC_TURNSTILE_SITE_KEY` sker der intet (fail open).
+- Rækkefølge:
+  1. Sæt `EXPO_PUBLIC_TURNSTILE_SITE_KEY` (samme site key som hjemmesiden) i EAS for development/preview/production.
+  2. Lav et nyt build, og få det ud til brugerne.
+  3. Slå "Captcha protection" til i Supabase, først på Bidhamr Test og så i produktion.
+- Cloudflare-widget (Managed) skal have hostnames `bidhamr.dk`, `www.bidhamr.dk`, `test.bidhamr.dk` og `localhost`.
