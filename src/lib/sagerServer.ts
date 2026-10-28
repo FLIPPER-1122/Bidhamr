@@ -13,7 +13,6 @@ import {
   SAG_PROBLEM_PAAMIND_TIMER_FOER,
   SAG_RETUR_VENTETID_DAGE,
   SAG_SVAR_PAAMIND_TIMER_FOER,
-  SAG_TYPE_NAVN,
   type SagPengeHandling,
   type SagType,
   erSagType,
@@ -22,6 +21,7 @@ import {
   sagSvarFristKl,
 } from "@/lib/sager";
 import { SAG_TYPER_HELE_BELOEBET } from "@/lib/betaling/beregn";
+import { sagProblemTekst } from "@/lib/tekster/sagValg";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -127,12 +127,13 @@ export async function notificerSagOprettet(sagId: string): Promise<boolean> {
       .update({ notificeret_kl: new Date().toISOString() })
       .eq("id", sagId)
       .is("notificeret_kl", null)
-      .select("id, trade_id, type, oprettet_kl")
-      .maybeSingle<{ id: string; trade_id: string; type: string; oprettet_kl: string }>();
+      .select("id, trade_id, type, koeber_valg, oprettet_kl")
+      .maybeSingle<{ id: string; trade_id: string; type: string; koeber_valg: string | null; oprettet_kl: string }>();
     if (!sag || !erSagType(sag.type)) return false;
     const h = await handelOgTitel(admin, sag.trade_id);
     if (!h) return false;
-    const hvad = SAG_TYPE_NAVN[sag.type].toLowerCase();
+    // Køberens valg i hverdagsord - aldrig staff-typen (fx "svindel").
+    const problem = sagProblemTekst(sag.type, sag.koeber_valg);
     const link = sagLink(sag.trade_id);
     const data = { trade_id: sag.trade_id, sag_id: sag.id };
     // Sælgerens frist for at give sin forklaring (regel 3, 48 timer).
@@ -142,14 +143,14 @@ export async function notificerSagOprettet(sagId: string): Promise<boolean> {
       : "";
     await send(h.buyer_id, "sag", {
       titel: "Tak – vi har fået din sag",
-      tekst: `Vi har fået din sag om "${h.titel}" (${hvad}). Sælgeren får ikke pengene, mens BidHamr ser på sagen. Du får besked, når der sker noget.`,
+      tekst: `Vi har fået din sag om "${h.titel}" (${problem.charAt(0).toLowerCase()}${problem.slice(1)}). Sælgeren får ikke pengene, mens BidHamr ser på sagen. Du får besked, når der sker noget.`,
       link,
       data,
       noegle: `sag_oprettet_koeber:${sag.id}`,
     });
     await send(h.seller_id, "sag", {
       titel: "Køberen har meldt et problem",
-      tekst: `Køberen har meldt et problem med "${h.titel}" (${hvad}). BidHamr ser på sagen. Du får ikke pengene, før sagen er afgjort. Dine billeder af indpakningen er lagt ved sagen.${svarTekst}`,
+      tekst: `Køberen har meldt et problem med "${h.titel}": "${problem}". BidHamr ser på sagen. Du får ikke pengene, før sagen er afgjort. Dine billeder af indpakningen er lagt ved sagen.${svarTekst}`,
       link,
       data,
       noegle: `sag_oprettet_saelger:${sag.id}`,

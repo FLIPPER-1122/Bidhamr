@@ -11,6 +11,7 @@
 import { FIRMA, FIRMA_ADRESSE } from "@/lib/firmaoplysninger";
 import { SAG_STATUS_NAVN, SAG_TYPE_NAVN, type SagStatus, type SagType } from "@/lib/sager";
 import { UDGAVE_NAVN, loftTekst, type SagDokumentationUdgave } from "@/lib/sagDokumentation/regler";
+import { SAG_TYPE_NEUTRAL } from "@/lib/tekster/sagValg";
 
 // ---------------------------------------------------------------------------
 // Data (hentet af data.ts)
@@ -280,6 +281,9 @@ function handlingNavn(h: string): string {
 // ---------------------------------------------------------------------------
 export function bygDokument(d: DokumentationData, udgave: SagDokumentationUdgave, dannet: Date): Dokument {
   const politi = udgave === "politi" ? d.politi : undefined;
+  // Sagstypen: staff-navnet (fx "Svindel ...") kun i politiudgaven. Udgaven
+  // til sælger får den neutrale tekst, som parterne også ser på sagssiden.
+  const typeNavn = (t: SagType) => (udgave === "politi" ? SAG_TYPE_NAVN[t] : SAG_TYPE_NEUTRAL[t]);
   const afsnit: DokAfsnit[] = [];
 
   // 1. Handlen og varen
@@ -398,9 +402,9 @@ export function bygDokument(d: DokumentationData, udgave: SagDokumentationUdgave
       slags: "felter",
       raekker: [
         ["Sagens id", d.sag.id],
-        ["Type", SAG_TYPE_NAVN[d.sag.type]],
+        ["Type", typeNavn(d.sag.type)],
         ...(d.sag.oprindeligType
-          ? ([["Oprindelig type (valgt af køber)", SAG_TYPE_NAVN[d.sag.oprindeligType]]] as Array<[string, string]>)
+          ? ([["Oprindelig type (valgt af køber)", typeNavn(d.sag.oprindeligType)]] as Array<[string, string]>)
           : []),
         ["Oprettet", tid(d.sag.oprettetKl)],
         ["BidHamr Beskyttelse", d.sag.beskyttelse ? "Ja" : "Nej"],
@@ -593,7 +597,7 @@ export function bygDokument(d: DokumentationData, udgave: SagDokumentationUdgave
       ["Vare", v(d.auktion?.titel)],
       ["Handlens id", d.handel.id],
       ["Sagens id", d.sag.id],
-      ["Sagstype", SAG_TYPE_NAVN[d.sag.type]],
+      ["Sagstype", typeNavn(d.sag.type)],
       ["Lavet", tid(dannetIso)],
     ],
     indledning:

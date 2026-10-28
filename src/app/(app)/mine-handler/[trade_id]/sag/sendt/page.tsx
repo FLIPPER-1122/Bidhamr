@@ -11,8 +11,8 @@ import { SAG_ANKEFRIST_DAGE, SAG_SVAR_FRIST_TIMER, sagSvarFristKl, type SagType 
 import { SAG_FLOW, SAG_KVITTERING, SAG_VALG, SAG_VALG_IDER, erSagValgId, sagUdfyld } from "@/lib/tekster/sagValg";
 
 // Kvitteringen efter "Send til BidHamr": det skal køberen gøre nu, og
-// hvordan sagen går videre (med frister). ?valg= er køberens valg i trin 1
-// (kun til teksten "Det skal du gøre nu" - sagen selv er allerede oprettet).
+// hvordan sagen går videre (med frister). "Det skal du gøre nu" følger
+// køberens valg i trin 1, som det står i databasen (sager.koeber_valg).
 
 export const dynamic = "force-dynamic";
 
@@ -20,14 +20,8 @@ export const metadata: Metadata = { title: "Sagen er sendt", robots: { index: fa
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default async function SagSendtPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ trade_id: string }>;
-  searchParams: Promise<{ valg?: string }>;
-}) {
-  const [{ trade_id }, { valg }] = await Promise.all([params, searchParams]);
+export default async function SagSendtPage({ params }: { params: Promise<{ trade_id: string }> }) {
+  const { trade_id } = await params;
   const handelSti = `/mine-handler/${encodeURIComponent(trade_id)}`;
   const user = await hentBruger();
   if (!user) redirect(`/login?redirect=${handelSti}`);
@@ -39,18 +33,18 @@ export default async function SagSendtPage({
   const supabase = await createClient();
   const { data: sag, error } = await supabase
     .from("sager")
-    .select("id, type, oprettet_kl")
+    .select("id, type, koeber_valg, oprettet_kl")
     .eq("trade_id", trade_id)
     .order("oprettet_kl", { ascending: false })
     .limit(1)
-    .maybeSingle<{ id: string; type: SagType; oprettet_kl: string }>();
+    .maybeSingle<{ id: string; type: SagType; koeber_valg: string | null; oprettet_kl: string }>();
   if (error) throw new Error(`Sagen kunne ikke hentes: ${error.message}`);
   if (!sag) redirect(`${handelSti}/sag`);
 
-  // Valget skal passe til sagens type; ellers det første valg med typen.
-  const v =
-    erSagValgId(valg) && SAG_VALG[valg].type === sag.type
-      ? SAG_VALG[valg]
+  // Køberens valg fra databasen. Gamle sager (koeber_valg = null): det
+  // første valg med sagens type.
+  const v = erSagValgId(sag.koeber_valg)
+    ? SAG_VALG[sag.koeber_valg]
       : SAG_VALG[SAG_VALG_IDER.find((i) => SAG_VALG[i].type === sag.type) ?? "andet"];
   const svarFrist = sagSvarFristKl(sag.oprettet_kl);
   const k = SAG_FLOW.kvittering;

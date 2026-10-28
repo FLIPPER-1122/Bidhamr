@@ -28,7 +28,6 @@ import {
   SAG_OPRET_FEJL,
   SAG_SMIDT_UD_BEGRUNDELSE_MAKS,
   SAG_SMIDT_UD_BEGRUNDELSE_MIN,
-  SAG_TYPE_NAVN,
   type SagType,
 } from "@/lib/sager";
 import {
@@ -38,8 +37,6 @@ import {
   SAG_FLOW,
   SAG_SMIDT_UD,
   SAG_TEKST,
-  SAG_VALG,
-  sagBilledKrav,
   sagUdfyld,
   type SagBilledKrav,
   type SagValgId,
@@ -99,13 +96,12 @@ export default function MeldProblemFlow({
 
   const valgt = valgListe.find((v) => v.id === valgId) ?? null;
   // Billedkravene fra serveren. "Jeg har ikke pakken længere" (regel 2):
-  // samme regel som sagBilledKrav - pakkebilledet udgår, indholdet kræves.
+  // samme regel som sagBilledKrav - pakkebilledet bliver valgfrit (og sendes
+  // med, hvis det er taget), indholdet kræves.
   const krav: SagBilledKrav[] = useMemo(() => {
     if (!valgt) return [];
     if (!smidtUd || !valgt.smidtUdMulig) return valgt.billeder;
-    return sagBilledKrav(SAG_VALG[valgt.id], valgt.billeder.length > 0, true).filter(
-      (k) => k.kategori !== "pakke_label",
-    );
+    return valgt.billeder.map((k) => (k.kategori === "pakke_label" ? { ...k, paakraevet: false } : k));
   }, [valgt, smidtUd]);
   const harBilledtrin = valgt ? valgt.billeder.length > 0 : valgListe.some((v) => v.billeder.length > 0);
   const trinListe: Trin[] = harBilledtrin ? ["hvad", "billeder", "beskriv", "tjek"] : ["hvad", "beskriv", "tjek"];
@@ -227,7 +223,7 @@ export default function MeldProblemFlow({
         setSendFejl(res.fejl);
         return;
       }
-      router.replace(`${pathname}/sendt?valg=${valgt.id}`);
+      router.replace(`${pathname}/sendt`);
     } catch {
       setSendFejl(GENERISK);
     } finally {
@@ -459,9 +455,7 @@ function TrinHvad({
         <p className="mt-4 border border-info-kant bg-info-bg p-3 text-sm text-info-tekst">
           {erhverv
             ? SAG_FLOW.handel.kraeverBeskyttelseErhverv
-            : sagUdfyld(SAG_FLOW.handel.kraeverBeskyttelse, {
-                typer: kraeverBeskyttelse.map((t) => SAG_TYPE_NAVN[t].toLowerCase()).join(" eller "),
-              })}{" "}
+            : SAG_FLOW.handel.kraeverBeskyttelse}{" "}
           <Link href="/bidhamr-beskyttelse" className="font-semibold underline">
             {SAG_FLOW.handel.laesMere}
           </Link>
@@ -499,6 +493,10 @@ function TrinBilleder({
 }) {
   const [fejl, setFejl] = useState<string | null>(null);
   const antal = krav.filter((k) => k.paakraevet).length;
+  // Grænsen tæller kun billeder i kategorier, der faktisk sendes (fx ikke
+  // billeder fra et tidligere valg).
+  const kategorier = new Set(krav.map((k) => k.kategori));
+  const antalSendes = billeder.filter((b) => kategorier.has(b.kategori)).length;
   const mangler = krav.some((k) => k.paakraevet && !billeder.some((b) => b.kategori === k.kategori));
 
   function tilfoej(kategori: SagBilledKrav["kategori"], filer: FileList | null) {
@@ -506,7 +504,7 @@ function TrinBilleder({
     if (!filer || filer.length === 0) return;
     const nye: ValgtBillede[] = [];
     for (const fil of Array.from(filer)) {
-      if (billeder.length + nye.length >= SAG_MAKS_BILLEDER) {
+      if (antalSendes + nye.length >= SAG_MAKS_BILLEDER) {
         setFejl(`Du kan højst tilføje ${SAG_MAKS_BILLEDER} billeder.`);
         break;
       }
@@ -546,7 +544,7 @@ function TrinBilleder({
             valgId={valg.id}
             egne={billeder.filter((b) => b.kategori === k.kategori)}
             visFejl={visFejl}
-            laast={laast || billeder.length >= SAG_MAKS_BILLEDER}
+            laast={laast || antalSendes >= SAG_MAKS_BILLEDER}
             onTilfoej={(f) => tilfoej(k.kategori, f)}
             onFjern={fjern}
           />

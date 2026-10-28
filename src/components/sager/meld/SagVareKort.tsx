@@ -42,7 +42,7 @@ export function VareLinje({ vare, lille = false }: { vare: SagVare; lille?: bool
       <div className="min-w-0">
         <p className="break-words font-medium leading-snug text-tekst">{vare.titel}</p>
         <p className="text-xs text-tekst-svag">
-          {sagUdfyld(SAG_FLOW.side.koebtFor, { beloeb: vare.beloeb })}
+          {sagUdfyld(SAG_FLOW.side.bud, { beloeb: vare.beloeb })}
           {vare.saelgerNavn ? ` · ${vare.saelgerNavn}` : ""}
         </p>
       </div>

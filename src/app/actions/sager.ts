@@ -23,7 +23,7 @@
 //   POST /api/sag/app/opret og /api/sag/app/svar (docs/APP-ENDPOINTS.md)
 //       -> { kode: "ok", sag_id } | { kode: <fejlkode> } (se SAG_OPRET_FEJL)
 //   supabase.rpc("sag_tilfoej_billeder", { p_sag, p_billeder })
-//   supabase.from("sager").select("id, trade_id, type, beskrivelse, status,
+//   supabase.from("sager").select("id, trade_id, type, koeber_valg, beskrivelse, status,
 //       oprettet_kl, afgjort_kl, begrundelse, retur_kraeves, returfragt_betaler,
 //       retur_afleveret_kl, genaabnet_kl, penge_handling, penge_flyttes_efter_kl,
 //       afviklet_kl")   (OBS: ikke "*". beskyttelse kan IKKE vælges - sælgeren
@@ -88,11 +88,15 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type { SagBilledeInput } from "@/lib/sagHandlinger";
 import type { SagBilledeInput } from "@/lib/sagHandlinger";
+import { erSagValgId, type SagValgId } from "@/lib/tekster/sagValg";
 
 export type MinSag = {
   id: string;
   tradeId: string;
   type: SagType;
+  // Køberens hverdagsvalg (sager.koeber_valg). null på gamle sager - vis
+  // sagProblemTekst(type, koeberValg), aldrig SAG_TYPE_NAVN.
+  koeberValg: SagValgId | null;
   beskrivelse: string;
   status: SagStatus;
   // Kun for køberen (sælgeren får altid false - han må ikke se det).
@@ -351,12 +355,13 @@ export async function indgivAnke(
 }
 
 const SAG_KOLONNER =
-  "id, trade_id, type, beskrivelse, status, oprettet_kl, afgjort_kl, begrundelse, retur_kraeves, returfragt_betaler, retur_afleveret_kl, genaabnet_kl, penge_handling, penge_flyttes_efter_kl, afviklet_kl";
+  "id, trade_id, type, koeber_valg, beskrivelse, status, oprettet_kl, afgjort_kl, begrundelse, retur_kraeves, returfragt_betaler, retur_afleveret_kl, genaabnet_kl, penge_handling, penge_flyttes_efter_kl, afviklet_kl";
 
 type SagRaekke = {
   id: string;
   trade_id: string;
   type: SagType;
+  koeber_valg: string | null;
   beskrivelse: string;
   status: SagStatus;
   oprettet_kl: string;
@@ -497,6 +502,7 @@ export async function hentSagForHandel(
         id: sag.id,
         tradeId: sag.trade_id,
         type: sag.type,
+        koeberValg: erSagValgId(sag.koeber_valg) ? sag.koeber_valg : null,
         beskrivelse: sag.beskrivelse,
         status: sag.status,
         beskyttelse,
