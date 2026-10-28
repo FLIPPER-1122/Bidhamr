@@ -8,6 +8,8 @@ import { hentCheckoutAction } from "@/app/actions/fragt";
 import CheckoutSide from "@/components/checkout/CheckoutSide";
 import CheckoutFejl from "@/components/checkout/CheckoutFejl";
 import { saelgerMetoder } from "@/lib/betaling/betalingsmetoder";
+import { hentMinAdresse } from "@/lib/adresse/server";
+import CheckoutAdresseKrav from "@/components/checkout/CheckoutAdresseKrav";
 
 // Checkout for vinderen (ROADMAP-BESLUTNINGER: "Ingen automatisk betaling" -
 // alle vindere ender her): levering (pakkeshop, hjem eller afhentning),
@@ -87,6 +89,13 @@ export default async function BetalPage({ params }: { params: Promise<{ trade_id
   }
   // Betalt i en anden fane, mens siden blev hentet.
   if (betaling.status === "betalt") redirect(`${handelSti}?betaling=retur`);
+
+  // Adressen kræves før første betaling (20261102340000): formularen vises
+  // her, og checkout forudfylder den bagefter. "fejl" (kunne ikke læses):
+  // checkout vises, og serveren afgør kravet ved betalingen.
+  if ((await hentMinAdresse(supabase, user.id)) === null) {
+    return <CheckoutAdresseKrav titel={vare.titel} />;
+  }
 
   return (
     <CheckoutSide

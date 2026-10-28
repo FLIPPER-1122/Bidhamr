@@ -23,8 +23,11 @@ Begge endpoints kræver `Content-Type: application/json`. Appen (native) sender 
 ## POST /api/konto/opret
 
 ```json
-{ "fornavn": "Ida", "efternavn": "Hansen", "email": "ida@example.dk", "password": "...", "vilkaar_version": "<VILKAAR_VERSION>" }
+{ "fornavn": "Ida", "efternavn": "Hansen", "adresse": "Testvej 12, 2. th.", "postnummer": "2100", "by": "København Ø",
+  "email": "ida@example.dk", "password": "...", "vilkaar_version": "<VILKAAR_VERSION>" }
 ```
+
+`adresse` og `postnummer` er **påkrævet** (adressen til kvitteringer og fakturaer, se "Adresse" nedenfor). `by` er valgfri: serveren bruger altid bynavnet for postnummeret.
 
 `vilkaar_version` er den version af brugerbetingelserne, brugeren har accepteret (`VILKAAR_VERSION` i `src/lib/vilkaar.ts`).
 
@@ -32,7 +35,7 @@ Begge endpoints kræver `Content-Type: application/json`. Appen (native) sender 
 |---|---|---|
 | 200 | `{ ok: true }` | **Altid** ved gyldigt input: ny konto, konto findes allerede (bekræftet eller ej), e-mailen er ikke inviteret (lukket tilmelding), inden for 2-minutters vinduet eller en fejl på serveren (logges i /admin/drift). Vis "Tjek din indbakke". |
 | 400 | `{ fejl, kode: "ugyldig" }` | Ikke JSON, eller kroppen er over 4 KB |
-| 400 | `{ fejl, kode: "fornavn" \| "efternavn" \| "email" \| "adgangskode" }` | Feltet er tomt eller ugyldigt. `fejl` er en dansk tekst, der kan vises direkte |
+| 400 | `{ fejl, kode: "fornavn" \| "efternavn" \| "adresse" \| "postnummer" \| "email" \| "adgangskode" }` | Feltet er tomt eller ugyldigt. `fejl` er en dansk tekst, der kan vises direkte ved feltet |
 | 400 | `{ fejl, kode: "vilkaar", vilkaar_version }` | Brugeren har ikke accepteret den aktuelle version. Vis betingelserne igen |
 | 403 | `{ fejl, kode: "ikke_tilladt" }` | Fremmed `Origin` |
 | 429 | `{ fejl, kode: "for_mange" }` | For mange forsøg |
@@ -50,17 +53,20 @@ igen fra "Indtast koden". Appen bør vise samme felt, så brugeren kan se og ret
 
 
 ```json
-{ "email": "ida@example.dk", "kode": "123456", "password": "...", "fornavn": "Ida", "efternavn": "Hansen", "vilkaar_version": "<VILKAAR_VERSION>" }
+{ "email": "ida@example.dk", "kode": "123456", "password": "...", "fornavn": "Ida", "efternavn": "Hansen",
+  "adresse": "Testvej 12, 2. th.", "postnummer": "2100", "by": "København Ø", "vilkaar_version": "<VILKAAR_VERSION>" }
 ```
+
+`adresse` og `postnummer` er påkrævet og skal være de samme som til `/api/konto/opret` (sendes igen ligesom navnet). Adressen gemmes først efter en vellykket `verifyOtp`.
 
 Koden må have mellemrum (de fjernes). Produktion bruger 6 cifre, testdatabasen 8.
 
 | Status | Krop | Betyder |
 |---|---|---|
-| 200 | `{ ok: true, adgangskode_sat, navn_sat, vilkaar_sat, session: { access_token, refresh_token, expires_in, expires_at, token_type }, bruger: { id, email } }` | E-mailen er bekræftet, og brugeren er logget ind |
+| 200 | `{ ok: true, adgangskode_sat, navn_sat, vilkaar_sat, adresse_sat, session: { access_token, refresh_token, expires_in, expires_at, token_type }, bruger: { id, email } }` | E-mailen er bekræftet, og brugeren er logget ind |
 | 400 | `{ fejl, kode: "ugyldig" \| "email" }` | Ugyldig krop eller e-mail |
 | 400 | `{ fejl, kode: "kode_forkert" }` | Forkert eller udløbet kode (Supabase skelner ikke). Tilbyd "Send ny kode" |
-| 400 | `{ fejl, kode: "adgangskode" \| "fornavn" \| "efternavn" }` | Adgangskoden eller navnet opfylder ikke kravene. Det tjekkes, **før** koden bruges, så koden gælder stadig |
+| 400 | `{ fejl, kode: "adgangskode" \| "fornavn" \| "efternavn" \| "adresse" \| "postnummer" }` | Adgangskoden, navnet eller adressen opfylder ikke kravene. Det tjekkes, **før** koden bruges, så koden gælder stadig |
 | 400 | `{ fejl, kode: "vilkaar", vilkaar_version }` | Ikke den aktuelle version af betingelserne. Tjekket før koden bruges |
 | 403 | `{ fejl, kode: "ikke_tilladt" }` | Fremmed `Origin` |
 | 403 | `{ fejl, kode: "suspenderet" \| "slettet" }` | Kontoen må ikke logge ind. `fejl` forklarer hvorfor |
@@ -74,7 +80,53 @@ Kontoens status (suspenderet eller slettet) tjekkes, **før** noget ændres. En 
 
 **`navn_sat: false`:** databasen afviste navnet (fx `BHN01`: indeholder "BidHamr", `BHN02`: e-mail, telefon eller link). Kontoen hedder "Bruger". Bed om navnet igen, og gem det på `users` (`navn`, `fornavn`, `efternavn`) med den nye session.
 
+**`adresse_sat: false`:** adressen kunne ikke gemmes. Bed om den igen med `POST /api/konto/adresse` (se nedenfor). Ellers bliver brugeren bedt om den før første bud og første betaling.
+
 **`vilkaar_sat: false`:** accepten kunne ikke gemmes. Vis accept-vinduet (`rpc("accepter_vilkaar", { p_version })`). Databasen afviser bud og salg uden accept (`BHV02`).
+
+## Adresse
+
+Private skal have en adresse (vej og nr., postnummer og by), før de byder eller betaler første gang. Den står på kvitteringer og fakturaer, når de køber noget. Nye brugere giver den ved oprettelsen (ovenfor). Eksisterende brugere uden adresse bliver bedt om den. Firmakonti er undtaget, fordi de har adressen på firmaet.
+
+Databasen: `public.bruger_adresser` (`20261102340000_bruger_adresse.sql`). Kun brugeren selv kan læse sin række (RLS), og den skrives kun via `gem_min_adresse(p_adresse, p_postnummer)`, som bruger `auth.uid()`.
+
+**Validering** (samme på hjemmesiden, i appens endpoints og i databasen):
+- `adresse`: 3-200 tegn efter trim, mindst ét bogstav og ét ciffer (vejnavn og husnummer), ingen styretegn. Fejl: kode `adresse`, tekst "Skriv din adresse med vejnavn og husnummer."
+- `postnummer`: præcis 4 cifre og et kendt dansk postnummer (samme liste som `src/data/postnumre.ts`). Fejl: kode `postnummer`, tekst "Skriv et dansk postnummer med 4 cifre." eller "Vi kender ikke det postnummer. Tjek det, og prøv igen."
+- `by`: kan ikke skrives af brugeren. Vis den som et låst felt, der udfyldes ud fra postnummeret (samme liste). Serveren bruger altid sit eget bynavn og sender det tilbage.
+- Brug `textContentType`/`autoComplete` for vej (`street-address`), postnummer (`postal-code`) og by (`address-level2`) i appen.
+
+### GET /api/konto/adresse
+
+`Authorization: Bearer <access token>`. Min adresse i appen.
+
+| Status | Krop | Betyder |
+|---|---|---|
+| 200 | `{ ok: true, adresse: { adresse, postnummer, by } \| null, faktura_navn, navn_fra_mitid }` | `adresse: null` = ingen adresse endnu: vis formularen. `navn_fra_mitid: true` = navnet på fakturaer er navnet fra MitID og kan ikke rettes (vis det låst). Ellers er det profilens navn |
+| 401 | `{ fejl, kode: "ikke_logget_ind" }` | |
+| 429 / 500 | `{ fejl, kode: "for_mange" \| "fejl" }` | |
+
+### POST /api/konto/adresse
+
+`Authorization: Bearer <access token>`, `Content-Type: application/json`.
+
+```json
+{ "adresse": "Testvej 12, 2. th.", "postnummer": "2100" }
+```
+
+| Status | Krop | Betyder |
+|---|---|---|
+| 200 | `{ ok: true, adresse: { adresse, postnummer, by } }` | Gemt (en uændret adresse giver også 200) |
+| 400 | `{ fejl, kode: "adresse" \| "postnummer" \| "ugyldig" }` | Vis `fejl` ved feltet |
+| 401 | `{ fejl, kode: "ikke_logget_ind" }` | |
+| 403 | `{ fejl, kode: "konto" \| "ikke_tilladt" }` | Lukket/slettet konto, eller fremmed `Origin` |
+| 429 / 500 | `{ fejl, kode: "for_mange" \| "fejl" }` | Højst 20 gem pr. bruger pr. time |
+
+### Før første bud og første betaling
+
+- **Bud** (`POST /api/bud/app` eller direkte insert/`saet_maksimum`): uden adresse afviser databasen med fejlkode `BHY01` ("adresse_mangler: ..."). `/api/bud/app` svarer `409 { fejl, kode: "BHY01" }`. Vis adresseformularen på auktionen, gem med `POST /api/konto/adresse`, og send buddet igen.
+- **Betaling** (`POST /api/betaling/app/betal`): uden adresse svarer serveren `409 { fejl, kode: "adresse_mangler" }`, før der laves en betaling. Vis formularen i checkout, gem, og kald `betal` igen. Appen kan også hente adressen på forhånd (`GET /api/konto/adresse`) og vise formularen med det samme.
+- **Checkout forudfylder** "Levering til døren" med den gemte adresse: `checkout.minAdresse` (`{ adresse, postnummer, by } | null`) i svaret fra `/api/fragt/app/checkout`. Den bruges, når hverken valget eller forslaget fra sidste køb har en adresse.
 
 ## Grænser
 

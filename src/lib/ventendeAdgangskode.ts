@@ -99,9 +99,16 @@ const aad = (email: string) => new TextEncoder().encode(`bh-signup|${email.toLow
 // Det, der venter på bekræftelsen: den valgte adgangskode og navn og
 // vilkårsaccept (review 11. okt. 2026, V2) - så de kommer fra den, der har
 // koden, og ikke fra den, der først oprettede kontoen.
+// adresse/postnummer: adressen til fakturaer (20261102340000) - gemmes også
+// først efter koden. Valgfri, så en cookie fra før stadig kan læses.
 export type VentendeSignup = {
   adgangskode: string;
-  profil: { fornavn: string; efternavn: string; vilkaarVersion: string };
+  profil: {
+    fornavn: string;
+    efternavn: string;
+    vilkaarVersion: string;
+    adresse?: { adresse: string; postnummer: string } | null;
+  };
 };
 
 // Krypterer og gemmer det ventende til e-mailen. false = kunne ikke (ingen nøgle).
@@ -110,9 +117,17 @@ export async function gemVentendeAdgangskode(email: string, ventende: VentendeSi
   if (!noegle) return false;
   const e = email.toLowerCase();
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const { fornavn: f, efternavn: l, vilkaarVersion: v } = ventende.profil;
+  const { fornavn: f, efternavn: l, vilkaarVersion: v, adresse: adr } = ventende.profil;
   const klar = new TextEncoder().encode(
-    JSON.stringify({ e, p: ventende.adgangskode, f, l, v, x: Math.floor(Date.now() / 1000) + LEVETID_SEKUNDER }),
+    JSON.stringify({
+      e,
+      p: ventende.adgangskode,
+      f,
+      l,
+      v,
+      ...(adr ? { a: adr.adresse, z: adr.postnummer } : {}),
+      x: Math.floor(Date.now() / 1000) + LEVETID_SEKUNDER,
+    }),
   );
   const krypteret = new Uint8Array(
     await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: aad(e) }, noegle, klar),
@@ -150,7 +165,9 @@ export async function hentVentendeAdgangskode(email: string): Promise<VentendeSi
     if (data.e !== e || typeof data.p !== "string" || typeof data.x !== "number") return null;
     if (data.x <= Math.floor(Date.now() / 1000)) return null;
     if (typeof data.f !== "string" || typeof data.l !== "string" || typeof data.v !== "string") return null;
-    return { adgangskode: data.p, profil: { fornavn: data.f, efternavn: data.l, vilkaarVersion: data.v } };
+    const adresse =
+      typeof data.a === "string" && typeof data.z === "string" ? { adresse: data.a, postnummer: data.z } : null;
+    return { adgangskode: data.p, profil: { fornavn: data.f, efternavn: data.l, vilkaarVersion: data.v, adresse } };
   } catch {
     return null;
   }

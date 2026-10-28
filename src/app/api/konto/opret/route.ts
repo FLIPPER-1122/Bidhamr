@@ -7,6 +7,7 @@ import { opretKontoPaaServeren, renEmail, renNavn } from "@/lib/kontoOprettelse"
 import { UGYLDIG, fremmedOrigin, jsonKrop, svar } from "@/lib/mitid/appAuth";
 import { CAPTCHA_FEJL } from "@/lib/turnstile";
 import { tjekTurnstile } from "@/lib/turnstileServer";
+import { validerAdresse } from "@/lib/adresse/regler";
 
 // Appen opretter konti her (docs/APP-SIGNUP.md) - aldrig med supabase.auth.signUp
 // (det afviser databasen). Samme kodevej som hjemmesidens opretKonto
@@ -17,8 +18,11 @@ import { tjekTurnstile } from "@/lib/turnstileServer";
 //
 // POST /api/konto/opret
 //   Content-Type: application/json
-//   { "fornavn": "...", "efternavn": "...", "email": "...", "password": "...",
+//   { "fornavn": "...", "efternavn": "...", "adresse": "Testvej 12, 2. th.",
+//     "postnummer": "2100", "by": "København Ø", "email": "...", "password": "...",
 //     "vilkaar_version": "<VILKAAR_VERSION>", "captchaToken": "..." }
+//   adresse + postnummer: påkrævet (adressen til fakturaer, 20261102340000).
+//   by: valgfri - serveren bruger altid bynavnet for postnummeret.
 //   captchaToken: Turnstile-token - kræves kun, når TURNSTILE_SECRET_KEY er
 //   sat på serveren (docs/SIKKERHED-AUTH.md).
 //
@@ -28,7 +32,8 @@ import { tjekTurnstile } from "@/lib/turnstileServer";
 //                      tilmelding) eller noget fejlede. Vis "Tjek din indbakke".
 //                      Samme kald igen = "Send ny kode" (højst én kodemail pr.
 //                      e-mail hvert 2. minut; inden for vinduet sendes intet).
-//   400 { fejl, kode: "ugyldig" | "fornavn" | "efternavn" | "email" | "adgangskode" | "vilkaar" | "captcha" }
+//   400 { fejl, kode: "ugyldig" | "fornavn" | "efternavn" | "adresse" | "postnummer" | "email" |
+//         "adgangskode" | "vilkaar" | "captcha" }
 //   403 { fejl, kode: "ikke_tilladt" }   fremmed Origin (browser på et andet domæne)
 //   429 { fejl, kode: "for_mange" }
 //   503 { fejl, kode: "ikke_tilgaengelig" }   grænsen kunne ikke tjekkes (fail closed)
@@ -63,6 +68,8 @@ export async function POST(req: NextRequest) {
   const password = typeof krop.password === "string" ? krop.password : "";
   if (!fornavn) return svar(400, { fejl: "Skriv dit fornavn.", kode: "fornavn" });
   if (!efternavn) return svar(400, { fejl: "Skriv dit efternavn.", kode: "efternavn" });
+  const adr = validerAdresse({ adresse: krop.adresse, postnummer: krop.postnummer });
+  if ("fejl" in adr) return svar(400, { fejl: adr.fejl, kode: adr.felt });
   if (!email) return svar(400, { fejl: "Indtast en gyldig e-mail.", kode: "email" });
   const v = vurderAdgangskode(password, { email, navn: [fornavn, efternavn] });
   if (!v.ok) return svar(400, { fejl: v.fejl ?? "Vælg en anden adgangskode.", kode: "adgangskode" });

@@ -44,6 +44,7 @@ const OVERBLIK: { href: string; ikon: IkonNavn; titel: string; tekst: string }[]
   { href: "/konto/statistik", ikon: "statistik", titel: "Min statistik", tekst: "Salg, indtjening og dine bud" },
   { href: "/konto/foelger", ikon: "foelgere", titel: "Sælgere du følger", tekst: "Få besked om nye varer" },
   { href: MINE_HANDLER_HREF, ikon: "handler", titel: "Mine handler", tekst: "Køb og salg, du er i gang med" },
+  { href: "/konto/adresse", ikon: "lokation", titel: "Min adresse", tekst: "Til kvitteringer og fakturaer" },
   { href: "/konto/fakturaer", ikon: "faktura", titel: "Fakturaer", tekst: "Fakturaer fra BidHamr på gebyrer" },
   { href: "/konto/boost", ikon: "statistik", titel: "Boost-point", tekst: "Saldo, historik og køb af point" },
   { href: "/konto/henvis", ikon: "gave", titel: "Henvis en ven", tekst: "Del dit link og få boost-point" },

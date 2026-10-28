@@ -227,6 +227,10 @@ export const GRAENSER = {
   // Henvis en ven i appen (POST /api/konto/henvisning) pr. IP, før tokenet
   // er valideret - kun læsning af eget link og egen status.
   henvisning_app_ip: { maks: 300, vindueSek: 60 * 60 },
+  // Min adresse (hjemmesiden og POST /api/konto/adresse) pr. bruger, og
+  // appens kald pr. IP, før tokenet er valideret.
+  adresse_bruger: { maks: 20, vindueSek: 60 * 60 },
+  adresse_app_ip: { maks: 300, vindueSek: 60 * 60 },
   // Admin-hosten (src/app/actions/adgang.ts og adminToTrin.ts) - fail closed.
   // Login: som på hovedsitet, men strammere. e-mail+IP nulstilles ved et
   // gennemført login. Koden fra app'en: 5 forkerte pr. medarbejder pr. 15
