@@ -48,7 +48,7 @@ Princippet:
 **Filip**
 - [ ] Stripe: live-aktiveringen sendt ind (firma, bank, ID).
 - [ ] Advokat og revisor: materialet sendt, svar aftalt senest 30. nov.
-- [x] Idura: ringede 28. okt. – godkendelse tager kun ca. 20 min. Bestilles først tæt på lancering (uge 49, sammen med Stripe live), så vi ikke betaler 500 kr./md. for tidligt.
+- [x] Idura: ringede 28. okt. – godkendelse tager kun ca. 20 min. Bestilles ca. en uge før den bløde lancering (uge 49), så vi ikke betaler 500 kr./md. for tidligt. Trinene står i HUSKELISTE.md. Ingen databehandleraftale (Idura er selvstændig dataansvarlig).
 - [x] Google Play-udviklerkonto oprettet og betalt (27. okt.); afventer Googles verificering.
 - [x] Anthropic API: konto, 20 US$ kredit og test-nøgle i bidhamr-test (27. okt.).
 - [x] Apple: Paid Applications Agreement, bank, W-8BEN-E og DSA klaret; Small Business Program ansøgt (28. okt.) – afventer Apples svar.
