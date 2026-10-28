@@ -100,6 +100,8 @@ const OFFENTLIGE_RUTER: Record<string, Exclude<Klasse, "login" | "admin-vaert" |
   "/api/betaling/app/[handling]": "offentlig",
   "/api/betaling/app/retur": "offentlig",
   "/api/faktura/[id]": "offentlig",
+  "/api/firma-faktura": "offentlig",
+  "/api/firma-faktura/[id]": "offentlig",
   "/api/ekstra-fragt/[id]/dokumentation": "offentlig",
   "/api/fragt/app/[handling]": "offentlig",
   "/api/helbred": "offentlig",
@@ -197,6 +199,14 @@ describe("gatelisten kender alle ruter", () => {
   it("en ny side uden for listerne fanges", () => {
     expect(klasse("/mine-noter")).toBe("ukendt");
     expect(klasse("/udbetalinger/[id]")).toBe("ukendt");
+  });
+
+  it("kun præcis /api/app/boost/iap er åben under /api/app/boost", () => {
+    expect(erOffentligRute("/api/app/boost/iap")).toBe(true);
+    expect(erOffentligRute("/api/app/boost")).toBe(false);
+    expect(erOffentligRute("/api/app/boost/brug")).toBe(false);
+    expect(erOffentligRute("/api/app/boostx")).toBe(false);
+    expect(erOffentligRute("/api/app/boost/iapx")).toBe(false);
   });
 
   it("admin, konto og handler kræver login", () => {

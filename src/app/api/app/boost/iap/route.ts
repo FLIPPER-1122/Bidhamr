@@ -3,7 +3,7 @@ import { FOR_MANGE_FORSOEG, klientIpNoegle, tjekGraenser } from "@/lib/rateLimit
 import { logDriftFejl } from "@/lib/drift";
 import { APP_GENERISK, APP_IKKE_LOGGET_IND, APP_UGYLDIG, appBruger, appSvar, bearerToken, fremmedOrigin, laesJsonKrop } from "@/lib/appApi";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { iapKlar } from "@/lib/iap/konfig";
+import { iapKlar, kontoToken } from "@/lib/iap/konfig";
 import { laesIapKrop } from "@/lib/iap/regler";
 import { IAP_TEKST, iapProdukter, iapSpaerret, koebIApp } from "@/lib/iap/server";
 
@@ -22,7 +22,7 @@ import { IAP_TEKST, iapProdukter, iapSpaerret, koebIApp } from "@/lib/iap/server
 //   { platform: "android", productId, purchaseToken }          (Play Billing: Purchase.getPurchaseToken())
 //   200 { ok: true, kode: "ok" | "allerede", point, saldo }    afslut transaktionen i appen
 //   400 ugyldig  401 ikke_logget_ind  403 erhverv | spaerret | ikke_tilladt
-//   409 anden_konto | refunderet | annulleret | afventer | forkert_miljoe | produkt_ukendt | ikke_forbrug | antal
+//   409 anden_konto | konto_mangler | refunderet | annulleret | afventer | forkert_miljoe | produkt_ukendt | ikke_forbrug | antal
 //   422 ugyldigt_koeb  429 for_mange  500 fejl  503 iap_ikke_klar | proev_igen
 
 export const dynamic = "force-dynamic";
@@ -54,8 +54,10 @@ export async function GET(req: NextRequest) {
       kanKoebe: spaerret === null,
       grund: spaerret === "erhverv" ? "erhverv" : spaerret ? "spaerret" : null,
       // Sættes som appAccountToken (iOS) / obfuscatedAccountId (Android) ved
-      // købet, så serveren kan se, at købet hører til denne konto.
-      appAccountToken: login.bruger.id,
+      // købet, så serveren kan se, at købet hører til denne konto. Et UUID
+      // (HMAC af bruger-id'et med serverhemmeligheden) - ikke bruger-id'et.
+      // Påkrævet i produktion (ellers 409 konto_mangler).
+      appAccountToken: kontoToken(login.bruger.id) ?? undefined,
     });
   } catch (err) {
     await logDriftFejl({ kilde: "server", sti: "/api/app/boost/iap", hvor: "boost/iap-status", fejl: err });

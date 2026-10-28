@@ -50,8 +50,17 @@ export default async function RedigerAuktionIndhold({ auktionId, brugerId }: { a
       </p>
     );
   }
+  // Momsordning på fakturaen (kun erhverv; 20261102330000). Mangler kolonnen,
+  // vises "standard".
+  let momsordning: "moms" | "brugtmoms" | null = null;
+  if (auktion.erhverv === true) {
+    const { data: m } = await supabase.from("auctions").select("momsordning").eq("id", auktionId).maybeSingle();
+    const v = (m as { momsordning?: string | null } | null)?.momsordning;
+    momsordning = v === "moms" || v === "brugtmoms" ? v : null;
+  }
   return (
     <RedigerAuktionForm
+      momsordning={momsordning}
       auktionId={auktion.id}
       brugerId={brugerId}
       start={{

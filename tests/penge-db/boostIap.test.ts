@@ -22,6 +22,27 @@ const MIGRATIONER = path.resolve(import.meta.dirname, "../../supabase/migrations
 const BOOST = readFileSync(path.join(MIGRATIONER, "20261023030000_boost.sql"), "utf8");
 const PAKKER = readFileSync(path.join(MIGRATIONER, "20261026010000_boost_pakker.sql"), "utf8");
 const MIGRATION = readFileSync(path.join(MIGRATIONER, "20261102320000_boost_iap.sql"), "utf8");
+const RETTELSER = readFileSync(path.join(MIGRATIONER, "20261102370000_boost_iap_rettelser.sql"), "utf8");
+
+// mine_data som i produktion (med andre migrationers udvidelser).
+const MINE_DATA_STUB = `
+create function public.mine_data_grund() returns jsonb language sql as $$ select jsonb_build_object('profil', '{}'::jsonb) $$;
+create function public.mine_data()
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v     jsonb;
+begin
+  v := public.mine_data_grund()
+       || jsonb_build_object('henvis_en_ven', '{}'::jsonb);
+  return v || jsonb_build_object('mitid', '{}'::jsonb);
+end $$;
+grant execute on function public.mine_data() to authenticated;
+`;
 
 const APP_ENDPOINTS_MIN_AUKTION_BOOST = `do $d$ begin execute replace(
   pg_get_functiondef('public.min_auktion_boost(uuid)'::regprocedure),
@@ -30,6 +51,8 @@ const APP_ENDPOINTS_MIN_AUKTION_BOOST = `do $d$ begin execute replace(
 
 const PRIVAT3 = "00000000-0000-4000-8000-0000000000a3";
 const PRIVAT4 = "00000000-0000-4000-8000-0000000000a4";
+const PRIVAT5 = "00000000-0000-4000-8000-0000000000a5";
+const PRIVAT6 = "00000000-0000-4000-8000-0000000000a6";
 
 let db: PGlite;
 
@@ -51,10 +74,11 @@ type Krediter = {
   miljoe?: string;
   pris?: number | null;
   valuta?: string | null;
+  markering?: string | null;
 };
 function krediter(k: Krediter) {
   const platform = k.platform ?? "ios";
-  return j(`select public.boost_iap_krediter($1, $2, $3, $4, $5, $6, $7, now(), $8, $9, $10) as v`, [
+  return j(`select public.boost_iap_krediter($1, $2, $3, $4, $5, $6, $7, now(), $8, $9, $10, $11) as v`, [
     k.bruger,
     platform,
     k.ekstern ?? randomUUID(),
@@ -65,6 +89,7 @@ function krediter(k: Krediter) {
     k.pris === undefined ? 39000 : k.pris,
     k.valuta === undefined ? "DKK" : k.valuta,
     platform === "ios" ? "DNK" : "DK",
+    k.markering ?? null,
   ]);
 }
 // andel: milliunits af købets point (100000 = hele købet).
@@ -74,13 +99,18 @@ const refusion = (platform: string, ekstern: string | null, token: string | null
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(STUB);
-  await db.exec(`insert into public.users (id, navn) values ('${PRIVAT3}', 'Privat 3'), ('${PRIVAT4}', 'Privat 4')`);
+  await db.exec(`insert into public.users (id, navn) values ('${PRIVAT3}', 'Privat 3'), ('${PRIVAT4}', 'Privat 4'),
+                 ('${PRIVAT5}', 'Privat 5'), ('${PRIVAT6}', 'Privat 6')`);
   await db.exec(BOOST);
   await db.exec(APP_ENDPOINTS_MIN_AUKTION_BOOST);
   await db.exec(PAKKER);
   await db.exec(MIGRATION);
   // Kan køres igen.
   await db.exec(MIGRATION);
+  await db.exec(MINE_DATA_STUB);
+  await db.exec(RETTELSER);
+  // Rettelserne kan også køres igen.
+  await db.exec(RETTELSER);
 });
 
 afterAll(async () => {
@@ -152,13 +182,13 @@ describe("kreditering og idempotens", () => {
   it("ugyldige kald afvises", async () => {
     // Android uden token / iOS med token.
     expect(
-      await j(`select public.boost_iap_krediter($1, 'android', 'GPA.x', null, null, 'dk.bidhamr.app.boost100', 'produktion', now(), null, null, null) as v`, [PRIVAT4]),
+      await j(`select public.boost_iap_krediter($1, 'android', 'GPA.x', null, null, 'dk.bidhamr.app.boost100', 'produktion', now(), null, null, null, null) as v`, [PRIVAT4]),
     ).toEqual({ kode: "ugyldig" });
     expect(
-      await j(`select public.boost_iap_krediter($1, 'ios', '1', null, 'tok-xxxxxxxxxx', 'dk.bidhamr.app.boost100', 'produktion', now(), null, null, null) as v`, [PRIVAT4]),
+      await j(`select public.boost_iap_krediter($1, 'ios', '1', null, 'tok-xxxxxxxxxx', 'dk.bidhamr.app.boost100', 'produktion', now(), null, null, null, null) as v`, [PRIVAT4]),
     ).toEqual({ kode: "ugyldig" });
     expect(
-      await j(`select public.boost_iap_krediter($1, 'web', '1', null, null, 'dk.bidhamr.app.boost100', 'produktion', now(), null, null, null) as v`, [PRIVAT4]),
+      await j(`select public.boost_iap_krediter($1, 'web', '1', null, null, 'dk.bidhamr.app.boost100', 'produktion', now(), null, null, null, null) as v`, [PRIVAT4]),
     ).toEqual({ kode: "ugyldig" });
   });
 
@@ -258,12 +288,12 @@ describe("refusion og saldo i minus", () => {
       i_minus: false,
     });
     expect(await refusion("android", "GPA.1111-2222-3333-44444", null, 100000, "google_voided")).toMatchObject({ kode: "allerede" });
-    expect(await refusion("android", "GPA.0000", null, 100000, "google_voided")).toEqual({ kode: "ukendt" });
+    expect(await refusion("android", "GPA.0000", null, 100000, "google_voided")).toMatchObject({ kode: "ukendt", ventende: true });
     expect(await refusion("ios", "x", null, 100000, "ukendt_kilde")).toEqual({ kode: "ugyldig" });
     expect(await refusion("ios", "x", null, 0)).toEqual({ kode: "ugyldig" });
     expect(await refusion("ios", "x", null, 100001)).toEqual({ kode: "ugyldig" });
     // Platformen skal passe: et Apple-id findes ikke som Google-køb.
-    expect(await refusion("android", "2000000111", null, 100000, "google_voided")).toEqual({ kode: "ukendt" });
+    expect(await refusion("android", "2000000111", null, 100000, "google_voided")).toMatchObject({ kode: "ukendt", ventende: true });
   });
 });
 
@@ -334,8 +364,8 @@ describe("chefens oversigt og rettigheder", () => {
 
   it("kun service role kan kalde serverfunktionerne; brugeren ser egne køb uden token", async () => {
     const r = await en<Record<string, unknown>>(`
-      select has_function_privilege('service_role', 'public.boost_iap_krediter(uuid,text,text,text,text,text,text,timestamptz,bigint,text,text)', 'execute') as sr,
-             has_function_privilege('authenticated', 'public.boost_iap_krediter(uuid,text,text,text,text,text,text,timestamptz,bigint,text,text)', 'execute') as auth,
+      select has_function_privilege('service_role', 'public.boost_iap_krediter(uuid,text,text,text,text,text,text,timestamptz,bigint,text,text,text)', 'execute') as sr,
+             has_function_privilege('authenticated', 'public.boost_iap_krediter(uuid,text,text,text,text,text,text,timestamptz,bigint,text,text,text)', 'execute') as auth,
              has_function_privilege('anon', 'public.boost_iap_refusion(text,text,text,integer,text)', 'execute') as anon_ref,
              has_function_privilege('authenticated', 'public.boost_salg_oversigt(uuid,timestamptz,timestamptz)', 'execute') as auth_overs,
              has_table_privilege('authenticated', 'public.boost_iap_koeb', 'insert') as auth_skriv,
@@ -364,5 +394,111 @@ describe("chefens oversigt og rettigheder", () => {
     } finally {
       await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false);`);
     }
+  });
+});
+
+// 20261102370000_boost_iap_rettelser.sql
+describe("rettelser: ventende refusion, markering, testkøb, Download dine data", () => {
+  it("refusion før kreditering: gemmes som ventende, og købet afvises bagefter", async () => {
+    expect(await refusion("ios", "6000000001", null, 100000)).toEqual({ kode: "ukendt", ventende: true });
+    // Samme refusion igen: stadig én række.
+    expect(await refusion("ios", "6000000001", null, 100000, "apple_historik")).toEqual({ kode: "ukendt", ventende: true });
+    expect((await en<{ n: number }>(`select count(*)::int as n from public.boost_iap_ventende_refusioner where ekstern_id = '6000000001'`)).n).toBe(1);
+    expect(await krediter({ bruger: PRIVAT5, ekstern: "6000000001" })).toEqual({ kode: "refunderet" });
+    expect(await saldo(PRIVAT5)).toBe(0);
+    const v = await en<{ afvist_antal: number }>(`select afvist_antal from public.boost_iap_ventende_refusioner where ekstern_id = '6000000001'`);
+    expect(v.afvist_antal).toBe(1);
+    // Google: void via token (uden ordre) afviser købet med samme token.
+    expect(await refusion("android", null, "token-vvvvvvvvvv", 100000, "google_rtdn")).toEqual({ kode: "ukendt", ventende: true });
+    expect(await krediter({ bruger: PRIVAT5, platform: "android", ekstern: "GPA.7777", token: "token-vvvvvvvvvv" })).toEqual({ kode: "refunderet" });
+  });
+
+  it("REFUND_REVERSED ophæver den ventende refusion - så krediteres købet", async () => {
+    expect(await en<{ v: boolean }>(`select public.boost_iap_ventende_ophaev('ios', '6000000001', null) as v`)).toEqual({ v: true });
+    expect(await en<{ v: boolean }>(`select public.boost_iap_ventende_ophaev('ios', '6000000001', null) as v`)).toEqual({ v: false });
+    expect(await krediter({ bruger: PRIVAT5, ekstern: "6000000001" })).toMatchObject({ kode: "ok", point: 100 });
+    // Ventende rækker slettes ikke.
+    await expect(db.exec(`delete from public.boost_iap_ventende_refusioner`)).rejects.toThrow();
+  });
+
+  it("markering: promo kun Google i produktion, testkoeb_prod kun testkøb; låst", async () => {
+    expect(await krediter({ bruger: PRIVAT6, ekstern: "6100000001", markering: "promo" })).toEqual({ kode: "ugyldig" });
+    expect(await krediter({ bruger: PRIVAT6, ekstern: "6100000002", markering: "testkoeb_prod" })).toEqual({ kode: "ugyldig" });
+    expect(await krediter({ bruger: PRIVAT6, ekstern: "6100000003", markering: "andet" })).toEqual({ kode: "ugyldig" });
+    const promo = await krediter({ bruger: PRIVAT6, platform: "android", ekstern: "GPA.PROMO1", token: "token-promo00001", markering: "promo", pris: null, valuta: null });
+    expect(promo).toMatchObject({ kode: "ok", point: 100 });
+    const test = await krediter({ bruger: PRIVAT6, ekstern: "6100000004", miljoe: "test", markering: "testkoeb_prod", produkt: "dk.bidhamr.app.boost300" });
+    expect(test).toMatchObject({ kode: "ok", point: 300 });
+    await expect(db.exec(`update public.boost_iap_koeb set markering = null where id = '${String(promo.id)}'`)).rejects.toThrow();
+  });
+
+  it("Boost-salg: promo og testkøb i produktion tælles for sig, ikke som omsætning", async () => {
+    const o = await j(`select public.boost_salg_oversigt($1, now() - interval '1 minute', null) as v`, [CHEF]);
+    const google = o.google as Record<string, number>;
+    const apple = o.apple as Record<string, number>;
+    expect(google.promo_antal).toBe(1);
+    expect(google.promo_point).toBe(100);
+    expect(google.testkoeb_prod_antal).toBe(0);
+    expect(apple.testkoeb_prod_antal).toBe(1);
+    expect(apple.promo_antal).toBe(0);
+    // Omsætningen er den samme som uden promo- og testkøbene.
+    const alle = await j(`select public.boost_salg_oversigt($1, null, null) as v`, [CHEF]);
+    const g = alle.google as Record<string, number>;
+    const a = alle.apple as Record<string, number>;
+    expect(g.antal).toBe(2);
+    expect(g.listepris_oere).toBe(2 * 3900);
+    // 5 fra før + 6000000001 (almindeligt køb); testkøbet tæller ikke.
+    expect(a.antal).toBe(6);
+    expect(a.test_antal).toBe(2);
+  });
+
+  it("testkøb i produktion trækkes tilbage samlet (én gang)", async () => {
+    const foer = await saldo(PRIVAT6);
+    expect(await j(`select public.boost_iap_tilbagekald_testkoeb() as v`)).toEqual({ tilbagekaldt: 1, point: 300 });
+    expect(await saldo(PRIVAT6)).toBe(foer - 300);
+    expect(await j(`select public.boost_iap_tilbagekald_testkoeb() as v`)).toEqual({ tilbagekaldt: 0, point: 0 });
+    const k = await en<{ refusion_kilde: string }>(`select refusion_kilde from public.boost_iap_koeb where ekstern_id = '6100000004'`);
+    expect(k.refusion_kilde).toBe("staff_testkoeb");
+    // Promo-købet røres ikke.
+    expect((await en<{ r: number }>(`select refunderet_point as r from public.boost_iap_koeb where ekstern_id = 'GPA.PROMO1'`)).r).toBe(0);
+  });
+
+  it("chefens visning har markeringen", async () => {
+    const liste = (await en<{ v: { markering: string | null }[] }>(`select public.boost_iap_admin_bruger($1, $2) as v`, [CHEF, PRIVAT6])).v;
+    expect(liste.map((x) => x.markering).sort()).toEqual(["promo", "testkoeb_prod"]);
+  });
+
+  it("Download dine data: boost-køb fra Stripe og appen - uden token og Stripe-id", async () => {
+    await db.exec(`insert into public.boost_koeb (bruger_id, pakke_id, point, beloeb_oere, status, betalt_kl, stripe_payment_intent_id)
+                   values ('${PRIVAT6}', 'point_100', 100, 3900, 'betalt', now(), 'pi_hemmelig123')`);
+    await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${PRIVAT6}', false);`);
+    try {
+      const d = await j(`select public.mine_data() as v`);
+      expect(d.henvis_en_ven).toEqual({});
+      const b = d.boost_koeb as { saldo: number; bidhamr_dk: Record<string, unknown>[]; appen: Record<string, unknown>[] };
+      expect(b.bidhamr_dk).toHaveLength(1);
+      expect(b.bidhamr_dk[0]).toMatchObject({ point: 100, beloeb_oere: 3900, status: "betalt" });
+      expect(b.appen).toHaveLength(2);
+      expect(b.appen.find((x) => x.promo === true)).toMatchObject({ platform: "Google Play", transaktion: "GPA.PROMO1", point: 100 });
+      const tekst = JSON.stringify(d);
+      expect(tekst).not.toContain("token-promo00001");
+      expect(tekst).not.toContain("pi_hemmelig123");
+    } finally {
+      await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false);`);
+    }
+    const def = (await en<{ d: string }>(`select pg_get_functiondef('public.mine_data()'::regprocedure) as d`)).d;
+    expect(def.split("mine_data_boost(").length - 1).toBe(1);
+  });
+
+  it("kun service role: de nye funktioner og tabellen", async () => {
+    const r = await en<Record<string, unknown>>(`
+      select has_function_privilege('authenticated', 'public.boost_iap_tilbagekald_testkoeb()', 'execute') as auth_tilbage,
+             has_function_privilege('service_role', 'public.boost_iap_tilbagekald_testkoeb()', 'execute') as sr_tilbage,
+             has_function_privilege('authenticated', 'public.boost_iap_ventende_ophaev(text,text,text)', 'execute') as auth_ophaev,
+             has_function_privilege('authenticated', 'public.boost_iap_laas_koeb(text,text)', 'execute') as auth_laas,
+             has_function_privilege('authenticated', 'public.mine_data_boost(uuid)', 'execute') as auth_mdb,
+             has_table_privilege('authenticated', 'public.boost_iap_ventende_refusioner', 'select') as auth_vent,
+             has_table_privilege('service_role', 'public.boost_iap_ventende_refusioner', 'insert') as sr_vent_skriv`);
+    expect(r).toEqual({ auth_tilbage: false, sr_tilbage: true, auth_ophaev: false, auth_laas: false, auth_mdb: false, auth_vent: false, sr_vent_skriv: false });
   });
 });

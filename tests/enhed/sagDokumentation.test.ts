@@ -7,8 +7,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { bygDokument, dokumentTekst, type DokumentationData } from "@/lib/sagDokumentation/indhold";
 import {
+  auktionSti,
+  billedStiTilladt,
   dokumentationAfvisning,
   dokumentationFilnavn,
+  logFejlStatus,
+  loftTekst,
   maaLaveDokumentation,
   rensFelt,
   tjekFelter,
@@ -139,6 +143,37 @@ describe("regler", () => {
     expect(tjekFelter("politi", "Politi", "j".repeat(101))).toMatch(/Journalnummeret/);
   });
 
+  it("billedstier skal ligge i handlens mappe hos en af parterne", () => {
+    const H = "77777777-7777-4777-8777-777777777777";
+    const p = [KOEBER, SAELGER];
+    expect(billedStiTilladt(`${KOEBER}/${H}/a.jpg`, H, p)).toBe(true);
+    expect(billedStiTilladt(`${SAELGER.toUpperCase()}/${H}/a.webp`, H, p)).toBe(true);
+    expect(billedStiTilladt(`${MIG}/${H}/a.jpg`, H, p)).toBe(false);
+    expect(billedStiTilladt(`${KOEBER}/${SAG}/a.jpg`, H, p)).toBe(false);
+    expect(billedStiTilladt(`${KOEBER}/${H}/../x/a.jpg`, H, p)).toBe(false);
+    expect(billedStiTilladt(`${KOEBER}/${H}/..`, H, p)).toBe(false);
+    expect(billedStiTilladt(`${KOEBER}/${H}/a b.jpg`, H, p)).toBe(false);
+    expect(billedStiTilladt(`/${KOEBER}/${H}/a.jpg`, H, p)).toBe(false);
+    expect(billedStiTilladt(null, H, p)).toBe(false);
+  });
+
+  it("auktions-URL med ugyldig kodning giver null i stedet for at kaste", () => {
+    const rod = "https://abc.supabase.co/storage/v1/object/public/auktion-billeder/";
+    expect(auktionSti(`${rod}u/%E0%A4%A.jpg`)).toBeNull();
+    expect(auktionSti(`${rod}u/%C3%A6ble.jpg`)).toBe("u/æble.jpg");
+    expect(auktionSti(`${rod}u/%2E%2E/x.jpg`)).toBeNull();
+    expect(auktionSti("https://ond.example/auktion-billeder/x.jpg")).toBeNull();
+    expect(auktionSti(42)).toBeNull();
+  });
+
+  it("lofttekst og HTTP-status for logfejl", () => {
+    expect(loftTekst(1000, 1234, "seneste", "beskeder")).toBe("Viser de 1.000 seneste af 1.234 beskeder.");
+    expect(logFejlStatus("for_mange")).toBe(429);
+    expect(logFejlStatus("ugyldig_sag")).toBe(404);
+    expect(logFejlStatus("ikke_aktiv")).toBe(403);
+    expect(logFejlStatus(undefined)).toBe(403);
+  });
+
   it("filnavnet afslører ikke parterne", () => {
     expect(dokumentationFilnavn("politi", SAG, new Date("2026-10-28T08:00:00Z"))).toBe(
       "bidhamr-dokumentation-til-politiet-55555555-2026-10-28.pdf",
@@ -181,6 +216,7 @@ const m = vi.hoisted(() => ({
   rolle: "chef" as "medarbejder" | "admin" | "chef",
   inhabil: false,
   logSvar: { kode: "ok" } as Record<string, unknown>,
+  hentFejl: null as Error | null,
   rpc: vi.fn(),
   hentData: vi.fn(),
 }));
@@ -211,6 +247,7 @@ vi.mock("@/lib/sagDokumentation/data", () => ({
   hentSagParter: async () => ({ sagId: SAG, tradeId: "t", koeberId: KOEBER, saelgerId: SAELGER }),
   hentDokumentationData: (...a: unknown[]) => {
     m.hentData(...a);
+    if (m.hentFejl) return Promise.reject(m.hentFejl);
     const d = data();
     if (a[2] !== "politi") delete d.politi;
     return Promise.resolve(d);
@@ -240,6 +277,7 @@ describe("route", () => {
     m.rolle = "chef";
     m.inhabil = false;
     m.logSvar = { kode: "ok" };
+    m.hentFejl = null;
     m.rpc.mockClear();
     m.hentData.mockClear();
   });
@@ -296,6 +334,25 @@ describe("route", () => {
     const res = await kald("saelger");
     expect(res.status).toBe(403);
     expect(res.headers.get("Content-Type")).not.toBe("application/pdf");
+  });
+
+  it("fejler et opslag, svares 500, og intet logges", async () => {
+    m.hentFejl = new Error("messages: timeout");
+    const res = await kald("saelger");
+    expect(res.status).toBe(500);
+    expect(res.headers.get("Content-Type")).not.toBe("application/pdf");
+    expect(m.rpc).not.toHaveBeenCalled();
+  });
+
+  it("databasens loft (for_mange) giver 429, ikke-aktiv staff 403 - ingen PDF", async () => {
+    m.logSvar = { kode: "for_mange" };
+    const res = await kald("saelger");
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as { fejl: string }).fejl).toMatch(/30 PDF'er/);
+    m.logSvar = { kode: "ikke_aktiv" };
+    const res2 = await kald("saelger");
+    expect(res2.status).toBe(403);
+    expect(res2.headers.get("Content-Type")).not.toBe("application/pdf");
   });
 
   it("afviser fremmed origin og ugyldige felter", async () => {

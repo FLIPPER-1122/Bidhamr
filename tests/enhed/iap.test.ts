@@ -29,9 +29,11 @@ const APP_ID = 6700000000;
 
 // ------------------------------------------------------------ falsk database
 const db = vi.hoisted(() => {
-  type Koeb = { id: string; bruger: string; platform: string; ekstern: string; token: string | null; point: number; refunderet: number; forbrugt: boolean };
+  type Koeb = { id: string; bruger: string; platform: string; ekstern: string; token: string | null; produkt: string; point: number; refunderet: number; forbrugt: boolean };
   const s = {
     koeb: [] as Koeb[],
+    ventende: [] as { platform: string; ekstern: string | null; token: string | null }[],
+    claim: true,
     saldo: new Map<string, number>(),
     notifikationer: new Map<string, boolean>(),
     rpc: [] as { navn: string; args: Record<string, unknown> }[],
@@ -47,9 +49,13 @@ const db = vi.hoisted(() => {
       case "boost_iap_krediter": {
         const k = s.koeb.find((x) => (x.platform === a.p_platform && x.ekstern === a.p_ekstern_id) || (a.p_google_token && x.token === a.p_google_token));
         if (k) return k.bruger !== a.p_bruger ? { kode: "anden_bruger" } : { kode: "allerede", id: k.id, point: k.point, forbrugt: k.forbrugt, saldo: saldo(k.bruger) };
+        if (s.ventende.some((v) => v.platform === a.p_platform && ((v.ekstern && v.ekstern === a.p_ekstern_id) || (v.token && v.token === a.p_google_token)))) {
+          return { kode: "refunderet" };
+        }
+        if (a.p_bruger === "33333333-3333-4333-8333-333333333333") return { kode: "erhverv" };
         const point = PRODUKTER[String(a.p_produkt)];
         if (!point) return { kode: "produkt_ukendt" };
-        const ny: Koeb = { id: `k${s.koeb.length + 1}`, bruger: String(a.p_bruger), platform: String(a.p_platform), ekstern: String(a.p_ekstern_id), token: (a.p_google_token as string) ?? null, point, refunderet: 0, forbrugt: false };
+        const ny: Koeb = { id: `k${s.koeb.length + 1}`, bruger: String(a.p_bruger), platform: String(a.p_platform), ekstern: String(a.p_ekstern_id), token: (a.p_google_token as string) ?? null, produkt: String(a.p_produkt), point, refunderet: 0, forbrugt: false };
         s.koeb.push(ny);
         s.saldo.set(ny.bruger, saldo(ny.bruger) + point);
         return { kode: "ok", id: ny.id, point, saldo: saldo(ny.bruger) };
@@ -61,7 +67,11 @@ const db = vi.hoisted(() => {
       }
       case "boost_iap_refusion": {
         const k = s.koeb.find((x) => x.platform === a.p_platform && ((a.p_ekstern_id && x.ekstern === a.p_ekstern_id) || (a.p_google_token && x.token === a.p_google_token)));
-        if (!k) return { kode: "ukendt" };
+        if (!k) {
+          const findes = s.ventende.some((v) => v.platform === a.p_platform && ((a.p_ekstern_id && v.ekstern === a.p_ekstern_id) || (a.p_google_token && v.token === a.p_google_token)));
+          if (!findes) s.ventende.push({ platform: String(a.p_platform), ekstern: (a.p_ekstern_id as string) ?? null, token: (a.p_google_token as string) ?? null });
+          return { kode: "ukendt", ventende: true };
+        }
         const maal = Math.min(Math.ceil((k.point * Number(a.p_andel_milli)) / 100000), k.point);
         const delta = maal - k.refunderet;
         if (delta <= 0) return { kode: "allerede", id: k.id, bruger_id: k.bruger, saldo: saldo(k.bruger) };
@@ -84,20 +94,41 @@ const db = vi.hoisted(() => {
       case "boost_iap_notifikation_slut":
         s.notifikationer.set(`${a.p_platform}|${a.p_id}`, true);
         return null;
+      case "boost_iap_ventende_ophaev": {
+        const i = s.ventende.findIndex((v) => v.platform === a.p_platform && v.ekstern === a.p_ekstern_id);
+        if (i < 0) return false;
+        s.ventende.splice(i, 1);
+        return true;
+      }
+      case "boost_iap_cron_claim":
+        return s.claim;
+      case "boost_iap_cron_ok":
+        return null;
+      case "boost_iap_mangler_forbrug":
+        return [];
       default:
         throw new Error(`ukendt rpc ${navn}`);
     }
   }
   const klient = {
     rpc: async (navn: string, a: Record<string, unknown>) => ({ data: rpc(navn, a), error: null }),
-    from: () => {
+    from: (tabel: string) => {
+      const filter: Record<string, unknown> = {};
       const b = {
         select: () => b,
-        eq: () => b,
+        eq: (k: string, v: unknown) => {
+          filter[k] = v;
+          return b;
+        },
         order: async () => ({
           data: Object.entries(PRODUKTER).map(([produkt_id, point]) => ({ produkt_id, point })),
           error: null,
         }),
+        maybeSingle: async () => {
+          if (tabel !== "boost_iap_koeb") throw new Error(`ukendt tabel ${tabel}`);
+          const k = s.koeb.find((x) => x.platform === filter.platform && x.token === filter.google_token);
+          return { data: k ? { produkt_id: k.produkt } : null, error: null };
+        },
       };
       return b;
     },
@@ -181,7 +212,7 @@ function tx(o: Record<string, unknown> = {}): Record<string, unknown> {
     storefront: "DNK",
     currency: "DKK",
     price: 99000,
-    appAccountToken: PRIVAT,
+    appAccountToken: KT(PRIVAT),
     ...o,
   };
 }
@@ -226,14 +257,27 @@ let ruter: {
   apple: typeof import("@/app/api/webhooks/apple/route");
   googlePlay: typeof import("@/app/api/webhooks/google-play/route");
   saetRod: typeof import("@/lib/iap/apple").__saetAppleTestRod;
+  konfig: typeof import("@/lib/iap/konfig");
+  server: typeof import("@/lib/iap/server");
+  regler: typeof import("@/lib/iap/regler");
 };
+
+// Kontobindingen (appAccountToken) for en bruger - regnet ud af serveren.
+const HEMMELIGHED = "test-hemmelighed-til-iap-kontobinding-0123456789";
+const KT = (id: string) => ruter.konfig.kontoToken(id) as string;
+const historik = new Map<string, string[]>();
+const historikKald: { side: string | null; type: string; fra: number; til: number }[] = [];
 
 beforeAll(async () => {
   kaede = lavKaede();
   fremmedKaede = lavKaede();
   for (const [k, v] of Object.entries(ENV)) vi.stubEnv(k, v);
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://eksempel.supabase.co"); // ikke testdatabasen
-  vi.stubEnv("IAP_TILLAD_TESTKOEB", "");
+  // Det gamle flag virker ikke længere (sat her for at vise det).
+  vi.stubEnv("IAP_TILLAD_TESTKOEB", "1");
+  vi.stubEnv("IAP_TILLAD_TESTKOEB_TIL", "");
+  vi.stubEnv("IAP_TESTKOEB_KONTI", "");
+  vi.stubEnv("IAP_KONTO_HEMMELIGHED", HEMMELIGHED);
   vi.stubEnv("APPLE_IAP_PRIVATE_KEY", pemNoegle().prvPem);
   vi.stubEnv(
     "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",
@@ -247,6 +291,14 @@ beforeAll(async () => {
     if (!s) throw new APIException(404, 4040010, "Transaction id not found.");
     return { signedTransactionInfo: s };
   });
+  vi.spyOn(AppStoreServerAPIClient.prototype, "getNotificationHistory").mockImplementation(async (side, req) => {
+    historikKald.push({ side, type: String(req.notificationType), fra: Number(req.startDate), til: Number(req.endDate) });
+    const alle = historik.get(String(req.notificationType)) ?? [];
+    // To sider: første halvdel, så resten.
+    const halv = Math.ceil(alle.length / 2);
+    const del = side ? alle.slice(halv) : alle.slice(0, halv);
+    return { notificationHistory: del.map((signedPayload) => ({ signedPayload })), hasMore: !side && alle.length > 1, paginationToken: side ? undefined : "side2" };
+  });
   vi.spyOn(JWT.prototype, "getAccessToken").mockImplementation((async () => ({ token: "falsk-adgang", res: null })) as never);
   vi.spyOn(OAuth2Client.prototype, "getFederatedSignonCertsAsync").mockResolvedValue({
     certs: { [OIDC_KID]: rsa.publicKey.export({ type: "spki", format: "pem" }) as string },
@@ -257,6 +309,7 @@ beforeAll(async () => {
     googleKald.push({ metode, url });
     const auth = (init?.headers as Record<string, string> | undefined)?.Authorization;
     if (auth !== "Bearer falsk-adgang") return new Response("{}", { status: 401 });
+    if (/\/purchases\/voidedpurchases\?/.test(url)) return Response.json({ voidedPurchases: [] });
     const m = /\/applications\/([^/]+)\/purchases\/products\/([^/]+)\/tokens\/([^/:]+)(:consume)?$/.exec(url);
     if (!m || decodeURIComponent(m[1]) !== BUNDLE) return new Response("{}", { status: 404 });
     const p = google.get(decodeURIComponent(m[3]));
@@ -272,6 +325,9 @@ beforeAll(async () => {
     apple: await import("@/app/api/webhooks/apple/route"),
     googlePlay: await import("@/app/api/webhooks/google-play/route"),
     saetRod: (await import("@/lib/iap/apple")).__saetAppleTestRod,
+    konfig: await import("@/lib/iap/konfig"),
+    server: await import("@/lib/iap/server"),
+    regler: await import("@/lib/iap/regler"),
   };
   ruter.saetRod([kaede.rootDer]);
 });
@@ -363,7 +419,7 @@ describe("POST /api/app/boost/iap - Apple", () => {
   });
 
   it("appAccountToken for en anden konto afvises", async () => {
-    const { signeret } = appleKoeb({ appAccountToken: PRIVAT2 });
+    const { signeret } = appleKoeb({ appAccountToken: KT(PRIVAT2) });
     expect(await koeb(ios(signeret))).toMatchObject({ status: 409, body: { kode: "anden_konto" } });
   });
 
@@ -372,11 +428,63 @@ describe("POST /api/app/boost/iap - Apple", () => {
     expect((await koeb(ios(appleKoeb({ quantity: 2 }).signeret))).body.kode).toBe("antal");
   });
 
-  it("firma afvises (403) uden at spørge Apple", async () => {
-    const { signeret } = appleKoeb({ appAccountToken: FIRMA });
+  it("firma: verificeret køb afvises (403), og chefen får en drift-note (brugeren har betalt)", async () => {
+    const { t, signeret } = appleKoeb({ appAccountToken: KT(FIRMA) });
     const r = await koeb(ios(signeret), "f.f.f");
     expect(r).toMatchObject({ status: 403, body: { kode: "erhverv" } });
-    expect(rpcNavne()).toEqual(["boost_bruger_spaerret"]);
+    const d = db.s.drift.find((x) => x.hvor === "boost/iap-afvist-betalt");
+    expect(d).toMatchObject({ brugerId: FIRMA });
+    expect(String(d?.fejl)).toMatch(/firmakonto har betalt Apple/);
+    expect(String(d?.fejl)).toContain(String(t.transactionId).slice(0, 12));
+    expect(db.s.koeb.some((k) => k.bruger === FIRMA)).toBe(false);
+  });
+
+  it("kontobindingen er påkrævet i produktion: uden appAccountToken 409 konto_mangler + drift-note", async () => {
+    const { signeret } = appleKoeb({ appAccountToken: undefined });
+    expect(await koeb(ios(signeret))).toMatchObject({ status: 409, body: { kode: "konto_mangler" } });
+    expect(rpcNavne()).not.toContain("boost_iap_krediter");
+    expect(db.s.drift.find((x) => x.hvor === "boost/iap-afvist-betalt")).toMatchObject({ brugerId: PRIVAT });
+  });
+
+  it("det rå bruger-id som appAccountToken godtages ikke (anden_konto)", async () => {
+    const { signeret } = appleKoeb({ appAccountToken: PRIVAT });
+    expect(await koeb(ios(signeret))).toMatchObject({ status: 409, body: { kode: "anden_konto" } });
+  });
+
+  it("på testdatabasen må kontobindingen mangle", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://pjiigmzqwlfepxnjdvug.supabase.co");
+    try {
+      const { signeret } = appleKoeb({ appAccountToken: undefined });
+      expect((await koeb(ios(signeret))).status).toBe(200);
+    } finally {
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://eksempel.supabase.co");
+    }
+  });
+
+  it("Sandbox-testkøb i produktion: kun med åbent vindue og for kontiene på listen - markeret testkoeb_prod", async () => {
+    vi.stubEnv("IAP_TILLAD_TESTKOEB_TIL", new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString());
+    vi.stubEnv("IAP_TESTKOEB_KONTI", ` ${PRIVAT.toUpperCase()} , ikke-et-id`);
+    try {
+      const ok = await koeb(ios(appleKoeb({ environment: "Sandbox" }).signeret));
+      expect(ok.status).toBe(200);
+      expect(db.s.rpc.find((x) => x.navn === "boost_iap_krediter")?.args).toMatchObject({ p_miljoe: "test", p_markering: "testkoeb_prod" });
+      // En konto, der ikke er på listen.
+      const anden = await koeb(ios(appleKoeb({ environment: "Sandbox", appAccountToken: KT(PRIVAT2) }).signeret), "b.b.b");
+      expect(anden).toMatchObject({ status: 409, body: { kode: "forkert_miljoe" } });
+      // Almindelige køb er stadig almindelige.
+      db.s.rpc = [];
+      expect((await koeb(ios(appleKoeb().signeret))).status).toBe(200);
+      expect(db.s.rpc.find((x) => x.navn === "boost_iap_krediter")?.args).toMatchObject({ p_miljoe: "produktion", p_markering: null });
+    } finally {
+      vi.stubEnv("IAP_TILLAD_TESTKOEB_TIL", "");
+      vi.stubEnv("IAP_TESTKOEB_KONTI", "");
+    }
+  });
+
+  it("refunderet, før det blev krediteret (ventende refusion): 409 refunderet", async () => {
+    const { t, signeret } = appleKoeb();
+    db.s.ventende.push({ platform: "ios", ekstern: String(t.transactionId), token: null });
+    expect(await koeb(ios(signeret))).toMatchObject({ status: 409, body: { kode: "refunderet" } });
   });
 
   it("uden login 401; ugyldig krop 400; ekstra felter (point) 400", async () => {
@@ -408,7 +516,7 @@ function googleKoeb(o: Record<string, unknown> = {}) {
     purchaseTimeMillis: String(Date.now() - 1000),
     acknowledgementState: 0,
     regionCode: "DK",
-    obfuscatedExternalAccountId: PRIVAT,
+    obfuscatedExternalAccountId: KT(PRIVAT),
     ...o,
   });
   return { platform: "android", productId: "dk.bidhamr.app.boost100", purchaseToken: token };
@@ -416,7 +524,7 @@ function googleKoeb(o: Record<string, unknown> = {}) {
 
 describe("POST /api/app/boost/iap - Google", () => {
   it("gyldigt køb: krediteres og forbruges (consume); igen = allerede, intet nyt consume", async () => {
-    const k = googleKoeb({ obfuscatedExternalAccountId: PRIVAT2 });
+    const k = googleKoeb({ obfuscatedExternalAccountId: KT(PRIVAT2) });
     const r = await koeb(k, "b.b.b");
     expect(r).toEqual({ status: 200, body: { ok: true, kode: "ok", point: 100, saldo: 100 } });
     expect(googleKald.map((x) => x.metode)).toEqual(["GET", "POST"]);
@@ -435,25 +543,65 @@ describe("POST /api/app/boost/iap - Google", () => {
     expect(rpcNavne()).not.toContain("boost_iap_krediter");
   });
 
-  it("testkøb tilladt med IAP_TILLAD_TESTKOEB=1 - gemmes som 'test'", async () => {
-    vi.stubEnv("IAP_TILLAD_TESTKOEB", "1");
+  it("testkøb i produktion: IAP_TILLAD_TESTKOEB_TIL højst 14 dage frem + konto på listen", async () => {
+    const dag = 24 * 3600 * 1000;
+    vi.stubEnv("IAP_TESTKOEB_KONTI", `${PRIVAT},${FIRMA}`);
+    try {
+      // Det gamle flag (IAP_TILLAD_TESTKOEB=1 er sat) og intet vindue: afvist.
+      expect(await koeb(googleKoeb({ purchaseType: 0 }))).toMatchObject({ status: 409, body: { kode: "forkert_miljoe" } });
+      for (const til of [new Date(Date.now() - 1000).toISOString(), new Date(Date.now() + 15 * dag).toISOString(), "i morgen", "2026-13-45"]) {
+        vi.stubEnv("IAP_TILLAD_TESTKOEB_TIL", til);
+        expect(await koeb(googleKoeb({ purchaseType: 0 })), til).toMatchObject({ status: 409, body: { kode: "forkert_miljoe" } });
+      }
+      vi.stubEnv("IAP_TILLAD_TESTKOEB_TIL", new Date(Date.now() + 13 * dag).toISOString());
+      expect((await koeb(googleKoeb({ purchaseType: 0 }))).status).toBe(200);
+      expect(db.s.rpc.find((x) => x.navn === "boost_iap_krediter")?.args).toMatchObject({ p_miljoe: "test", p_markering: "testkoeb_prod" });
+      // PRIVAT2 er ikke på listen.
+      expect(await koeb(googleKoeb({ purchaseType: 0, obfuscatedExternalAccountId: KT(PRIVAT2) }), "b.b.b")).toMatchObject({
+        status: 409,
+        body: { kode: "forkert_miljoe" },
+      });
+    } finally {
+      vi.stubEnv("IAP_TILLAD_TESTKOEB_TIL", "");
+      vi.stubEnv("IAP_TESTKOEB_KONTI", "");
+    }
+  });
+
+  it("på testdatabasen er testkøb altid tilladt - uden markering", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://pjiigmzqwlfepxnjdvug.supabase.co");
     try {
       expect((await koeb(googleKoeb({ purchaseType: 0 }))).status).toBe(200);
-      expect(db.s.rpc.find((x) => x.navn === "boost_iap_krediter")?.args.p_miljoe).toBe("test");
+      expect(db.s.rpc.find((x) => x.navn === "boost_iap_krediter")?.args).toMatchObject({ p_miljoe: "test", p_markering: null });
     } finally {
-      vi.stubEnv("IAP_TILLAD_TESTKOEB", "");
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://eksempel.supabase.co");
     }
+  });
+
+  it("promokode (purchaseType 1): krediteres med markeringen 'promo' (ikke omsætning)", async () => {
+    expect((await koeb(googleKoeb({ purchaseType: 1 }))).status).toBe(200);
+    expect(db.s.rpc.find((x) => x.navn === "boost_iap_krediter")?.args).toMatchObject({ p_miljoe: "produktion", p_markering: "promo" });
+  });
+
+  it("kontobindingen er påkrævet i produktion: uden obfuscatedExternalAccountId 409 konto_mangler", async () => {
+    expect(await koeb(googleKoeb({ obfuscatedExternalAccountId: undefined }))).toMatchObject({ status: 409, body: { kode: "konto_mangler" } });
+    expect(rpcNavne()).not.toContain("boost_iap_krediter");
+    // Intet consume: Google refunderer selv købet efter 3 dage.
+    expect(googleKald.map((x) => x.metode)).toEqual(["GET"]);
+    expect(db.s.drift.find((x) => x.hvor === "boost/iap-afvist-betalt")).toMatchObject({ brugerId: PRIVAT });
   });
 
   it("ukendt token hos Google og en anden kontos køb afvises", async () => {
     const k = { platform: "android", productId: "dk.bidhamr.app.boost100", purchaseToken: "findes.ikke.0123456789" };
     expect(await koeb(k)).toMatchObject({ status: 422, body: { kode: "ugyldigt_koeb" } });
-    expect(await koeb(googleKoeb({ obfuscatedExternalAccountId: PRIVAT2 }))).toMatchObject({ status: 409, body: { kode: "anden_konto" } });
+    expect(await koeb(googleKoeb({ obfuscatedExternalAccountId: KT(PRIVAT2) }))).toMatchObject({ status: 409, body: { kode: "anden_konto" } });
   });
 
-  it("firma: 403", async () => {
-    expect(await koeb(googleKoeb(), "f.f.f")).toMatchObject({ status: 403, body: { kode: "erhverv" } });
-    expect(googleKald).toHaveLength(0);
+  it("firma: 403, intet consume (Google refunderer selv), og chefen får en drift-note", async () => {
+    expect(await koeb(googleKoeb({ obfuscatedExternalAccountId: KT(FIRMA) }), "f.f.f")).toMatchObject({ status: 403, body: { kode: "erhverv" } });
+    expect(googleKald.map((x) => x.metode)).toEqual(["GET"]);
+    const d = db.s.drift.find((x) => x.hvor === "boost/iap-afvist-betalt");
+    expect(d).toMatchObject({ brugerId: FIRMA });
+    expect(String(d?.fejl)).toMatch(/Google refunderer det automatisk/);
   });
 });
 
@@ -470,7 +618,7 @@ describe("GET /api/app/boost/iap", () => {
       ],
     });
     const firma = await ruter.iap.GET(new NextRequest("http://localhost/api/app/boost/iap", { headers: { host: "localhost", authorization: "Bearer f.f.f" } }));
-    expect(await firma.json()).toMatchObject({ kanKoebe: false, grund: "erhverv", appAccountToken: FIRMA });
+    expect(await firma.json()).toMatchObject({ kanKoebe: false, grund: "erhverv", appAccountToken: KT(FIRMA) });
     vi.stubEnv("GOOGLE_PUBSUB_SA_EMAIL", "");
     try {
       const r = await ruter.iap.GET(new NextRequest("http://localhost/api/app/boost/iap", { headers: { host: "localhost" } }));
@@ -502,7 +650,7 @@ function notifikation(type: string, signeretTx: string | null, k: Kaede = kaede,
 describe("POST /api/webhooks/apple", () => {
   it("REFUND af brugte point: trækkes tilbage til minus + drift-alarm; samme notifikation igen gør intet", async () => {
     // PRIVAT2 køber 700 point og har brugt dem (saldo sat til 0 i den falske db).
-    const { t, signeret } = appleKoeb({ productId: "dk.bidhamr.app.boost700", appAccountToken: PRIVAT2 });
+    const { t, signeret } = appleKoeb({ productId: "dk.bidhamr.app.boost700", appAccountToken: KT(PRIVAT2) });
     expect((await koeb(ios(signeret), "b.b.b")).status).toBe(200);
     db.s.saldo.set(PRIVAT2, 0);
     const n = notifikation("REFUND", jws(kaede, { ...t, revocationDate: Date.now(), revocationType: "REFUND_FULL", signedDate: Date.now() }));
@@ -553,6 +701,22 @@ describe("POST /api/webhooks/apple", () => {
     const res = await ruter.apple.POST(new NextRequest("http://localhost/api/webhooks/apple", { method: "POST", body: "{}" }));
     expect(res.status).toBe(400);
   });
+
+  it("REFUND før kreditering: ventende, notifikationen er IKKE behandlet, og købet afvises bagefter", async () => {
+    const { t, signeret } = appleKoeb();
+    const n = notifikation("REFUND", jws(kaede, { ...t, revocationDate: Date.now(), revocationType: "REFUND_FULL" }));
+    expect(await apple(n)).toEqual({ status: 200, body: { resultat: "ukendt" } });
+    expect(db.s.ventende.some((v) => v.ekstern === t.transactionId)).toBe(true);
+    // Samme notifikation igen behandles igen (idempotent i databasen).
+    db.s.rpc = [];
+    expect(await apple(n)).toEqual({ status: 200, body: { resultat: "ukendt" } });
+    expect(rpcNavne()).toContain("boost_iap_refusion");
+    // Appen sender købet bagefter (Apple siger endnu ikke refunderet): afvist.
+    expect(await koeb(ios(signeret))).toMatchObject({ status: 409, body: { kode: "refunderet" } });
+    // REFUND_REVERSED ophæver den ventende refusion.
+    expect((await apple(notifikation("REFUND_REVERSED", jws(kaede, t)))).body.resultat).toBe("ventende_ophaevet");
+    expect((await koeb(ios(signeret))).status).toBe(200);
+  });
 });
 
 describe("POST /api/webhooks/google-play", () => {
@@ -570,15 +734,55 @@ describe("POST /api/webhooks/google-play", () => {
     voidedPurchaseNotification: { purchaseToken: token, orderId, productType: 2, refundType: 1 },
   });
 
-  it("voidedPurchaseNotification med gyldigt OIDC-token: pointene trækkes tilbage, én gang", async () => {
+  it("voidedPurchaseNotification med gyldigt OIDC-token: bekræftes hos Google, pointene trækkes tilbage, én gang", async () => {
     const k = googleKoeb();
     await koeb(k);
     const orderId = String(google.get(k.purchaseToken)!.orderId);
+    // Google har annulleret købet.
+    google.get(k.purchaseToken)!.purchaseState = 1;
+    googleKald.length = 0;
     expect(await push(oidc(), void_(k.purchaseToken, orderId), "void-1")).toBe(204);
+    // purchases.products.get med produktet fra vores køb.
+    expect(googleKald).toHaveLength(1);
+    expect(googleKald[0].url).toContain("/products/dk.bidhamr.app.boost100/tokens/");
     expect(db.s.rpc.find((x) => x.navn === "boost_iap_refusion")?.args).toMatchObject({ p_platform: "android", p_google_token: k.purchaseToken, p_andel_milli: 100000 });
     db.s.rpc = [];
     expect(await push(oidc(), void_(k.purchaseToken, orderId), "void-1")).toBe(204);
     expect(rpcNavne()).not.toContain("boost_iap_refusion");
+  });
+
+  it("void, som Google ikke bekræfter (purchaseState 0): intet trækkes", async () => {
+    const k = googleKoeb();
+    await koeb(k);
+    const orderId = String(google.get(k.purchaseToken)!.orderId);
+    expect(await push(oidc(), void_(k.purchaseToken, orderId), "void-2")).toBe(204);
+    expect(rpcNavne()).not.toContain("boost_iap_refusion");
+    expect(db.s.notifikationer.get("android|void-2")).toBe(true);
+  });
+
+  it("void af et køb, vi ikke har: produkterne prøves, og refusionen gemmes som ventende", async () => {
+    const k = googleKoeb({ productId: "dk.bidhamr.app.boost700", purchaseState: 1 });
+    const orderId = String(google.get(k.purchaseToken)!.orderId);
+    expect(await push(oidc(), void_(k.purchaseToken, orderId), "void-3")).toBe(204);
+    expect(db.s.rpc.find((x) => x.navn === "boost_iap_refusion")?.args).toMatchObject({ p_google_token: k.purchaseToken });
+    expect(db.s.ventende.some((v) => v.token === k.purchaseToken)).toBe(true);
+    // Ikke markeret som behandlet (kan behandles igen uden dobbelt effekt).
+    expect(db.s.notifikationer.get("android|void-3")).toBe(false);
+    // Kommer købet bagefter: afvist.
+    expect(await koeb({ ...k, productId: "dk.bidhamr.app.boost700" })).toMatchObject({ status: 409, body: { kode: "annulleret" } });
+  });
+
+  it("Google kan ikke nås: 500, så Pub/Sub prøver igen", async () => {
+    const k = googleKoeb();
+    await koeb(k);
+    const orig = globalThis.fetch;
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 503 }));
+    try {
+      expect(await push(oidc(), void_(k.purchaseToken, "GPA.x"), "void-4")).toBe(500);
+      expect(rpcNavne()).not.toContain("boost_iap_refusion");
+    } finally {
+      vi.stubGlobal("fetch", orig);
+    }
   });
 
   it("OIDC: forkert audience, forkert service account, uverificeret email, udløbet, intet token: 401", async () => {
@@ -596,5 +800,90 @@ describe("POST /api/webhooks/google-play", () => {
     expect(await push(oidc(), { version: "1.0", packageName: BUNDLE, testNotification: { version: "1.0" } })).toBe(204);
     expect(await push(oidc(), { ...void_("tok.y.ABCDEFGHIJ", "GPA.2"), packageName: "dk.anden.app" })).toBe(204);
     expect(rpcNavne()).not.toContain("boost_iap_refusion");
+  });
+});
+
+// ============================================================ cron
+describe("den daglige cron", () => {
+  it("Apple Get Notification History: REFUND og REFUND_REVERSED for det seneste døgn + overlap, idempotent", async () => {
+    // Et køb, hvis REFUND-notifikation aldrig nåede frem.
+    const { t, signeret } = appleKoeb({ productId: "dk.bidhamr.app.boost100" });
+    expect((await koeb(ios(signeret))).status).toBe(200);
+    const tabt = notifikation("REFUND", jws(kaede, { ...t, revocationDate: Date.now(), revocationType: "REFUND_PRORATED", revocationPercentage: 40000 }));
+    // Og en, der allerede er behandlet via webhooken.
+    const { t: t2, signeret: s2 } = appleKoeb({ productId: "dk.bidhamr.app.boost100" });
+    await koeb(ios(s2));
+    const kendt = notifikation("REFUND", jws(kaede, { ...t2, revocationDate: Date.now() }));
+    expect((await apple(kendt)).body.resultat).toBe("tilbagefoert");
+    historik.set("REFUND", [tabt, kendt, jws(fremmedKaede, { notificationType: "REFUND" })]);
+    historik.set("REFUND_REVERSED", []);
+    historikKald.length = 0;
+    db.s.rpc = [];
+    db.s.claim = true;
+    const r = await ruter.server.koerIapCron();
+    expect(r).toMatchObject({ apple: 1 });
+    // Begge typer, to sider for REFUND, ca. 36 timer tilbage.
+    expect(historikKald.map((h) => `${h.type}:${h.side ?? "-"}`)).toEqual(["REFUND:-", "REFUND:side2", "REFUND_REVERSED:-"]);
+    expect(historikKald[0].til - historikKald[0].fra).toBe(36 * 3600 * 1000);
+    const refusioner = db.s.rpc.filter((x) => x.navn === "boost_iap_refusion").map((x) => x.args);
+    expect(refusioner).toEqual([expect.objectContaining({ p_ekstern_id: t.transactionId, p_andel_milli: 40000, p_kilde: "apple_historik" })]);
+    // Den forfalskede notifikation i listen: logget, intet trukket.
+    expect(db.s.drift.some((d) => d.hvor === "boost/iap-apple-historik")).toBe(true);
+    // Igen: intet nyt.
+    db.s.rpc = [];
+    historik.set("REFUND", [tabt, kendt]);
+    await ruter.server.koerIapCron();
+    expect(db.s.rpc.filter((x) => x.navn === "boost_iap_refusion")).toEqual([]);
+  });
+
+  it("testkøb slået til i produktion: drift-advarsel hver dag", async () => {
+    historik.clear();
+    db.s.claim = true;
+    vi.stubEnv("IAP_TILLAD_TESTKOEB_TIL", new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString());
+    vi.stubEnv("IAP_TESTKOEB_KONTI", PRIVAT);
+    try {
+      await ruter.server.koerIapCron();
+      const d = db.s.drift.find((x) => x.hvor === "boost/iap-testkoeb");
+      expect(String(d?.fejl)).toMatch(/^Testkøb er slået til i produktion/);
+    } finally {
+      vi.stubEnv("IAP_TILLAD_TESTKOEB_TIL", "");
+      vi.stubEnv("IAP_TESTKOEB_KONTI", "");
+    }
+    db.s.drift = [];
+    await ruter.server.koerIapCron();
+    expect(db.s.drift.some((x) => x.hvor === "boost/iap-testkoeb")).toBe(false);
+  });
+});
+
+// ============================================================ regler
+describe("kontobinding og testkøbsvindue", () => {
+  it("appAccountToken: deterministisk UUID (v8), forskellig pr. bruger, ikke bruger-id'et; uden hemmelighed: ikke klar", () => {
+    const a = KT(PRIVAT);
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(KT(PRIVAT)).toBe(a);
+    expect(KT(PRIVAT.toUpperCase())).toBe(a);
+    expect(KT(PRIVAT2)).not.toBe(a);
+    expect(a).not.toBe(PRIVAT);
+    vi.stubEnv("IAP_KONTO_HEMMELIGHED", "for-kort");
+    try {
+      expect(ruter.konfig.kontoToken(PRIVAT)).toBeNull();
+      expect(ruter.konfig.iapKlar()).toEqual({ ios: false, android: false });
+    } finally {
+      vi.stubEnv("IAP_KONTO_HEMMELIGHED", HEMMELIGHED);
+    }
+  });
+
+  it("IAP_TILLAD_TESTKOEB_TIL: kun ISO-dato i fremtiden og højst 14 dage frem", () => {
+    const nu = Date.parse("2026-10-28T12:00:00Z");
+    const v = ruter.regler.testkoebVindue;
+    expect(v("2026-11-05", nu).aabent).toBe(true);
+    expect(v("2026-11-11T12:00:00Z", nu).aabent).toBe(true);
+    expect(v("2026-11-11T12:00:01Z", nu).aabent).toBe(false);
+    expect(v("2026-10-28T11:59:59Z", nu).aabent).toBe(false);
+    expect(v("", nu).aabent).toBe(false);
+    expect(v("1", nu).aabent).toBe(false);
+    expect(v("5. nov 2026", nu).aabent).toBe(false);
+    expect(v("2026-02-30", nu).aabent).toBe(false);
+    expect([...ruter.regler.testkoebKonti(` ${PRIVAT.toUpperCase()},x, ${PRIVAT2}`)]).toEqual([PRIVAT, PRIVAT2]);
   });
 });
