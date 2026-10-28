@@ -171,7 +171,7 @@ describe("kladde ved betaling", () => {
 });
 
 describe("købers oplysninger og moms", () => {
-  it("MitID-navn, kontoadressen før checkout, moms 25 % og total", async () => {
+  it("MitID-navn, checkout før users.adresse, moms 25 % og total", async () => {
     await db.query(`insert into public.mitid_verificeringer (bruger_id, juridisk_navn) values ($1, 'Kasper Juridisk Køber')`, [KOEBER]);
     const s = await salg({
       bud: 12345,
@@ -180,7 +180,8 @@ describe("købers oplysninger og moms", () => {
       levering: { maade: "doer", navn: "K. Køber", adresse: "Checkoutvej 9", post: "2100", by: "København Ø", email: "levering@koeber.dk" },
     });
     const d = (await en<{ d: Record<string, any> }>(`select public.firma_faktura_byg($1) d`, [await kladdeFor(s.trade)])).d;
-    expect(d.koeber).toMatchObject({ navn: "Kasper Juridisk Køber", adresse: "Købervej 3", postnummer: "4700", by: "Næstved", email: "levering@koeber.dk" });
+    // Uden kontoadresse (bruger_adresser) går checkout forud for users.adresse.
+    expect(d.koeber).toMatchObject({ navn: "Kasper Juridisk Køber", adresse: "Checkoutvej 9", postnummer: "2100", by: "København Ø", email: "levering@koeber.dk" });
     expect(d.linjer[0].tekst).toBe("Kommode (stand: ny med mærke)");
     expect(d.momsordning).toBe("moms");
     expect(d.total_oere).toBe(12345);
@@ -362,6 +363,35 @@ describe("afsendelse - kun firmaets eget tryk", () => {
     const r = await send(await kladdeFor(s.trade));
     expect(r.kode).toBe("mangler");
     expect(r.mangler).toContain("refunderet");
+  });
+});
+
+describe("kontoadressen (bruger_adresser, 20261102340000)", () => {
+  // Testene ovenfor kører UDEN tabellen (som før 20261102340000): så bruges
+  // checkout og users.adresse. Nu kommer tabellen.
+  beforeAll(async () => {
+    await db.exec(`create table public.bruger_adresser (bruger_id uuid primary key references public.users(id),
+      adresse text not null, postnummer text not null, bynavn text not null)`);
+  });
+
+  it("kontoens adresse går forud for checkout og users.adresse", async () => {
+    await db.query(`insert into public.bruger_adresser values ($1, 'Kontovej 5', '5000', 'Odense C')`, [KOEBER]);
+    const s = await salg({ levering: { maade: "doer", navn: "K", adresse: "Checkoutvej 9", post: "2100", by: "København Ø", email: "k@k.dk" } });
+    const d = (await en<{ d: Record<string, any> }>(`select public.firma_faktura_byg($1) d`, [await kladdeFor(s.trade)])).d;
+    expect(d.koeber).toMatchObject({ adresse: "Kontovej 5", postnummer: "5000", by: "Odense C" });
+    const auto = (await en<{ a: Record<string, string> }>(`select public.firma_faktura_koeber_auto($1) a`, [s.trade])).a;
+    expect(auto.adresse_kilde).toBe("konto");
+  });
+
+  it("uden række i bruger_adresser: checkout, så users.adresse, ellers kladde med spærret Send", async () => {
+    const s1 = await salg({ koeber: KOEBER2, levering: { maade: "doer", navn: "Lise", adresse: "Lisevej 2", post: "8000", by: "Aarhus C", email: "l@l.dk" } });
+    expect((await en<{ a: Record<string, string> }>(`select public.firma_faktura_koeber_auto($1) a`, [s1.trade])).a).toMatchObject({ adresse: "Lisevej 2", adresse_kilde: "checkout" });
+    await db.query(`update public.users set adresse = 'Fritekstvej 1, 9000 Aalborg' where id = $1`, [FREMMED]);
+    const s2 = await salg({ koeber: FREMMED });
+    expect((await en<{ a: Record<string, string> }>(`select public.firma_faktura_koeber_auto($1) a`, [s2.trade])).a).toMatchObject({ adresse: "Fritekstvej 1", postnummer: "9000", by: "Aalborg", adresse_kilde: "konto_fritekst" });
+    const s3 = await salg({ koeber: KOEBER2 });
+    const k3 = await kladdeFor(s3.trade);
+    expect((await send(k3)).kode).toBe("mangler");
   });
 });
 

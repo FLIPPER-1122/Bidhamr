@@ -34,8 +34,8 @@
 --   6. Købers oplysninger læses ét sted: firma_faktura_koeber_auto(trade).
 --      Navn: MitID (når verificeret, Filip 27. okt. 2026 "Oplysninger til
 --      fakturaen indsamles ved oprettelse"), ellers navnet til handlen, ellers
---      profilnavnet. Adresse: først kontoens adresse, derefter checkout
---      (levering til døren). Firmaet kan rette/udfylde i kladden; køberen kan
+--      profilnavnet. Adresse: kontoens adresse (bruger_adresser), derefter
+--      checkout (levering til døren), til sidst users.adresse (fri tekst). Firmaet kan rette/udfylde i kladden; køberen kan
 --      selv oplyse firmanavn og CVR. Mangler adressen, kan kladden ikke sendes.
 --   7. RPC'er: firma (liste, hent, ret kladde, send, kreditnota, indstillinger),
 --      køber (oplys firmanavn/CVR), chef (logget opslag), service role (gem
@@ -468,9 +468,9 @@ create trigger betalinger_firma_faktura_kladde
 -- ===========================================================================
 -- 7. Købers oplysninger - ÉT sted
 -- ===========================================================================
--- Kobles på kontoadressen fra 20261102340000 (bruger_adresse), når den
--- findes: udskift kun blokken "Kontoens adresse" herunder. Indtil da læses
--- users.adresse (fri tekst; "Vej 1, 1234 By" deles op).
+-- Adressen i denne rækkefølge: 1) public.bruger_adresser (kontoen,
+-- 20261102340000), 2) handel_levering (levering til døren), 3) til sidst
+-- users.adresse (gammel fri tekst; "Vej 1, 1234 By" deles op).
 create or replace function public.firma_faktura_koeber_auto(p_trade uuid)
 returns jsonb
 language plpgsql
@@ -515,16 +515,21 @@ begin
     v_email := null;
   end if;
 
-  -- Kontoens adresse (først).
-  if nullif(btrim(u.adresse), '') is not null then
-    m := regexp_match(btrim(u.adresse), '^(.+?)\s*,?\s+([0-9]{4})\s+(.+)$');
-    if m is not null then
-      v_adr := btrim(m[1], ' ,'); v_post := m[2]; v_by := btrim(m[3]);
+  -- 1. Kontoens adresse (public.bruger_adresser, 20261102340000). Læses
+  --    dynamisk, så funktionen også virker, før den migration er kørt.
+  if to_regclass('public.bruger_adresser') is not null then
+    execute $q$select nullif(btrim(ba.adresse), ''), nullif(btrim(ba.postnummer), ''), nullif(btrim(ba.bynavn), '')
+                 from public.bruger_adresser ba where ba.bruger_id = $1$q$
+      into v_adr, v_post, v_by
+      using t.buyer_id;
+    if v_adr is not null and v_post is not null and v_by is not null then
       v_kilde := 'konto';
+    else
+      v_adr := null; v_post := null; v_by := null;
     end if;
   end if;
 
-  -- Ellers adressen fra checkout (levering til døren).
+  -- 2. Adressen fra checkout (levering til døren).
   if v_kilde is null and hl.maade = 'doer'
      and nullif(btrim(hl.modtager_adresse), '') is not null then
     v_adr := btrim(hl.modtager_adresse); v_post := nullif(btrim(hl.modtager_postnummer), '');
@@ -532,10 +537,17 @@ begin
     v_kilde := 'checkout';
   end if;
 
-  -- Ufuldstændig kontoadresse (uden postnummer): vej med, resten mangler.
+  -- 3. Til sidst den gamle fritekst users.adresse ("Vej 1, 1234 By").
   if v_kilde is null and nullif(btrim(u.adresse), '') is not null then
-    v_adr := left(btrim(u.adresse), 200);
-    v_kilde := 'konto_ufuldstaendig';
+    m := regexp_match(btrim(u.adresse), '^(.+?)\s*,?\s+([0-9]{4})\s+(.+)$');
+    if m is not null then
+      v_adr := btrim(m[1], ' ,'); v_post := m[2]; v_by := btrim(m[3]);
+      v_kilde := 'konto_fritekst';
+    else
+      -- Uden postnummer: vejen med, resten mangler.
+      v_adr := left(btrim(u.adresse), 200);
+      v_kilde := 'konto_ufuldstaendig';
+    end if;
   end if;
 
   return jsonb_build_object(

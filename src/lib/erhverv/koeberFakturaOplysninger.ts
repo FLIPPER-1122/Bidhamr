@@ -12,11 +12,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // ved oprettelse"):
 //   navn:    MitID (når køberen er verificeret) -> navnet til handlen ->
 //            profilens navn
-//   adresse: kontoens adresse -> checkout (levering til døren)
+//   adresse: kontoens adresse (public.bruger_adresser, 20261102340000) ->
+//            checkout (levering til døren) -> users.adresse (gammel fri tekst)
 //   e-mail:  e-mailen til handlen -> kontoens e-mail
-// Kontoadressen kobles på 20261102340000 (bruger_adresse), når den er
-// færdig: kun blokken "Kontoens adresse" i databasefunktionen skal
-// udskiftes. Firmaets rettelser i kladden og købers egne firmanavn/CVR lægges
+// Firmaets rettelser i kladden og købers egne firmanavn/CVR lægges
 // ovenpå i public.firma_faktura_byg.
 //
 // Kun til serveren, og kun efter at kalderen har tjekket, at den indloggede
@@ -31,7 +30,7 @@ export type KoeberFakturaOplysninger = {
   firmanavn: string | null;
   cvr: string | null;
   navn_kilde: "mitid" | "konto";
-  adresse_kilde: "konto" | "checkout" | "konto_ufuldstaendig" | null;
+  adresse_kilde: "konto" | "checkout" | "konto_fritekst" | "konto_ufuldstaendig" | null;
 };
 
 export async function hentKoeberFakturaOplysninger(tradeId: string): Promise<KoeberFakturaOplysninger | null> {
@@ -43,5 +42,6 @@ export async function hentKoeberFakturaOplysninger(tradeId: string): Promise<Koe
 export const ADRESSE_KILDE_TEKST: Record<NonNullable<KoeberFakturaOplysninger["adresse_kilde"]>, string> = {
   konto: "Adressen er købers egen adresse fra kontoen.",
   checkout: "Adressen er den, køberen gav ved betalingen.",
+  konto_fritekst: "Adressen er fra købers profil.",
   konto_ufuldstaendig: "Købers adresse på kontoen er ikke fuldstændig. Tilføj postnummer og by.",
 };

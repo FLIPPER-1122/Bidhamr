@@ -504,3 +504,9 @@ at de overbudte får besked med det samme (cron'en samler op). Anbefaling, når 
    server actions skal så indsætte via en security definer-RPC, der udleder byderen af `auth.uid()` (eller
    service role med eksplicit bruger) - ellers holder hjemmesidens bud også op med at virke. Det er ikke gjort nu,
    fordi det bryder den nuværende app.
+
+## Faktura fra firma til køber (28. okt. 2026)
+Kun køberen. Appen kan **ikke** sende fakturaer – det gør firmaet selv på hjemmesiden. Fuld beskrivelse: docs/FIRMA-FAKTURA.md.
+- `GET /api/firma-faktura?trade=<trade_id>` (Bearer) -> `{ ok, kanOplyseFirma, firma, fakturaer: [{ id, type, fakturanummer, udstedt_dato, sendt_kl, firmanavn, total_oere, pdf }] }`. Vis listen under handlen, når `fakturaer` ikke er tom.
+- `GET /api/firma-faktura/<id>` (Bearer) -> PDF (`?download=1` = vedhæftet). Kun sendte, kun køberen/firmaet.
+- `POST /api/firma-faktura` (Bearer, JSON `{ trade_id, firmanavn, cvr }`) -> køberen oplyser firmanavn + CVR, før fakturaen sendes (vis kun, når `kanOplyseFirma` er true). 409 `allerede_sendt` | `ingen_faktura`.
