@@ -1,7 +1,8 @@
-// Migrationerne 20261102240000_bidhamr_bot.sql og 20261102290000_bot_rettelser.sql
-// i PGlite (Postgres i processen - ingen database, intet netværk). Køres TO
+// Migrationerne 20261102240000_bidhamr_bot.sql, 20261102290000_bot_rettelser.sql
+// og 20261102310000_bot_loft_pr_gruppe.sql i PGlite (Postgres i processen - ingen database, intet netværk). Køres TO
 // gange (idempotent). Tester loftet (pr. bruger, pr. IP, pr. samtale, uden
-// login samlet og i USD), ejerskab af samtalen (og samme IP uden login),
+// login samlet og i USD - samlet, pr. bruger, for alle uden login og med
+// skøn for svar i gang), ejerskab af samtalen (og samme IP uden login),
 // idempotent overdragelse til en medarbejder, kontosletning, den daglige
 // rensning, "Download dine data" og at kun service_role kan kalde
 // funktionerne og læse tabellerne.
@@ -61,6 +62,11 @@ begin
 end $$;
 `;
 
+const PR_GRUPPE = readFileSync(
+  path.resolve(import.meta.dirname, "../../supabase/migrations/20261102310000_bot_loft_pr_gruppe.sql"),
+  "utf8",
+);
+
 let db: PGlite;
 
 async function rpc(sql: string, params: unknown[] = []): Promise<Record<string, unknown>> {
@@ -77,6 +83,8 @@ beforeAll(async () => {
   await db.exec(MIGRATION);
   await db.exec(RETTELSER);
   await db.exec(RETTELSER);
+  await db.exec(PR_GRUPPE);
+  await db.exec(PR_GRUPPE);
 });
 afterAll(async () => {
   await db.close();
@@ -185,7 +193,7 @@ describe("rettigheder", () => {
     const r = await db.query<{ rolle: string; fn: string; ok: boolean }>(`
       select r.rolle, f.fn, has_function_privilege(r.rolle, f.fn, 'execute') as ok
         from (values ('anon'), ('authenticated'), ('service_role')) r(rolle),
-             (values ('public.bot_ny_besked(uuid, uuid, text, text, text)'),
+             (values ('public.bot_ny_besked(uuid, uuid, text, text, text, numeric)'),
                      ('public.bot_gem_svar(uuid, text, text, integer, integer, integer, integer, numeric, text[], text, integer)'),
                      ('public.bot_overdrag(uuid, uuid, text, text, text)'),
                      ('public.bot_forbrug_oversigt()'),
@@ -207,6 +215,10 @@ describe("rettigheder", () => {
     const gl = await db.query<{ n: number }>(
       `select count(*)::int as n from pg_proc where proname = 'bot_overdrag'`);
     expect(gl.rows[0].n).toBe(1);
+    // Den gamle bot_ny_besked med 5 parametre findes heller ikke længere.
+    const glNy = await db.query<{ n: number }>(
+      `select count(*)::int as n from pg_proc where proname = 'bot_ny_besked'`);
+    expect(glNy.rows[0].n).toBe(1);
   });
 });
 
@@ -242,6 +254,8 @@ describe("rettelser (20261102290000)", () => {
 
   it("loft i USD: over 2 USD det seneste døgn giver loft_alle og én alarm pr. døgn", async () => {
     await nulstilDoegn();
+    // Kun det samlede loft her (pr. bruger testes nedenfor).
+    await db.exec(`update public.bot_indstillinger set doegnloft_usd = 2, bruger_loft_usd = 100`);
     const s = (await ny(null, A, IP4)).samtale_id as string;
     await rpc("public.bot_gem_svar($1, 'Svar', 'claude-opus-5-5', 1, 1, 0, 0, 1.5, '{}', 'end_turn', 1)", [s]);
     expect((await ny(s, A, IP4)).kode).toBe("ok");
@@ -257,6 +271,7 @@ describe("rettelser (20261102290000)", () => {
     await db.exec(`update public.bot_indstillinger set doegnloft_usd = 2`);
     await nulstilDoegn();
     expect((await ny(s, A, IP4)).kode).toBe("ok");
+    await db.exec(`update public.bot_indstillinger set doegnloft_usd = 5, bruger_loft_usd = 0.25`);
   });
 
   it("kontosletning: tekst og e-mail væk, henvendelsen får en pladsholder, forbruget bevares", async () => {
@@ -354,5 +369,114 @@ describe("rettelser (20261102290000)", () => {
     expect(json).not.toContain("Bs egen besked");
     // Uden login: ingen samtaler.
     expect((await rpc("public.mine_data()")).bidhamr_bot).toEqual([]);
+  });
+});
+
+describe("USD-loft pr. gruppe (20261102310000)", () => {
+  const IP6 = "6".repeat(64);
+  const IP7 = "7".repeat(64);
+  const D = "00000000-0000-4000-8000-0000000000d1";
+  const nyMaks = (samtale: string | null, bruger: string | null, ip: string, maks: number) =>
+    rpc("public.bot_ny_besked($1, $2, $3, 'web', 'Hej bot', $4)", [samtale, bruger, ip, maks]);
+  const gemSvar = (samtale: string, usd: number) =>
+    rpc("public.bot_gem_svar($1, 'Svar', 'claude-haiku-5-5', 1, 1, 0, 0, $2, '{}', 'end_turn', 1)", [samtale, usd]);
+  // Alle nye beskeder ud af vinduet for "svar i gang" (60 sekunder), men
+  // stadig i døgnet.
+  const udAfIgang = () =>
+    db.exec(`update public.bot_beskeder set oprettet_kl = now() - interval '2 minutes' where oprettet_kl > now() - interval '2 minutes'`);
+
+  it("standarder: 5 USD i alt, 50 % til uden login, 0,25 USD pr. bruger", async () => {
+    const r = await db.query<{ usd: string; andel: string; bruger: string }>(
+      `select doegnloft_usd::text as usd, anon_andel::text as andel, bruger_loft_usd::text as bruger from public.bot_indstillinger`);
+    expect(r.rows).toHaveLength(1);
+    expect(Number(r.rows[0].usd)).toBe(5);
+    expect(Number(r.rows[0].andel)).toBe(0.5);
+    expect(Number(r.rows[0].bruger)).toBe(0.25);
+    // En chefs ændring overskrives ikke, når migrationen køres igen.
+    await db.exec(`update public.bot_indstillinger set doegnloft_usd = 2`);
+    await db.exec(PR_GRUPPE);
+    const igen = await db.query<{ usd: string }>(`select doegnloft_usd::text as usd from public.bot_indstillinger`);
+    expect(Number(igen.rows[0].usd)).toBe(2);
+    await db.exec(`update public.bot_indstillinger set doegnloft_usd = 5`);
+    // Ugyldige værdier afvises af databasen.
+    await expect(db.exec(`update public.bot_indstillinger set anon_andel = 1.5`)).rejects.toThrow();
+    await expect(db.exec(`update public.bot_indstillinger set bruger_loft_usd = -1`)).rejects.toThrow();
+  });
+
+  it("samtaler uden login stopper ved 50 % af døgnloftet - indloggede kan stadig skrive", async () => {
+    await nulstilDoegn();
+    const s = (await ny(null, null, IP6)).samtale_id as string;
+    await gemSvar(s, 2.4);
+    expect((await ny(s, null, IP6)).kode).toBe("ok");
+    await gemSvar(s, 0.1);
+    // 2,5 af 5 USD = 50 %: stop for alle uden login.
+    expect(await ny(s, null, IP6)).toMatchObject({ kode: "loft_alle", grund: "anon_usd" });
+    expect(await ny(null, null, IP7)).toMatchObject({ kode: "loft_alle", grund: "anon_usd" });
+    // Indloggede har budgettet tilbage.
+    expect((await ny(null, B, IP7)).kode).toBe("ok");
+    // Andelen kan ændres.
+    await db.exec(`update public.bot_indstillinger set anon_andel = 0.6`);
+    expect((await ny(null, null, IP7)).kode).toBe("ok");
+    await db.exec(`update public.bot_indstillinger set anon_andel = 0.5`);
+  });
+
+  it("loft pr. bruger: 0,25 USD pr. døgn - andre brugere er ikke ramt", async () => {
+    await nulstilDoegn();
+    const s = (await ny(null, A, IP6)).samtale_id as string;
+    await gemSvar(s, 0.2);
+    expect((await ny(s, A, IP6)).kode).toBe("ok");
+    await gemSvar(s, 0.05);
+    expect(await ny(s, A, IP6)).toMatchObject({ kode: "loft_bruger_usd" });
+    // Også i en ny samtale og fra en anden IP.
+    expect(await ny(null, A, IP7)).toMatchObject({ kode: "loft_bruger_usd" });
+    expect((await ny(null, B, IP6)).kode).toBe("ok");
+    // Ældre end et døgn tæller ikke.
+    await nulstilDoegn();
+    expect((await ny(null, A, IP6)).kode).toBe("ok");
+  });
+
+  it("svar i gang tælles med: brugerbeskeder fra de sidste 60 sekunder uden bot-svar x højeste pris", async () => {
+    await nulstilDoegn();
+    await db.exec(`insert into public.users values ('${D}', 'd@test.bidhamr.dk', null) on conflict do nothing`);
+    // Pr. bruger: 0,1 USD pr. svar i gang. 0, 1 og 2 i gang er under 0,25; 3 i gang = 0,3.
+    expect((await nyMaks(null, D, IP6, 0.1)).kode).toBe("ok");
+    expect((await nyMaks(null, D, IP6, 0.1)).kode).toBe("ok");
+    expect((await nyMaks(null, D, IP6, 0.1)).kode).toBe("ok");
+    expect(await nyMaks(null, D, IP6, 0.1)).toMatchObject({ kode: "loft_bruger_usd" });
+    // Uden skøn (den gamle serverkode) tælles de ikke.
+    expect((await nyMaks(null, D, IP6, 0)).kode).toBe("ok");
+    // Når svarene er gemt, tæller den rigtige pris i stedet (4 x 0,01).
+    const samtaler = await db.query<{ samtale_id: string }>(
+      `select distinct samtale_id from public.bot_beskeder where bruger_id = '${D}' and rolle = 'bruger'`);
+    expect(samtaler.rows).toHaveLength(4);
+    for (const r of samtaler.rows) await gemSvar(r.samtale_id, 0.01);
+    // 0,04 + 0 / 0,1 / 0,2 i gang er under loftet, 0,04 + 0,3 er over.
+    for (let i = 0; i < 3; i++) expect((await nyMaks(null, D, IP6, 0.1)).kode).toBe("ok");
+    expect(await nyMaks(null, D, IP6, 0.1)).toMatchObject({ kode: "loft_bruger_usd" });
+    // Efter 60 sekunder er en besked uden svar ikke længere "i gang".
+    await udAfIgang();
+    expect((await nyMaks(null, D, IP7, 0.1)).kode).toBe("ok");
+
+    // Samlet: mange svar i gang kan ikke løbe forbi døgnloftet.
+    await nulstilDoegn();
+    await db.exec(`update public.bot_indstillinger set doegnloft_usd = 1, bruger_loft_usd = 100`);
+    for (let i = 0; i < 4; i++) expect((await nyMaks(null, B, `${i}${"f".repeat(63)}`, 0.25)).kode).toBe("ok");
+    expect(await nyMaks(null, B, IP7, 0.25)).toMatchObject({ kode: "loft_alle", grund: "usd" });
+    // Uden login: halvdelen (0,5 USD) = to svar i gang.
+    await nulstilDoegn();
+    expect((await nyMaks(null, null, "1".repeat(64), 0.25)).kode).toBe("ok");
+    expect((await nyMaks(null, null, "2".repeat(64), 0.25)).kode).toBe("ok");
+    expect(await nyMaks(null, null, "3".repeat(64), 0.25)).toMatchObject({ kode: "loft_alle", grund: "anon_usd" });
+    expect((await nyMaks(null, A, "3".repeat(64), 0.25)).kode).toBe("ok");
+
+    // Et absurd skøn fra serveren klippes til 10 USD, og et negativt til 0.
+    await nulstilDoegn();
+    await db.exec(`update public.bot_indstillinger set doegnloft_usd = 5, bruger_loft_usd = 0.25`);
+    expect((await nyMaks(null, B, IP6, 1e9)).kode).toBe("ok");
+    expect(await nyMaks(null, B, IP6, 1e9)).toMatchObject({ kode: "loft_bruger_usd" });
+    await nulstilDoegn();
+    expect((await nyMaks(null, A, IP7, -5)).kode).toBe("ok");
+    expect((await nyMaks(null, A, IP7, -5)).kode).toBe("ok");
+    await nulstilDoegn();
   });
 });

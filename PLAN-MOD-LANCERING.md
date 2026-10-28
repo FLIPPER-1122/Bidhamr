@@ -17,7 +17,7 @@ Princippet:
 | 1 | Stripe live-aktivering | Filip | Den længste ventetid. Alt med rigtige penge venter på den. |
 | 2 | Advokat og revisor (betingelser, privatliv, fakturaer, DAC7) | Filip | Svarene tager uger, og meget afhænger af dem. |
 | 3 | DAO-kontrakt + Shipmondo | Filip | Uden nøgler kan fragten ikke gøres færdig. |
-| 4 | Idura (MitID-produktion) og Google Play-konto | Filip | Har ventetid. |
+| 4 | Google Play-konto (Idura: kun 20 min, tages i uge 49) | Filip | Har ventetid. |
 | 5 | Dinero (betalt plan) og Resend (opgradering) | Filip | Hurtigt. |
 | 6 | Dagens arbejde på produktion | Mig | Grundlaget for alt andet. |
 | 7 | Glidende gebyrer + blokering af kontaktinfo | Mig | Priser og regler skal ligge fast før den samlede test. |
@@ -48,10 +48,11 @@ Princippet:
 **Filip**
 - [ ] Stripe: live-aktiveringen sendt ind (firma, bank, ID).
 - [ ] Advokat og revisor: materialet sendt, svar aftalt senest 30. nov.
-- [ ] Idura: MitID-produktion bestilt.
+- [x] Idura: ringede 28. okt. – godkendelse tager kun ca. 20 min. Bestilles først tæt på lancering (uge 49, sammen med Stripe live), så vi ikke betaler 500 kr./md. for tidligt.
 - [x] Google Play-udviklerkonto oprettet og betalt (27. okt.); afventer Googles verificering.
 - [x] Anthropic API: konto, 20 US$ kredit og test-nøgle i bidhamr-test (27. okt.).
-- [ ] Dinero (betalt plan) og opgraderet Resend.
+- [ ] Apple: Paid Applications Agreement (bank + W-8BEN-E) og Small Business Program (15 %) – nødvendigt for boost-køb i appen.
+- Dinero (betalt plan) og Resend-opgradering flyttet til uge 49 (Filip, 28. okt.).
 - [ ] DAO-kontrakt underskrevet, og Shipmondo bekræftet med Dea. Plan og nøgler sendt til mig.
 - [ ] Firma-delen testet på test.bidhamr.dk, især opret auktion og bankkonto-trinnet. Appen testet via TestFlight.
 - [ ] `main` pushet, og ja givet til produktionsmigrationerne.

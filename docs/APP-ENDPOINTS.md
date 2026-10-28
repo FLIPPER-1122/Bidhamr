@@ -364,6 +364,14 @@ Det er BidHamrs regler og handelsbetingelser, der gælder."
   på tværs af brugere). Samtaler, der er ældre end 90 dage, kan ikke fortsættes (`409 ukendt_samtale`).
 - Bottens tekst filtreres for ordet "forsikring" (bliver til "BidHamr Beskyttelse") - intet at gøre i appen.
 
+Ændret i `20261102310000_bot_loft_pr_gruppe.sql` (27. okt. 2026):
+- **Ny kode `429 loft_bruger_usd`**: den indloggede bruger har brugt sit eget døgnbudget. Vis `fejl`-teksten (den
+  henviser til /kontakt) og knappen til kontaktformularen - samme håndtering som `loft_bruger`.
+- **`429 loft_alle` uden login** har nu en tekst, der beder brugeren logge ind (indloggede har altid budget
+  tilbage). Vis `fejl`-teksten og et link til login og til kontaktformularen.
+- Filteret: selve ordet "forsikring" (og bøjninger) bliver til "BidHamr Beskyttelse", sammensatte ord som
+  "indboforsikring" til "dækning" - intet at gøre i appen.
+
 ## Ændret i eksisterende endpoints
 
 - **DAO's handelsbetingelser (Filip, 20. okt. 2026):** `POST /api/fragt/app/book` tager nu
