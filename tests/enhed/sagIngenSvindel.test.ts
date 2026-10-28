@@ -51,7 +51,7 @@ describe("SAG_TYPE_NAVN kun i admin", () => {
       .filter((rel) => !TILLADT.some((t) => rel.startsWith(t)))
       .filter((rel) => /\bSAG_TYPE_NAVN\b/.test(udenKommentarer(readFileSync(path.join(SRC, rel), "utf8"))));
     expect(forkerte).toEqual([]);
-  });
+  }, 30_000); // Gennemsøger hele src – kan tage over 5 s under fuld testkørsel.
 });
 
 describe("teksterne til køber og sælger", () => {
