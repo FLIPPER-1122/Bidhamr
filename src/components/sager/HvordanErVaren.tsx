@@ -9,7 +9,6 @@ import Link from "next/link";
 import Ikon from "@/components/Ikon";
 import { GodkendPakkeKnap } from "@/components/HandelHandlinger";
 import type { SagMuligheder } from "@/lib/sagMuligheder";
-import { SAG_TYPE_NAVN } from "@/lib/sager";
 import { SAG_FLOW, sagUdfyld } from "@/lib/tekster/sagValg";
 import { FristBoks, type SagFristVisning } from "./meld/SagVareKort";
 import { sagTid } from "./visning";
@@ -64,9 +63,7 @@ export function HvordanErVaren({
           <p className="mt-3 border border-info-kant bg-info-bg p-3 text-sm text-info-tekst">
             {erhverv
               ? h.kraeverBeskyttelseErhverv
-              : sagUdfyld(h.kraeverBeskyttelse, {
-                  typer: muligheder.kraeverBeskyttelse.map((t) => SAG_TYPE_NAVN[t].toLowerCase()).join(" eller "),
-                })}{" "}
+              : h.kraeverBeskyttelse}{" "}
             <Link href="/bidhamr-beskyttelse" className="font-semibold underline">
               {h.laesMere}
             </Link>

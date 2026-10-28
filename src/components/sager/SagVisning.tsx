@@ -14,10 +14,10 @@
 import Link from "next/link";
 import type { MinSag } from "@/app/actions/sager";
 import type { StaffBesked } from "@/app/actions/staffChat";
-import { SAG_MAKS_BILLEDER, SAG_TYPE_NAVN } from "@/lib/sager";
+import { SAG_MAKS_BILLEDER } from "@/lib/sager";
 import TilfoejSagBilleder from "./TilfoejSagBilleder";
 import SagSvarForm from "./SagSvarForm";
-import { SAG_FLOW, sagUdfyld } from "@/lib/tekster/sagValg";
+import { SAG_FLOW, sagProblemTekst, sagUdfyld } from "@/lib/tekster/sagValg";
 import AnkeForm from "./AnkeForm";
 import { BeskyttelseBadge, SagBilleder, SagStatusBadge, sagTid } from "./visning";
 import { SAG_REFUSION_NY } from "@/lib/tekster/beskyttelse";
@@ -411,7 +411,8 @@ export default function SagVisning({
   const nu = goerNu(sag);
   const { alleFaerdige } = tidslinje(sag);
   const kanTilfoejeBilleder = sag.erKoeber && sag.status === "aaben" && sag.billeder.length < SAG_MAKS_BILLEDER;
-  const problem = SAG_TYPE_NAVN[sag.type];
+  // Køberens eget valg i hverdagsord - aldrig staff-typen (fx "svindel").
+  const problem = sagProblemTekst(sag.type, sag.koeberValg);
   const rf = returfragtTekst(sag);
   // Sælgerens forklaring (regel 3): sælgeren svarer direkte her.
   const visSvarForm = !sag.erKoeber && sag.kanSvare && !!sag.svarFristKl;
@@ -432,7 +433,7 @@ export default function SagVisning({
           <SagStatusBadge status={sag.status} />
         </div>
         <p className="mt-2 text-[17px] font-semibold leading-snug text-groen-mork">
-          {sag.erKoeber ? problem : sagUdfyld(t.meldtSaelger, { problem: problem.toLowerCase() })}
+          {sag.erKoeber ? problem : sagUdfyld(t.meldtSaelger, { problem: `"${problem}"` })}
         </p>
         <p className="mt-0.5 text-sm text-tekst-daempet">{sagUdfyld(t.meldt, { dato: sagTid(sag.oprettetKl) })}</p>
       </div>

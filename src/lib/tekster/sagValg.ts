@@ -277,6 +277,21 @@ export function erSagValgId(v: unknown): v is SagValgId {
   return typeof v === "string" && (SAG_VALG_IDER as readonly string[]).includes(v);
 }
 
+// Problemet i hverdagsord til køber og sælger (sagssiden, kvitteringen og
+// notifikationerne). SAG_TYPE_NAVN (fx "Svindel ...") er kun til staff.
+// Gamle sager har ingen koeber_valg - så bruges en neutral tekst pr. type.
+export const SAG_TYPE_NEUTRAL: Record<SagType, string> = {
+  bortkommet: "Pakken er ikke kommet frem",
+  skadet: "Varen er gået i stykker",
+  ikke_som_beskrevet: "Varen passer ikke med annoncen",
+  svindel: "Pakken eller varen var ikke, som den skulle være",
+  andet: "Noget andet",
+};
+
+export function sagProblemTekst(type: SagType, koeberValg: string | null | undefined): string {
+  return erSagValgId(koeberValg) ? SAG_VALG[koeberValg].navn : SAG_TYPE_NEUTRAL[type];
+}
+
 // Til sælgeren (regel 3).
 export const SAG_SAELGER_SVAR = {
   titel: "Giv din forklaring",
@@ -324,7 +339,9 @@ export const SAG_FLOW = {
     ikkeKommetNu: "Pakken burde være kommet frem nu. Har du ikke fået den, kan du melde det senest {dato}.",
     kraeverBeskyttelseErhverv:
       "Køb fra et firma er ikke dækket af BidHamr Beskyttelse. Er varen gået i stykker eller ikke som beskrevet, så kontakt firmaet – du har reklamationsret efter loven.",
-    kraeverBeskyttelse: "Uden BidHamr Beskyttelse kan du ikke oprette en sag om {typer}. Skriv i stedet til sælgeren i chatten.",
+    // Fast tekst (ingen sagstyper - køber og sælger ser aldrig staff-navnene).
+    kraeverBeskyttelse:
+      "Uden BidHamr Beskyttelse kan du ikke oprette en sag, hvis varen er gået i stykker, ikke passer med annoncen eller har et andet problem. Skriv i stedet til sælgeren i chatten.",
     laesMere: "Læs mere",
   },
   // Trin 1-4.
@@ -385,7 +402,7 @@ export const SAG_FLOW = {
   },
   // Desktop: boksen til højre.
   side: {
-    koebtFor: "Købt for {beloeb}",
+    bud: "Bud: {beloeb}",
     fristTid: "{tid} tilbage",
     fristUnder: "til at melde et problem (senest {dato})",
   },
@@ -402,7 +419,7 @@ export const SAG_FLOW = {
     titelKoeber: "Din sag",
     titelSaelger: "Sag fra køberen",
     meldt: "Sendt {dato}",
-    meldtSaelger: "Køberen har meldt: {problem}",
+    meldtSaelger: "Køberen har meldt et problem: {problem}",
     goerNu: "Det skal du gøre nu",
     endte: "Sådan endte sagen",
     videre: "Sådan går det videre",

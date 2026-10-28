@@ -194,6 +194,11 @@ describe("indhold", () => {
     }
   });
 
+  it("udgaven til sælger viser ikke staff-typen (ordet svindel) - politiudgaven gør", () => {
+    expect(dokumentTekst(bygDokument(data(), "saelger", new Date())).toLowerCase()).not.toContain("svindel");
+    expect(dokumentTekst(bygDokument(data(), "politi", new Date()))).toContain("Svindel");
+  });
+
   it("udgaven til sælger ignorerer politi-data, selv hvis de ved en fejl er hentet", () => {
     const d = data();
     const tekst = dokumentTekst(bygDokument(d, "saelger", new Date()));

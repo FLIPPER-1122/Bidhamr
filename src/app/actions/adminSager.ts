@@ -73,7 +73,7 @@ import {
   sagSvarFristKl,
 } from "@/lib/sager";
 
-import { erSagValgId, type SagValgId } from "@/lib/tekster/sagValg";
+import { erSagValgId, sagProblemTekst, type SagValgId } from "@/lib/tekster/sagValg";
 
 type AdminKlient = Awaited<ReturnType<typeof assertRole>>["admin"];
 
@@ -1501,9 +1501,9 @@ export async function aabnSagChat(
     if (part !== "koeber" && part !== "saelger") throw new BrugerFejl("Vælg køber eller sælger.");
     const { data: s } = await admin
       .from("sager")
-      .select("trade_id, type")
+      .select("trade_id, type, koeber_valg")
       .eq("id", sagId)
-      .maybeSingle<{ trade_id: string; type: string }>();
+      .maybeSingle<{ trade_id: string; type: string; koeber_valg: string | null }>();
     if (!s || !erSagType(s.type)) throw new BrugerFejl("Sagen findes ikke.");
     const { data: t } = await admin
       .from("trades")
@@ -1516,7 +1516,9 @@ export async function aabnSagChat(
     return {
       brugerId: part === "koeber" ? t.buyer_id : t.seller_id,
       tradeId: s.trade_id,
-      emne: `Sag: ${titel} (${SAG_TYPE_NAVN[s.type].split(" (")[0].toLowerCase()})`.slice(0, 200),
+      // Emnet ses af køber/sælger i /beskeder: hverdagsord, aldrig
+      // staff-typen (fx "svindel").
+      emne: `Sag: ${titel} (${sagProblemTekst(s.type, s.koeber_valg).toLowerCase()})`.slice(0, 200),
     };
   });
   if ("fejl" in forud) return forud;
