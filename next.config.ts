@@ -62,6 +62,8 @@ const nextConfig: NextConfig = {
     "/konto/data": ["./src/lib/pdf/skrifter/*.ttf"],
     // Auktionens delebillede (opengraph-image.tsx) læser skrift og logo ved runtime.
     "/auktion/**": ["./src/lib/pdf/skrifter/*.ttf", "./public/brand/bidhamr-logo-512.png"],
+    // Dokumentation til sælger/politiet (PDF) læser skrift og logo ved runtime.
+    "/admin/sager/**": ["./src/lib/pdf/skrifter/*.ttf", "./public/brand/bidhamr-logo-mail.png"],
   },
   images: {
     remotePatterns: supabaseBilleder,

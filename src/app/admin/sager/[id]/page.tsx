@@ -25,6 +25,7 @@ import HandelStatusBadge, { statusLabel } from "@/components/HandelStatusBadge";
 import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
 import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
 import SagHandlinger from "@/components/admin/sager/SagHandlinger";
+import SagDokumentation from "@/components/admin/sager/SagDokumentation";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { bidhamrDaekkerRefusion } from "@/app/actions/adminPengesikkerhed";
 import { refunderReturfragtAction } from "@/app/actions/adminReturfragt";
@@ -713,6 +714,8 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
           />
         )}
       </Kort>
+
+      <SagDokumentation admin={admin} sagId={sag.id} mig={mig} rolle={rolle} inhabil={inhabil} />
 
       <Kort titel="Log">
         {sag.log.length === 0 ? (
