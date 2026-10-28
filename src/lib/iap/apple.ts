@@ -5,6 +5,7 @@ import {
   APIException,
   AppStoreServerAPIClient,
   Environment,
+  NotificationTypeV2,
   SignedDataVerifier,
   VerificationException,
   VerificationStatus,
@@ -141,6 +142,42 @@ export async function hentAppleTransaktion(
   if (v.miljoe !== miljoe) return { fejl: "ugyldig", grund: "miljøet skiftede" };
   return { tx: v.tx };
 }
+
+// Get Notification History (App Store Server API) - sikkerhedsnet, hvis en
+// notifikation er gået tabt. Én notifikationstype pr. kald (Apple: enten
+// notificationType eller transactionId, ikke begge). Bladrer med
+// paginationToken (op til 20 pr. side) til hasMore er falsk eller maksSider.
+// Svaret er de signerede notifikationer (signedPayload), som verificeres som
+// en webhook (verificerAppleNotifikation).
+export async function hentAppleNotifikationshistorik(
+  k: AppleKonfig,
+  miljoe: AppleMiljoe,
+  type: NotificationTypeV2,
+  fraMs: number,
+  tilMs: number,
+  maksSider = 50,
+): Promise<{ signerede: string[]; flere: boolean } | AppleFejl> {
+  const klient = new AppStoreServerAPIClient(k.privatNoegle, k.keyId, k.issuerId, k.bundleId, MILJOE[miljoe]);
+  const signerede: string[] = [];
+  let side: string | null = null;
+  for (let i = 0; i < maksSider; i++) {
+    let svar: Awaited<ReturnType<AppStoreServerAPIClient["getNotificationHistory"]>>;
+    try {
+      svar = await klient.getNotificationHistory(side, { startDate: Math.floor(fraMs), endDate: Math.floor(tilMs), notificationType: type });
+    } catch (err) {
+      const status = err instanceof APIException ? `${err.httpStatusCode} ${err.apiError ?? ""}`.trim() : "netværk";
+      return { fejl: "midlertidig", grund: `Get Notification History fejlede (${status})` };
+    }
+    for (const n of svar.notificationHistory ?? []) {
+      if (typeof n.signedPayload === "string" && n.signedPayload.length > 0) signerede.push(n.signedPayload);
+    }
+    if (!svar.hasMore || !svar.paginationToken) return { signerede, flere: false };
+    side = svar.paginationToken;
+  }
+  return { signerede, flere: true };
+}
+
+export { NotificationTypeV2 };
 
 export type AppleNotifikation = {
   notificationType?: string;
