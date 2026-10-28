@@ -73,6 +73,8 @@ import {
   sagSvarFristKl,
 } from "@/lib/sager";
 
+import { erSagValgId, type SagValgId } from "@/lib/tekster/sagValg";
+
 type AdminKlient = Awaited<ReturnType<typeof assertRole>>["admin"];
 
 // 20261102210000: rettet type, "smidt ud" og sælgerens svar (med signerede
@@ -84,6 +86,9 @@ async function hentSagEkstra(admin: AdminKlient, sagId: string) {
     pakkeSmidtUd: false,
     pakkeSmidtUdBegrundelse: null as string | null,
     saelgerSvar: null as SagDetalje["saelgerSvar"],
+    kraeverOpmaerksomhed: false,
+    opmaerksomhedTekst: null as string | null,
+    koeberValg: null as SagValgId | null,
   };
   const { data: x, error } = await admin
     .from("sager")
@@ -103,6 +108,18 @@ async function hentSagEkstra(admin: AdminKlient, sagId: string) {
     pakkeSmidtUd: !!x.pakke_smidt_ud,
     pakkeSmidtUdBegrundelse: x.pakke_smidt_ud_begrundelse,
   };
+  // 20261102350000: markering til staff og køberens valg (tåler en database
+  // uden migrationen).
+  const { data: m } = await admin
+    .from("sager")
+    .select("kraever_opmaerksomhed, opmaerksomhed_tekst, koeber_valg")
+    .eq("id", sagId)
+    .maybeSingle<{ kraever_opmaerksomhed: boolean; opmaerksomhed_tekst: string | null; koeber_valg: string | null }>();
+  if (m) {
+    ud.kraeverOpmaerksomhed = !!m.kraever_opmaerksomhed;
+    ud.opmaerksomhedTekst = m.opmaerksomhed_tekst;
+    ud.koeberValg = erSagValgId(m.koeber_valg) ? m.koeber_valg : null;
+  }
   const { data: svar } = await admin
     .from("sag_svar")
     .select("id, tekst, oprettet_kl")
@@ -233,6 +250,9 @@ const KODE_FEJL: Record<string, string> = {
   afviklet: "Pengene er allerede flyttet, så typen kan ikke rettes.",
   kraever_beskyttelse:
     "Køberen har ikke BidHamr Beskyttelse på handlen, så sagen kan ikke få en type med retur (skadet / ikke som beskrevet / andet).",
+  forkert_trin:
+    "Den type passer ikke til handlen: \"Pakken er ikke kommet frem\" kræver, at pakken er på vej, eller at fragtfirmaet har meldt den leveret, og mens pakken er på vej, kan typen kun være bortkommet eller svindel.",
+  ikke_markeret: "Sagen er ikke markeret længere. Genindlæs siden.",
 };
 
 function kodeFejl(kode: string | undefined): string {
@@ -340,6 +360,11 @@ export type SagDetalje = SagListeRaekke & {
   typeRettetKl: string | null;
   pakkeSmidtUd: boolean;
   pakkeSmidtUdBegrundelse: string | null;
+  // 20261102350000: staff skal se på sagen (fx regningen for returfragt), og
+  // køberens valg i "Meld et problem" (fx "tom").
+  kraeverOpmaerksomhed: boolean;
+  opmaerksomhedTekst: string | null;
+  koeberValg: SagValgId | null;
   saelgerSvar: {
     tekst: string;
     oprettetKl: string;
@@ -1507,8 +1532,9 @@ export async function aabnSagChat(
 
 // Staff retter sagstypen (fx "Andet" -> "Varen er gået i stykker"). Logget i
 // moderation_log ('sag_type_rettet') med begrundelsen (intern). Kun før
-// afgørelsen - eller mens en anke venter. Databasen (sag_ret_type) tjekker
-// rolle, inhabilitet og BidHamr Beskyttelse. formData: sagId, type, begrundelse.
+// afgørelsen (status 'aaben', 20261102350000). Databasen (sag_ret_type)
+// tjekker rolle, inhabilitet, trinreglerne fra sag_opret og BidHamr
+// Beskyttelse. formData: sagId, type, begrundelse.
 export async function retSagType(formData: FormData): Promise<{ ok: true; tekst: string } | { fejl: string }> {
   return koer("retSagType", async () => {
     const { admin, userId } = await assertRole(AFGOER_ROLLE);
@@ -1530,5 +1556,28 @@ export async function retSagType(formData: FormData): Promise<{ ok: true; tekst:
     if (svar.kode !== "ok") throw new BrugerFejl(kodeFejl(svar.kode));
     revalider(sagId, svar.trade_id);
     return { ok: true as const, tekst: `Sagstypen er rettet til "${SAG_TYPE_NAVN[type]}".` };
+  });
+}
+
+// Staff lukker markeringen på sagen (sager.kraever_opmaerksomhed,
+// 20261102350000) - fx når regningen for returfragt er håndteret manuelt.
+// formData: sagId, note (valgfri, intern).
+export async function lukSagMarkering(formData: FormData): Promise<{ ok: true; tekst: string } | { fejl: string }> {
+  return koer("lukSagMarkering", async () => {
+    const { admin, userId } = await assertRole(AFGOER_ROLLE);
+    const sagId = tekst(formData, "sagId");
+    const note = tekst(formData, "note");
+    if (!erUuid(sagId)) throw new BrugerFejl("Sagen findes ikke.");
+    if (note.length > SAG_BEGRUNDELSE_MAKS) throw new BrugerFejl(KODE_FEJL.for_lang_tekst);
+    const { data, error } = await admin.rpc("sag_opmaerksomhed_luk", {
+      p_medarbejder: userId,
+      p_sag: sagId,
+      p_note: note || null,
+    });
+    if (error) throw new Error(error.message);
+    const svar = (data ?? { kode: "" }) as { kode: string; trade_id?: string };
+    if (svar.kode !== "ok") throw new BrugerFejl(kodeFejl(svar.kode));
+    revalider(sagId, svar.trade_id);
+    return { ok: true as const, tekst: "Markeringen er lukket." };
   });
 }

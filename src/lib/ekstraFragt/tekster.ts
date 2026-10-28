@@ -14,6 +14,29 @@ export function erEkstraFragtFejl(code: string | null | undefined, message?: str
   return code === EKSTRA_FRAGT_FEJLKODE || (message ?? "").includes("ekstra_fragt_ubetalt");
 }
 
+// Når det er en regning for returfragt i en sag (slags 'returfragt_sag'), der
+// spærrer, siger teksten "returfragt" (20261102350000).
+export const RETURFRAGT_SPAERRET_TEKST =
+  "Fristen for at betale returfragten er overskredet. Indtil regningen er betalt, kan du ikke oprette nye auktioner, sætte en vare op igen eller tilbyde en vare til næste byder. Du betaler på handlen under Mine handler. Dine aktive auktioner og handler fortsætter som normalt.";
+export const EKSTRA_OG_RETURFRAGT_SPAERRET_TEKST =
+  "Fristen for at betale ekstra fragt og returfragt er overskredet. Indtil regningerne er betalt, kan du ikke oprette nye auktioner, sætte en vare op igen eller tilbyde en vare til næste byder. Du betaler på handlen under Mine handler. Dine aktive auktioner og handler fortsætter som normalt.";
+
+export type SpaerretSlags = { returfragt: boolean; ekstra: boolean };
+
+export function ekstraFragtSpaerretTekst(s: SpaerretSlags): string {
+  if (s.returfragt && s.ekstra) return EKSTRA_OG_RETURFRAGT_SPAERRET_TEKST;
+  return s.returfragt ? RETURFRAGT_SPAERRET_TEKST : EKSTRA_FRAGT_SPAERRET_TEKST;
+}
+
+// Teksten ud fra databasens BHX01-fejl (ekstra_fragt_kraev skriver
+// "ekstra_fragt_ubetalt_returfragt:" / "ekstra_fragt_ubetalt_begge:").
+export function ekstraFragtSpaerretTekstFraFejl(message: string | null | undefined): string {
+  const m = message ?? "";
+  if (m.includes("ekstra_fragt_ubetalt_begge")) return EKSTRA_OG_RETURFRAGT_SPAERRET_TEKST;
+  if (m.includes("ekstra_fragt_ubetalt_returfragt")) return RETURFRAGT_SPAERRET_TEKST;
+  return EKSTRA_FRAGT_SPAERRET_TEKST;
+}
+
 // Frister (samme tal som databasen).
 export const EKSTRA_FRAGT_FRIST_DAGE = 14;
 export const EKSTRA_FRAGT_PAAMIND_DAGE = 7;

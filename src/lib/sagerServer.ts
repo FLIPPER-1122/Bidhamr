@@ -766,7 +766,9 @@ export async function paamindSaelgereOmSvar(): Promise<number> {
     return 0;
   }
   let antal = 0;
-  for (const k of (data ?? []) as { sag_id: string; trade_id: string; saelger_id: string; frist_kl: string }[]) {
+  // noegle (20261102350000): databasen har allerede udeladt dem, der har
+  // fået beskeden, før grænsen på 200.
+  for (const k of (data ?? []) as { sag_id: string; trade_id: string; saelger_id: string; frist_kl: string; noegle?: string | null }[]) {
     const h = await handelOgTitel(admin, k.trade_id);
     if (!h) continue;
     const r = await send(
@@ -777,7 +779,7 @@ export async function paamindSaelgereOmSvar(): Promise<number> {
         tekst: `Køberen har meldt et problem med "${h.titel}". Du kan give din forklaring med tekst og billeder til ${sagFristTekst(k.frist_kl)}. Derefter afgør BidHamr sagen ud fra billederne og det, der er skrevet.`,
         link: sagLink(k.trade_id),
         data: { trade_id: k.trade_id, sag_id: k.sag_id },
-        noegle: `sag_svar_paamind:${k.sag_id}`,
+        noegle: k.noegle ?? `sag_svar_paamind:${k.sag_id}`,
       },
       { springOverVedClaimFejl: true },
     );
@@ -820,7 +822,7 @@ export async function paamindKoebereOmProblemFrist(): Promise<number> {
     return 0;
   }
   let antal = 0;
-  for (const k of (data ?? []) as { trade_id: string; buyer_id: string; auction_id: string; frist_kl: string }[]) {
+  for (const k of (data ?? []) as { trade_id: string; buyer_id: string; auction_id: string; frist_kl: string; noegle?: string | null }[]) {
     const { data: a } = await admin.from("auctions").select("titel").eq("id", k.auction_id).maybeSingle<{ titel: string | null }>();
     const titel = a?.titel ?? "din vare";
     const r = await send(
@@ -831,7 +833,8 @@ export async function paamindKoebereOmProblemFrist(): Promise<number> {
         tekst: `Du har ${tidTilbageTekst(k.frist_kl)} til at melde et problem med "${titel}" – senest ${sagFristTekst(k.frist_kl)}. Gem pakken og labelen indtil da. Er alt i orden, så godkend varen. Så får sælgeren sine penge.`,
         link: meldProblemLink(k.trade_id),
         data: { trade_id: k.trade_id },
-        noegle: `problem_frist_paamind:${k.trade_id}:${Date.parse(k.frist_kl)}`,
+        // Samme nøgle, som databasen udelukker på (20261102350000).
+        noegle: k.noegle ?? `problem_frist_paamind:${k.trade_id}:${Date.parse(k.frist_kl)}`,
       },
       { springOverVedClaimFejl: true },
     );

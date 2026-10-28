@@ -26,6 +26,7 @@ import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
 import FaellesbeskedKnap from "@/components/admin/staffchat/FaellesbeskedKnap";
 import SagHandlinger from "@/components/admin/sager/SagHandlinger";
 import SagDokumentation from "@/components/admin/sager/SagDokumentation";
+import SagMarkering from "@/components/admin/sager/SagMarkering";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { bidhamrDaekkerRefusion } from "@/app/actions/adminPengesikkerhed";
 import { refunderReturfragtAction } from "@/app/actions/adminReturfragt";
@@ -245,6 +246,12 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
             </span>
           )}
         </p>
+        {sag.kraeverOpmaerksomhed && (
+          <SagMarkering sagId={sag.id} tekst={sag.opmaerksomhedTekst} kanLukke={!inhabil} />
+        )}
+        {sag.koeberValg === "tom" && (
+          <p className="mt-1 text-sm text-neutral-700">Køberen har valgt &quot;Pakken var tom&quot; (kun billede af pakken med labelen kræves).</p>
+        )}
         {sag.pakkeSmidtUd && (
           <div className="mt-3 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
             <p className="font-semibold">Køberen har smidt pakken ud – vurdér forklaringen</p>

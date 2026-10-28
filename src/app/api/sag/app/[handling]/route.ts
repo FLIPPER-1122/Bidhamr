@@ -27,7 +27,8 @@ import { SAG_FAELLES_TEKSTER } from "@/lib/tekster/sagValg";
 //   muligheder  { trade_id }   (kun køberen)
 //               -> { ok, muligheder: SagMuligheder, tekster }
 //   opret       { trade_id, type, beskrivelse, billeder: [{ sti, kategori }],
-//                 pakke_smidt_ud?: boolean, smidt_ud_begrundelse?: string }
+//                 pakke_smidt_ud?: boolean, smidt_ud_begrundelse?: string,
+//                 valg?: "stykker" | "annonce" | "anden_vare" | "tom" | "ikke_kommet" | "andet" }
 //               -> { ok, sag_id }
 //   svar        { sag_id, tekst, billeder: [{ sti, kategori }] }   (kun sælgeren)
 //               -> { ok }
@@ -54,6 +55,7 @@ const STATUS: Record<string, number> = {
   ugyldig_tekst: 400,
   ugyldige_billeder: 400,
   smidt_ud_begrundelse: 400,
+  ugyldigt_valg: 400,
   kontaktinfo: 400,
   ikke_fundet: 404,
   ikke_logget_ind: 401,
@@ -109,6 +111,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ han
           billeder: krop.billeder ?? [],
           pakkeSmidtUd: krop.pakke_smidt_ud === true,
           smidtUdBegrundelse: krop.smidt_ud_begrundelse,
+          valg: krop.valg,
         });
         if ("fejl" in r) return fejlSvar(r);
         return appSvar(200, { ok: true, sag_id: r.sagId });

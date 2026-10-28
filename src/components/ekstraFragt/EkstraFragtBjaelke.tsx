@@ -7,8 +7,8 @@
 // (hentMineEkstraFragtRegninger) - null/tom = ingen bjælke.
 import Link from "next/link";
 import type { MinEkstraFragt } from "@/app/actions/ekstraFragt";
-import { EKSTRA_FRAGT_SPAERRET_TEKST } from "@/lib/ekstraFragt/tekster";
-import { ekstraFragtDato, ekstraFragtHref } from "@/lib/ekstraFragt/visning";
+import { ekstraFragtSpaerretTekst } from "@/lib/ekstraFragt/tekster";
+import { ekstraFragtDato, ekstraFragtHref, erReturfragtRegning } from "@/lib/ekstraFragt/visning";
 import { kroner } from "@/lib/kroner";
 
 export default function EkstraFragtBjaelke({
@@ -28,6 +28,13 @@ export default function EkstraFragtBjaelke({
   const foerste = [...(spaerret ? spaerrende : ubetalte)].sort((a, b) => Date.parse(a.frist) - Date.parse(b.frist))[0];
   const ialt = ubetalte.reduce((s, r) => s + Number(r.beloeb_oere), 0);
   const flere = ubetalte.length > 1;
+  // Regninger for returfragt i en sag hedder "returfragt" (20261102350000).
+  const slags = (rr: MinEkstraFragt[]) => ({
+    returfragt: rr.some((x) => erReturfragtRegning(x)),
+    ekstra: rr.some((x) => !erReturfragtRegning(x)),
+  });
+  const alle = slags(ubetalte);
+  const hvad = alle.returfragt && alle.ekstra ? "ekstra fragt og returfragt" : alle.returfragt ? "returfragt" : "ekstra fragt";
 
   return (
     <div
@@ -40,13 +47,15 @@ export default function EkstraFragtBjaelke({
         <div className="min-w-0">
           <p className="text-[16px] font-semibold">
             {flere
-              ? `Du har ${ubetalte.length} ubetalte regninger for ekstra fragt på i alt ${kroner(ialt)}.`
-              : `Du har en ubetalt regning for ekstra fragt: ${kroner(ialt)}.`}
+              ? `Du har ${ubetalte.length} ubetalte regninger for ${hvad} på i alt ${kroner(ialt)}.`
+              : `Du har en ubetalt regning for ${hvad}: ${kroner(ialt)}.`}
           </p>
           <p className="mt-1 text-sm">
             {spaerret
-              ? EKSTRA_FRAGT_SPAERRET_TEKST
-              : `Fragtfirmaet har målt ${flere ? "pakker" : "en pakke"}, du har sendt, som større eller tungere end den størrelse, du valgte. Betal senest ${ekstraFragtDato(foerste.frist)}.`}
+              ? ekstraFragtSpaerretTekst(slags(spaerrende))
+              : alle.returfragt && !alle.ekstra
+                ? `Køberen har sendt varen retur til dig, og som sælger betaler du returfragten. Betal senest ${ekstraFragtDato(foerste.frist)}.`
+                : `Fragtfirmaet har målt ${flere ? "pakker" : "en pakke"}, du har sendt, som større eller tungere end den størrelse, du valgte. Betal senest ${ekstraFragtDato(foerste.frist)}.`}
           </p>
         </div>
         <Link
