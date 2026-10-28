@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { hentFirmaFakturaSalg, kraevFirma } from "@/lib/erhverv/firmaData";
+import { hentFirmaFakturaer, hentFirmaFakturaSalg, kraevFirma } from "@/lib/erhverv/firmaData";
+import FirmaFakturaKnapper from "@/components/firma/FirmaFakturaKnapper";
+import { FIRMA_FAKTURA_TEKST, MANGLER_TEKST } from "@/lib/erhverv/firmaFaktura";
 import { Kort } from "@/components/firma/dele";
 import { FakturaOplysningerListe } from "@/components/firma/FakturaOplysninger";
 import { FAKTURA_TEKST } from "@/lib/erhverv/fakturaOplysninger";
@@ -33,8 +35,10 @@ export default async function FirmaHandel({
   if (!UUID.test(trade_id)) notFound();
   // Oplysninger til firmaets egen faktura (kun firmaets egne, betalte salg -
   // firma_faktura_salg filtrerer på auth.uid()).
-  const faktura = await hentFirmaFakturaSalg(null, null, trade_id);
+  const [faktura, liste] = await Promise.all([hentFirmaFakturaSalg(null, null, trade_id), hentFirmaFakturaer()]);
   const salg = faktura?.salg[0];
+  // Fakturakladden fra firmaet til køberen (sendes kun ved firmaets tryk).
+  const kladde = liste?.fakturaer.find((f) => f.trade_id === trade_id && f.type === "faktura");
   return (
     <>
       <HandelDetalje
@@ -43,6 +47,25 @@ export default async function FirmaHandel({
         ekstraFragtParam={typeof ekstrafragt === "string" ? ekstrafragt : undefined}
         ekstraFragtPi={ekstrafragt === "retur" && typeof payment_intent === "string" ? payment_intent : undefined}
       />
+      {kladde && (
+        <div className="mx-auto mt-6 max-w-3xl">
+          <Kort id="firma-faktura" titel={FIRMA_FAKTURA_TEKST.titel} forklaring={FIRMA_FAKTURA_TEKST.intro}>
+            <FirmaFakturaKnapper
+              id={kladde.id}
+              type={kladde.type}
+              status={kladde.status}
+              fakturanummer={kladde.fakturanummer}
+              naesteNummer={liste?.indstillinger.naeste_fakturanummer ?? ""}
+              koeberEmail={kladde.data?.koeber.email ?? null}
+              mangler={(kladde.data?.mangler ?? []).map((k) => MANGLER_TEKST[k] ?? k)}
+              sendtKl={kladde.sendt_kl}
+              mailFejl={kladde.mail_fejl}
+              mailSendtKl={kladde.mail_sendt_kl}
+              kreditnotaId={kladde.kreditnota_id}
+            />
+          </Kort>
+        </div>
+      )}
       {faktura && salg && (
         <div className="mx-auto mt-6 max-w-3xl">
           <Kort id="faktura-oplysninger" titel={FAKTURA_TEKST.titel} forklaring={FAKTURA_TEKST.forklaring}>
