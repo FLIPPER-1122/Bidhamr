@@ -239,12 +239,20 @@ export function forventetTotalOere(b: BetalingsBeloeb): number | null {
 // Refusion ved medhold i en sag (public.sag_refusion_oere): ny og ny2 = kun
 // buddet (Filip, 26. okt. 2026 - gebyr og fragt refunderes ikke); gammel,
 // erhverv og erhverv2 = alt undtagen BidHamr Beskyttelse.
-export function sagRefusionOere(b: {
-  prismodel?: Prismodel | null;
-  bud_oere: number;
-  total_oere: number;
-  beskyttelse_oere: number | null;
-}): number {
+// Sagstypen (20261102210000, Filip 27. okt. 2026): bortkommet pakke og
+// transportskade = HELE beløbet (bud + gebyr + fragt) for alle modeller.
+export const SAG_TYPER_HELE_BELOEBET = ["bortkommet", "skadet"] as const;
+
+export function sagRefusionOere(
+  b: {
+    prismodel?: Prismodel | null;
+    bud_oere: number;
+    total_oere: number;
+    beskyttelse_oere: number | null;
+  },
+  type?: string | null,
+): number {
+  if (type && (SAG_TYPER_HELE_BELOEBET as readonly string[]).includes(type)) return Number(b.total_oere);
   if (erNyPrivatPrismodel(b.prismodel)) return Number(b.bud_oere);
   return Number(b.total_oere) - Number(b.beskyttelse_oere ?? 0);
 }

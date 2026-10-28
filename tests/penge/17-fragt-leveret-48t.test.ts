@@ -9,15 +9,15 @@
 //   - Uret regnes fra registreringen hos os, ikke fra DAO's (forsinkede)
 //     hændelsestidspunkt.
 //   - Samme melding to gange (og parallelle kald) giver ingen ny effekt.
-//   - Efter 48 timer uden sag frigives pengene automatisk (ingen bedømmelse).
+//   - Efter 72 timer (fra 20261102210000; før 48) uden sag frigives pengene automatisk (ingen bedømmelse).
 //   - Aldrig når der er en sag, når pakken er returneret, eller når meldingen
 //     kommer fra Shipmondo uden SHIPMONDO_LEVERET_FRIGIVER.
 //   - Når fragtfirmaet startede uret, kan køberen melde pakken bortkommet
-//     (uden billeder) inden for 48 timer, og så frigives intet. Efter 48
+//     (uden billeder) inden for 72 timer (fra 20261102210000; før 48), og så frigives intet. Efter 48
 //     timer: for_sent.
 //   - Intet ur ved blokerende indsigelse, refusion, afhentning hos sælger,
 //     lukket sag eller registreret "ikke afhentet".
-//   - 14-dages-reglen frigiver ikke før 48 timer efter leveringsmeldingen.
+//   - 14-dages-reglen frigiver ikke før 72 timer (fra 20261102210000; før 48) efter leveringsmeldingen.
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { registrerForsendelseshaendelse } from "@/lib/fragt/server";
@@ -29,12 +29,12 @@ import { CHEF_ID } from "./brugere";
 
 const TIME = 60 * 60 * 1000;
 
-let hA: TestHandel; // DAO leveret -> uret -> frigivet efter 48 t
+let hA: TestHandel; // DAO leveret -> uret -> frigivet efter 72 t
 let hB: TestHandel; // sag (bortkommet) før leveringsmeldingen -> intet ur
 let hC: TestHandel; // uret startet -> køberen melder bortkommet -> intet frigives
 let hD: TestHandel; // returneret, derefter "leveret" -> intet ur
 let hE: TestHandel; // Shipmondo uden flaget -> intet ur
-let hF: TestHandel; // indsigelse, refusion, lukket sag -> intet ur; 14 dage venter 48 t
+let hF: TestHandel; // indsigelse, refusion, lukket sag -> intet ur; 14 dage venter 72 t
 let hG: TestHandel; // "ikke afhentet" registreret -> intet ur
 let hH: TestHandel; // afhentning hos sælgeren -> intet ur
 
@@ -110,12 +110,19 @@ async function noegler(tradeId: string): Promise<string[]> {
 }
 
 // Flytter uret 49 timer tilbage (som om fristen er gået).
-async function fristUdloebet(h: TestHandel) {
+// Fristen for at melde et problem er 72 timer efter levering (20261102210000 -
+// trades.problem_frist_kl følger received_at). 60 timer: stadig inden for
+// fristen; 73 timer: udløbet.
+async function saetModtaget(h: TestHandel, timerSiden: number) {
   const { error } = await admin()
     .from("trades")
-    .update({ received_at: new Date(Date.now() - 49 * TIME).toISOString() })
+    .update({ received_at: new Date(Date.now() - timerSiden * TIME).toISOString() })
     .eq("id", h.tradeId);
   if (error) throw new Error(`received_at: ${error.message}`);
+}
+
+async function fristUdloebet(h: TestHandel) {
+  await saetModtaget(h, 73);
 }
 
 describe("fragtfirmaets leveringsmelding starter 48-timers uret", () => {
@@ -174,20 +181,23 @@ describe("fragtfirmaets leveringsmelding starter 48-timers uret", () => {
     expect(data?.modtaget_kilde).toBe("fragt");
   });
 
-  it("inden 48 timer: intet frigives", async () => {
+  it("inden fristen (72 timer): intet frigives - heller ikke efter 60 timer", async () => {
+    const { data: frist } = await admin().from("trades").select("received_at, problem_frist_kl").eq("id", hA.tradeId).single();
+    expect(Date.parse(frist!.problem_frist_kl as string) - Date.parse(frist!.received_at as string)).toBe(72 * TIME);
+    await saetModtaget(hA, 60);
     await frigivAutomatisk();
     const b = await betaling(hA.betalingId);
     expect(b.frigivet_kl).toBeNull();
     expect((await handel(hA)).status).toBe("modtaget");
   });
 
-  it("48 timer uden sag: bortkommet er for sent, og pengene frigives automatisk én gang, uden bedømmelse", async () => {
+  it("72 timer uden sag: bortkommet er for sent, og pengene frigives automatisk én gang, uden bedømmelse", async () => {
     await fristUdloebet(hA);
     const klient = await logIndSom(hA.koeber.id, hA.koeber.email);
     const { data: sag } = await klient.rpc("sag_opret", {
       p_trade: hA.tradeId,
       p_type: "bortkommet",
-      p_beskrivelse: "TEST pengetest: bortkommet efter de 48 timer.",
+      p_beskrivelse: "TEST pengetest: bortkommet efter de 72 timer.",
       p_billeder: [],
     });
     expect((sag as { kode: string }).kode).toBe("for_sent");
@@ -398,7 +408,7 @@ describe("fragtfirmaets leveringsmelding starter 48-timers uret", () => {
     await ingenUr(hF);
   });
 
-  it("14-dages-reglen: frigiver ikke før 48 timer efter leveringsmeldingen", async () => {
+  it("14-dages-reglen: frigiver ikke før 72 timer efter leveringsmeldingen", async () => {
     // Sendt for 15 dage siden; leveringsmeldingen er registreret lige nu
     // (fragtfirmaets tidspunkt 20 timer siden) og startede ikke uret (lukket sag).
     await opdaterHandel(hF, { sendt_kl: new Date(Date.now() - 15 * 24 * TIME).toISOString() });
@@ -415,21 +425,21 @@ describe("fragtfirmaets leveringsmelding starter 48-timers uret", () => {
     const fid = f!.id as string;
     const { error: lFejl } = await admin()
       .from("forsendelser")
-      .update({ leveret_kl: new Date(Date.now() - 50 * TIME).toISOString() })
+      .update({ leveret_kl: new Date(Date.now() - 74 * TIME).toISOString() })
       .eq("id", fid);
     expect(lFejl).toBeNull();
     await frigivAutomatisk();
     expect((await betaling(hF.betalingId)).frigivet_kl).toBeNull();
 
-    // Fixture: leveringsmeldingen blev først registreret for 50 timer siden
+    // Fixture: leveringsmeldingen blev først registreret for 74 timer siden
     // (den første registrering tæller). Nu frigives pengene efter 14 dage.
-    const gammel = new Date(Date.now() - 50 * TIME).toISOString();
+    const gammel = new Date(Date.now() - 74 * TIME).toISOString();
     const { error: hFejl } = await admin().from("forsendelse_haendelser").insert({
       forsendelse_id: fid,
       type: "leveret",
       tidspunkt: gammel,
       noegle: `test-leveret-F-gammel-${randomUUID()}`,
-      beskrivelse: "TEST: leveringsmelding registreret for 50 timer siden",
+      beskrivelse: "TEST: leveringsmelding registreret for 74 timer siden",
       kilde: "test",
       modtaget_kl: gammel,
     });

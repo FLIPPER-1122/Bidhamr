@@ -9,6 +9,7 @@ på hjemmesiden:
 | `/api/handel/app/send-pakke`, `modtaget`, `godkend`, `afhentning-bekraeft` | `src/lib/handel/handelstrin.ts` (`sendPakke`, `markerModtaget`, `godkendPakke`, `bekraeftAfhentning`) |
 | `/api/handel/app/status` | `src/lib/handel/handelStatus.ts` + `src/lib/betaling/betalingsstatus.ts` (som handelssiden) |
 | `/api/handel/app/andenchance-*`, `genopsaet` | `src/lib/andenchance.ts` (`hentAndenchanceStatus`, `sendAndenchanceTilbud`, `svarAndenchance`, `genopsaetAuktion`) |
+| `/api/sag/app/muligheder`, `opret`, `svar` | `src/lib/sagMuligheder.ts` (`hentSagMulighederFor`) og `src/lib/sagHandlinger.ts` (`opretSagFor`, `svarPaaSagFor`) |
 | `/api/bud/app` | `src/lib/bud/afgivBud.ts` (`afgivBud`, `saetMaksimum`) |
 | `/api/konto/adgangskode`, `/api/konto/glemt` | `src/lib/adgangskodeSkift.ts` (`skiftAdgangskode`, `nulstilAdgangskode`) |
 | `/api/konto/email`, `/api/konto/email/bekraeft` | `src/lib/emailSkift.ts` (`sendEmailSkiftKode`, `bekraeftEmailSkift`) |
@@ -92,6 +93,97 @@ Alle handlinger med `trade_id` slår handlen op først: **404 `ikke_fundet`**, h
 - **`genopsaet`** (sælgeren): serveren finder auktionen ud fra handlen - send ikke `auktion_id`. `400
   ugyldig_startpris` / `ugyldig_varighed`, `403 mitid` / `vilkaar` / `dac7`, `409 mangler_udbetalingskonto`,
   `409 allerede_genopsat` m.fl.
+
+## POST /api/sag/app/&lt;handling&gt; ("Meld et problem" og sælgerens svar)
+
+Bygget 27. okt. 2026 (migration `20261102210000_sagsregler.sql`, Filips 8 regelændringer). Appen skal **ikke** selv
+regne ud, om en sag kan oprettes, eller hvilke billeder der kræves – det hele kommer herfra, så appen og hjemmesiden er
+1:1. Teksterne står ét sted: `src/lib/tekster/sagValg.ts` (følger `showcase/opret-sag-showcase.html`).
+
+Fælles kode: `src/lib/sagMuligheder.ts` (`hentSagMulighederFor`) og `src/lib/sagHandlinger.ts` (`opretSagFor`,
+`svarPaaSagFor`) – de samme som hjemmesidens `hentSagMuligheder`, `opretSag` og `svarPaaSag`
+(`src/app/actions/sager.ts`). Beskeden "Køberen har meldt et problem" til sælgeren sendes **med det samme** (også fra
+appen). Grænser: `handel_app_ip`, `handel_app_laes_bruger` (`muligheder`) og `handel_app_bruger` (`opret`, `svar`).
+
+| Handling | Krop | Svar (200) |
+|---|---|---|
+| `muligheder` | `{ trade_id }` (kun køberen) | `{ ok, muligheder: SagMuligheder, tekster }` |
+| `opret` | `{ trade_id, type, beskrivelse, billeder: [{ sti, kategori }], pakke_smidt_ud?: boolean, smidt_ud_begrundelse?: string }` | `{ ok, sag_id }` |
+| `svar` | `{ sag_id, tekst, billeder: [{ sti, kategori }] }` (kun sælgeren) | `{ ok }` |
+
+Fejl: `{ fejl, kode }` – 400 (`ugyldig`, `ugyldig_type`, `ugyldig_beskrivelse`, `ugyldig_tekst`, `ugyldige_billeder`,
+`smidt_ud_begrundelse`, `kontaktinfo`), 401 `ikke_logget_ind`, 404 `ikke_fundet` (også når kalderen ikke er køberen),
+409 med databasens kode (`findes`, `for_sent`, `for_tidligt`, `forkert_trin`, `kraever_beskyttelse`, `billeder_kraeves`,
+`smidt_ud_ikke_mulig`, `ikke_betalt`, `lukket`, `billede_mangler` …), 429, 500. `fejl` er dansk og kan vises direkte
+(`SAG_OPRET_FEJL` / `SAG_SVAR_FEJL` i `src/lib/sager.ts`).
+
+### `muligheder` – `SagMuligheder`
+
+```ts
+{
+  kanOprettes: boolean,            // mindst ét valg kan vælges nu
+  fristKl: string | null,          // ISO. Efter levering: trades.problem_frist_kl (72 t; 48 t for handler modtaget før migrationen).
+                                   // Pakken på vej: 14 dage efter afsendelse.
+  fristEfterLevering: boolean,     // true = fristen for at melde et problem (vis "X tid tilbage")
+  bortkommetFraKl: string | null,  // pakken på vej: hvornår "Jeg har ikke fået pakken" kan vælges (7 dage)
+  harSag: boolean,                 // der findes allerede en sag - vis sagen i stedet
+  fragtLeveret: boolean,           // fragtfirmaet meldte leveret (så "ikke fået pakken" uden billeder)
+  beskyttelse: boolean,
+  typer: SagType[],                // tilladte sagstyper (til info - brug valg)
+  kraeverBeskyttelse: SagType[],   // typer, køberen mangler BidHamr Beskyttelse til (køb fra firma)
+  billederKraeves: boolean, billederFriTyper: SagType[],
+  valg: [{
+    id: "stykker" | "annonce" | "anden_vare" | "tom" | "ikke_kommet" | "andet",
+    navn: string, undertekst: string,  // trin 1 (hverdagsord - køberen ser aldrig "svindel")
+    type: SagType,                     // send denne som "type" til opret
+    retur: boolean,                    // skal varen evt. sendes retur
+    billeder: [{ kategori: "pakke_label" | "indhold", titel, hjaelp, paakraevet }],  // trin 2 - tom = spring trinnet over
+    smidtUdMulig: boolean,             // vis "Jeg har ikke pakken længere"
+    tekstforslag: string[],            // trin 3
+    hvisDuFaarRet: string,             // "Hvis du får ret" med køberens egne beløb
+    goerNu: string,                    // kvitteringens "Det skal du gøre nu"
+  }],
+}
+```
+
+`tekster` er `SAG_FAELLES_TEKSTER` (intro og hjælp til billederne, "pakken er smidt ud", trin 3, "Det sker, når du
+sender", kvitteringen, Stripe-linjen og sælgerens svar – med min./maks. tegn og frister).
+
+### Regler, appen skal kende (databasen håndhæver dem)
+
+- **Billeder (regel 1):** ét billede af pakken med labelen (`kategori: "pakke_label"`) + ét af indholdet (`"indhold"`).
+  `"andet"` er valgfri ekstra billeder. Gamle kategorier (`pakke`, `label`) virker stadig. "Jeg har ikke fået pakken"
+  kræver ingen billeder.
+- **Pakken er smidt ud (regel 2):** `pakke_smidt_ud: true` + `smidt_ud_begrundelse` (20-2000 tegn). Pakkebilledet kræves
+  så ikke (indholdet gør). Sagen markeres til staffs vurdering.
+- **"Noget andet" (regel 4):** `type: "andet"`. BidHamr retter typen bagefter (sagen viser `oprindelig_type`,
+  `type_rettet_kl`).
+- **Fristen (regel 8):** 72 timer efter levering. Læs `trades.problem_frist_kl` (parterne har læseadgang) eller brug
+  `fristKl`. Betalingsfristen på 48 timer er uændret.
+- **Upload:** som i dag – `supabase.storage.from("sag-billeder").upload("<eget id>/<handel-id>/<uuid>.<endelse>", fil,
+  { upsert: false })`. Sælgeren må uploade i sin egen mappe på handlen i svarvinduet (48 timer, kun én gang).
+
+### `svar` – sælgerens forklaring (regel 3)
+
+Sælgeren kan svare **én gang** med tekst (10-4000 tegn, ingen telefonnummer/e-mail – kode `kontaktinfo`) og op til 10
+billeder inden for **48 timer** fra sagens oprettelse, mens sagen er åben. Efter fristen: `for_sent` (staff kan stadig
+åbne en chat). Køberen får besked. Læs svaret med supabase-js (RLS: køber, sælger og staff):
+
+```ts
+supabase.from("sag_svar").select("id, sag_id, tekst, oprettet_kl").eq("sag_id", sagId).maybeSingle()
+supabase.from("sag_svar_billeder").select("id, sti, kategori, oprettet_kl").eq("sag_id", sagId)
+supabase.storage.from("sag-billeder").createSignedUrls(stier, 3600)
+```
+
+Nye læsbare kolonner på `sager`: `pakke_smidt_ud`, `pakke_smidt_ud_begrundelse`, `oprindelig_type`, `type_rettet_kl`.
+`returfragt_betaler` kan nu også være `"saelger"` (transportskade med dårlig indpakning).
+
+### Returfragt ved transportskade (regel 7)
+
+Har køberen fået medhold i en transportskade, betaler han **ikke** returfragten. `POST /api/fragt/app/returfragt`
+svarer da `{ ok: true, daekket: true, betaler: "saelger" | "bidhamr", clientSecret: null, label }` – **åbn ikke
+PaymentSheet**; adressen er gemt, og returkoden laves med det samme (`label` er resultatet af første forsøg; ellers hent
+den som efter en betaling). Ved "ikke som beskrevet" betaler køberen som før.
 
 ## POST /api/bud/app
 
@@ -265,6 +357,14 @@ Det er BidHamrs regler og handelsbetingelser, der gælder."
 - **Samtalen skal ryddes, når en anden logger ind, eller brugeren logger ud** (gem ikke `samtaleId` og beskederne
   på tværs af brugere). Samtaler, der er ældre end 90 dage, kan ikke fortsættes (`409 ukendt_samtale`).
 - Bottens tekst filtreres for ordet "forsikring" (bliver til "BidHamr Beskyttelse") - intet at gøre i appen.
+
+Ændret i `20261102310000_bot_loft_pr_gruppe.sql` (27. okt. 2026):
+- **Ny kode `429 loft_bruger_usd`**: den indloggede bruger har brugt sit eget døgnbudget. Vis `fejl`-teksten (den
+  henviser til /kontakt) og knappen til kontaktformularen - samme håndtering som `loft_bruger`.
+- **`429 loft_alle` uden login** har nu en tekst, der beder brugeren logge ind (indloggede har altid budget
+  tilbage). Vis `fejl`-teksten og et link til login og til kontaktformularen.
+- Filteret: selve ordet "forsikring" (og bøjninger) bliver til "BidHamr Beskyttelse", sammensatte ord som
+  "indboforsikring" til "dækning" - intet at gøre i appen.
 
 ## Køb af boost-point i appen: GET/POST /api/app/boost/iap (Apple og Google)
 

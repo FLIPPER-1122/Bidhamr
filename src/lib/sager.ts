@@ -1,9 +1,11 @@
 // Sager fra køberen: fælles konstanter, typer og tekster for server actions og
 // frontend. Ingen server-only-import - frontend må gerne bruge dem.
 // Reglerne er spejlet i supabase/migrations/20261003010000_sager.sql
-// (sag_opret, sag_valider_billeder, storage-bucket 'sag-billeder').
+// (sag_opret, sag_valider_billeder, storage-bucket 'sag-billeder') og
+// 20261102210000_sagsregler.sql (de 8 regelændringer, Filip 27. okt. 2026).
 
-export const SAG_TYPER = ["bortkommet", "skadet", "ikke_som_beskrevet", "svindel"] as const;
+// 'andet' (20261102210000): en rigtig type - staff kan rette den (sag_ret_type).
+export const SAG_TYPER = ["bortkommet", "skadet", "ikke_som_beskrevet", "svindel", "andet"] as const;
 export type SagType = (typeof SAG_TYPER)[number];
 
 export const SAG_STATUSSER = [
@@ -15,10 +17,22 @@ export const SAG_STATUSSER = [
 ] as const;
 export type SagStatus = (typeof SAG_STATUSSER)[number];
 
-export const SAG_BILLEDE_KATEGORIER = ["pakke", "label", "indhold", "andet"] as const;
+// 'pakke_label' (20261102210000): ét billede af pakken med labelen.
+export const SAG_BILLEDE_KATEGORIER = ["pakke", "label", "pakke_label", "indhold", "andet"] as const;
 export type SagBilledeKategori = (typeof SAG_BILLEDE_KATEGORIER)[number];
-// Kræves (mindst ét af hver), når pakken er modtaget.
-export const SAG_KRAEVEDE_KATEGORIER: readonly SagBilledeKategori[] = ["pakke", "label", "indhold"];
+// Kræves, når pakken er modtaget (regel 1, Filip 27. okt. 2026): et billede af
+// pakken med labelen ('pakke_label' - eller 'pakke') OG et af indholdet. Ved
+// "pakken er smidt ud" kræves kun indholdet. Samme regel som sag_opret.
+export const SAG_KRAEVEDE_KATEGORIER: readonly SagBilledeKategori[] = ["pakke_label", "indhold"];
+export const SAG_PAKKE_KATEGORIER: readonly SagBilledeKategori[] = ["pakke_label", "pakke"];
+export const SAG_SMIDT_UD_BEGRUNDELSE_MIN = 20;
+export const SAG_SMIDT_UD_BEGRUNDELSE_MAKS = 2000;
+
+// Opfylder billederne kravet (når pakken er modtaget, ikke "ikke kommet frem")?
+export function sagBillederOpfylder(kategorier: readonly string[], pakkeSmidtUd: boolean): boolean {
+  const pakke = pakkeSmidtUd || kategorier.some((k) => (SAG_PAKKE_KATEGORIER as readonly string[]).includes(k));
+  return pakke && kategorier.includes("indhold");
+}
 
 export const SAG_BUCKET = "sag-billeder";
 export const SAG_MAKS_BILLEDER = 10;
@@ -35,7 +49,36 @@ export const SAG_BESKRIVELSE_MAKS = 4000;
 export const SAG_BEGRUNDELSE_MAKS = 2000;
 
 // Frister (timer/dage). Spejlet i sag_opret, sag_afgoer og handel_auto_frigiv.
-export const SAG_FRIST_TIMER_EFTER_MODTAGET = 48;
+// Fristen for at melde et problem efter levering (regel 8, Filip 27. okt.
+// 2026 - før 48): public.sag_problem_frist_timer(). Fristen er låst pr. handel
+// i trades.problem_frist_kl (handler modtaget før 20261102210000 har 48 t) -
+// brug sagProblemFristKl.
+export const SAG_FRIST_TIMER_EFTER_MODTAGET = 72;
+const SAG_GAMMEL_FRIST_TIMER = 48;
+// Sælgerens frist for at svare på en sag (regel 3): 48 timer fra oprettelsen.
+export const SAG_SVAR_FRIST_TIMER = 48;
+export const SAG_SVAR_PAAMIND_TIMER_FOER = 12;
+export const SAG_SVAR_MIN = 10;
+export const SAG_SVAR_MAKS = 4000;
+export const SAG_SVAR_MAKS_BILLEDER = 10;
+// Påmindelse til køberen før fristen for at melde et problem (regel 5).
+export const SAG_PROBLEM_PAAMIND_TIMER_FOER = 6;
+
+// Fristen for at melde et problem: trades.problem_frist_kl, ellers (database
+// før 20261102210000) received_at + 48 timer.
+export function sagProblemFristKl(receivedAt: string | null, problemFristKl?: string | null): string | null {
+  if (problemFristKl && !Number.isNaN(Date.parse(problemFristKl))) return new Date(problemFristKl).toISOString();
+  const ms = receivedAt ? Date.parse(receivedAt) : Number.NaN;
+  if (Number.isNaN(ms)) return null;
+  return new Date(ms + SAG_GAMMEL_FRIST_TIMER * 60 * 60 * 1000).toISOString();
+}
+
+// Sælgerens svarfrist.
+export function sagSvarFristKl(oprettetKl: string): string | null {
+  const ms = Date.parse(oprettetKl);
+  if (Number.isNaN(ms)) return null;
+  return new Date(ms + SAG_SVAR_FRIST_TIMER * 60 * 60 * 1000).toISOString();
+}
 export const SAG_BORTKOMMET_EFTER_DAGE = 7;
 // Pengene frigives automatisk 14 dage efter afsendelse, hvis køberen hverken
 // har trykket "modtaget" eller oprettet en sag.
@@ -93,6 +136,7 @@ export const SAG_TYPE_NAVN: Record<SagType, string> = {
   skadet: "Varen er gået i stykker under forsendelsen",
   ikke_som_beskrevet: "Varen er ikke som beskrevet",
   svindel: "Svindel (tom pakke, helt anden vare, falsk kopi eller aldrig sendt)",
+  andet: "Andet (BidHamr vurderer typen)",
 };
 
 export const SAG_STATUS_NAVN: Record<SagStatus, string> = {
@@ -106,6 +150,7 @@ export const SAG_STATUS_NAVN: Record<SagStatus, string> = {
 export const SAG_KATEGORI_NAVN: Record<SagBilledeKategori, string> = {
   pakke: "Pakken",
   label: "Labelen",
+  pakke_label: "Pakken med labelen",
   indhold: "Indholdet",
   andet: "Andet",
 };
@@ -120,7 +165,7 @@ export function erSagBilledeKategori(v: unknown): v is SagBilledeKategori {
 
 // Kræver typen BidHamr Beskyttelse? (svindel og bortkommet gør aldrig)
 export function sagKraeverBeskyttelse(type: SagType): boolean {
-  return type === "skadet" || type === "ikke_som_beskrevet";
+  return type === "skadet" || type === "ikke_som_beskrevet" || type === "andet";
 }
 
 const FIL_ENDELSE: Record<string, string> = {
@@ -163,10 +208,12 @@ export const SAG_OPRET_FEJL: Record<string, string> = {
   ikke_betalt: "Der kan ikke oprettes en sag på handlen lige nu, fordi pengene allerede er udbetalt eller sendt tilbage til køberen.",
   kraever_beskyttelse:
     "Denne type sag kræver BidHamr Beskyttelse. Uden BidHamr Beskyttelse må du og sælgeren selv finde en løsning.",
-  for_sent: `Fristen er udløbet. En sag skal oprettes inden for ${SAG_FRIST_TIMER_EFTER_MODTAGET} timer, efter pakken er markeret som modtaget eller meldt leveret af fragtfirmaet.`,
+  for_sent: "Fristen for at melde et problem er udløbet. Den løber fra, at pakken er leveret.",
   for_tidligt: `Du kan melde pakken bortkommet, når der er gået ${SAG_BORTKOMMET_EFTER_DAGE} dage, siden sælgeren sendte den.`,
   forkert_trin: "Den type sag kan ikke oprettes på handlen lige nu.",
-  billeder_kraeves: "Tilføj mindst ét billede af pakken, ét af labelen og ét af indholdet.",
+  billeder_kraeves: "Tilføj et billede af pakken med labelen og et billede af indholdet.",
+  smidt_ud_begrundelse: `Forklar med mindst ${SAG_SMIDT_UD_BEGRUNDELSE_MIN} tegn, hvorfor du ikke har pakken længere.`,
+  smidt_ud_ikke_mulig: "Du skal ikke bruge billeder af pakken til denne sag.",
   ugyldige_billeder: "Et eller flere billeder er ugyldige. Upload dem igen.",
   billede_mangler: "Et billede blev ikke uploadet korrekt. Upload det igen.",
   for_mange_billeder: `Du kan højst tilføje ${SAG_MAKS_BILLEDER} billeder til en sag.`,
@@ -204,6 +251,20 @@ export const SAG_ANKE_STATUS_NAVN: Record<SagAnkeStatus, string> = {
   afventer: "Anken behandles",
   stadfaestet: "Anken er afgjort – afgørelsen står",
   omgjort: "Anken er afgjort – afgørelsen er ændret",
+};
+
+// Fejlkoder fra sag_svar_send (sælgerens svar) -> dansk tekst til sælgeren.
+export const SAG_SVAR_FEJL: Record<string, string> = {
+  ikke_logget_ind: "Du skal være logget ind.",
+  ikke_fundet: "Sagen findes ikke.",
+  lukket: "Sagen er afgjort, så du kan ikke svare her længere. Skriv til BidHamr, hvis du har spørgsmål.",
+  for_sent: `Fristen for at svare (${SAG_SVAR_FRIST_TIMER} timer) er udløbet. BidHamr skriver til dig, hvis vi har brug for mere.`,
+  findes: "Du har allerede svaret på sagen.",
+  ugyldig_tekst: `Skriv din forklaring med mindst ${SAG_SVAR_MIN} tegn (højst ${SAG_SVAR_MAKS}).`,
+  kontaktinfo: "Skriv ikke telefonnummer, e-mail eller andre kontaktoplysninger i dit svar.",
+  ugyldige_billeder: "Et eller flere billeder er ugyldige. Upload dem igen.",
+  billede_mangler: "Et billede blev ikke uploadet korrekt. Upload det igen.",
+  for_mange_billeder: `Du kan højst tilføje ${SAG_SVAR_MAKS_BILLEDER} billeder.`,
 };
 
 // Fejlkoder fra sag_anke_indgiv -> dansk tekst til brugeren.

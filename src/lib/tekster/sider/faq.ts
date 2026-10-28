@@ -5,8 +5,9 @@
 // den fra svaret under "Forbudte varer".
 // OPDATER, når kontaktformularen (/kontakt) er bygget: henvis til den i stedet
 // for kun mail.
-// OPDATER, når GLS-sporing er bygget: 48-timers fristen starter da ved
-// afhentning i pakkeshoppen, ikke ved "Jeg har modtaget pakken".
+// Fristen for at melde et problem er 72 timer efter levering (Filip, 27. okt.
+// 2026). Den starter ved fragtfirmaets leveringsmelding eller "Jeg har
+// modtaget pakken".
 
 import type { Tekstside } from "./typer";
 
@@ -164,17 +165,17 @@ export const FAQ_SIDE: Tekstside = {
       punkter: [
         {
           spoergsmaal: "Hvordan opretter jeg en sag?",
-          svar: "På handelssiden. Du har 48 timer efter, at du har trykket \"Jeg har modtaget pakken\". Du skal uploade billeder af pakken, labelen og indholdet. Uden billeder kan sagen ikke oprettes.",
+          svar: "På handelssiden under \"Hvordan er varen?\". Du har 72 timer, efter pakken er leveret. Tag et billede af pakken med labelen og et af indholdet – derfor skal du gemme pakken og labelen. Har du smidt pakken ud, kan du forklare hvorfor, og så vurderer BidHamr det.",
         },
         {
           spoergsmaal: "Min pakke er ikke kommet. Hvad gør jeg?",
-          svar: "Du kan melde pakken bortkommet 7 dage efter, at sælgeren har sendt den. Vi tjekker sporingen og hjælper dig.",
+          svar: "Du kan melde pakken bortkommet 7 dage efter, at sælgeren har sendt den – eller med det samme, hvis fragtfirmaet melder den leveret, og du ikke har fået den. Vi tjekker sporingen og hjælper dig. Får du medhold, får du hele beløbet tilbage – bud, gebyr og fragt.",
         },
         {
           spoergsmaal: "Hvad får jeg tilbage, hvis jeg får medhold?",
           // ROADMAP-BESLUTNINGER afsnit 3 (Filip, 26. okt. 2026): kun buddet refunderes,
           // ikke gebyr og fragt. Gælder ikke køb fra erhverv.
-          svar: "Prisen for varen – altså dit bud. Gebyret og fragten får du ikke tilbage. Skal varen sendes retur, betaler du selv returfragten og får pengene, når pakken er afleveret. Det gælder ikke, når du køber af et firma.",
+          svar: "Er pakken ikke kommet frem, eller er varen gået i stykker under forsendelsen, får du hele beløbet tilbage – bud, gebyr og fragt – og du betaler ikke returfragten. I andre sager (fx varen passer ikke med annoncen) får du prisen for varen – altså dit bud. Skal varen så sendes retur, betaler du selv returfragten og får pengene, når pakken er afleveret. Køber du af et firma, gælder reglerne for firmaer.",
         },
         {
           spoergsmaal: "Hvornår bliver pengene flyttet efter en afgørelse?",
@@ -196,7 +197,7 @@ export const FAQ_SIDE: Tekstside = {
         },
         {
           spoergsmaal: "Hvornår får jeg mine penge?",
-          svar: "Pengene bliver frigivet til dig, når køberen har godkendt varen, eller når køberen ikke har oprettet en sag inden for 48 timer. Ved afhentning bliver de frigivet, så snart du har tastet køberens kode. Vores betalingspartner Stripe sender pengene til din bankkonto hver 14. dag. Har du solgt flere ting i den periode, kommer de samlet i én udbetaling.",
+          svar: "Pengene bliver frigivet til dig, når køberen har godkendt varen, eller når køberen ikke har meldt et problem inden for 72 timer, efter pakken er leveret. Ved afhentning bliver de frigivet, så snart du har tastet køberens kode. Vores betalingspartner Stripe sender pengene til din bankkonto hver 14. dag. Har du solgt flere ting i den periode, kommer de samlet i én udbetaling.",
         },
         {
           spoergsmaal: "Må jeg skrive mit telefonnummer i auktionen?",

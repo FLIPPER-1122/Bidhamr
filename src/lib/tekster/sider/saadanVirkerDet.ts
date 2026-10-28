@@ -4,9 +4,9 @@
 // Husk: sig aldrig, at BidHamr modtager eller holder pengene – betalingen
 // håndteres af vores betalingspartner Stripe.
 //
-// OPDATER, når GLS-sporing er bygget: i dag starter 48-timers fristen, når
-// køberen trykker "Jeg har modtaget pakken". Bagefter starter den, når
-// sporingen viser, at pakken er hentet.
+// Fristen for at melde et problem er 72 timer efter levering (Filip, 27. okt.
+// 2026). Den starter ved fragtfirmaets leveringsmelding eller "Jeg har
+// modtaget pakken".
 
 import type { Tekstside } from "./typer";
 
@@ -58,12 +58,12 @@ export const SAADAN_VIRKER_DET: Tekstside = {
         {
           titel: "Tryk \"Jeg har modtaget pakken\"",
           tekst:
-            "Se varen godt efter. Er der noget galt, har du 48 timer til at oprette en sag. Så længe sagen kører, får sælgeren ikke pengene.",
+            "Se varen godt efter, og gem pakken og labelen. Er der noget galt, har du 72 timer til at melde et problem. Så længe sagen kører, får sælgeren ikke pengene.",
         },
         {
           titel: "Godkend og bedøm sælgeren",
           tekst:
-            "Er alt i orden, godkender du handlen og giver sælgeren 1-5 stjerner. Så får sælgeren sine penge. Opretter du ingen sag inden for 48 timer, går pengene automatisk til sælgeren.",
+            "Er alt i orden, godkender du handlen og giver sælgeren 1-5 stjerner. Så får sælgeren sine penge. Melder du ikke et problem inden for 72 timer, går pengene automatisk til sælgeren.",
         },
       ],
     },
@@ -99,7 +99,7 @@ export const SAADAN_VIRKER_DET: Tekstside = {
         {
           titel: "Få dine penge",
           tekst:
-            "Pengene bliver frigivet til dig, når køberen har godkendt varen, eller når køberen ikke har oprettet en sag inden for 48 timer. Ved afhentning bliver de frigivet, så snart du har tastet koden. Vores betalingspartner Stripe sender pengene til din bankkonto hver 14. dag. Har du solgt flere ting i den periode, kommer de samlet i én udbetaling.",
+            "Pengene bliver frigivet til dig, når køberen har godkendt varen, eller når køberen ikke har meldt et problem inden for 72 timer, efter pakken er leveret. Ved afhentning bliver de frigivet, så snart du har tastet koden. Vores betalingspartner Stripe sender pengene til din bankkonto hver 14. dag. Har du solgt flere ting i den periode, kommer de samlet i én udbetaling.",
         },
       ],
       note: "Nye udbetalingskonter har typisk en ventetid hos Stripe på cirka 7 dage før den første udbetaling.",
@@ -153,11 +153,11 @@ export const SAADAN_VIRKER_DET: Tekstside = {
       id: "sager",
       overskrift: "Hvis noget går galt",
       punkter: [
-        "Du opretter en sag på handelssiden inden for 48 timer efter, at du har modtaget pakken. Du skal uploade billeder af pakken, labelen og indholdet.",
+        "Du melder et problem på handelssiden inden for 72 timer efter, at pakken er leveret. Tag et billede af pakken med labelen og et af indholdet.",
         "Er pakken ikke kommet frem, kan du melde det 7 dage efter, at den er sendt.",
-        "En medarbejder hos BidHamr ser på sagen og træffer en afgørelse. Pengene flyttes først 4 dage efter afgørelsen.",
+        "Sælgeren kan give sin forklaring med tekst og billeder inden for 48 timer. En medarbejder hos BidHamr ser på sagen og træffer en afgørelse. Pengene flyttes først 4 dage efter afgørelsen.",
         "Er du uenig i afgørelsen, kan du anke én gang. Anken behandles af en anden medarbejder, og afgørelsen på anken er endelig.",
-        "Får du medhold og skal sende varen retur, betaler du selv returfragten.",
+        "Er pakken ikke kommet frem, eller er varen gået i stykker under forsendelsen, og får du medhold, får du hele beløbet tilbage og betaler ikke returfragten. I andre sager betaler du selv returfragten, hvis varen skal sendes retur.",
       ],
       links: [{ tekst: "Spørgsmål og svar", href: "/faq" }],
     },

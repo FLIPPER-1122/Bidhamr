@@ -234,7 +234,24 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
         <h1 className="mt-2 break-words text-xl font-bold text-neutral-900 sm:text-2xl">
           {sag.auktionTitel ?? "(slettet auktion)"}
         </h1>
-        <p className="mt-1 text-sm text-neutral-700">{SAG_TYPE_NAVN[sag.type]}</p>
+        <p className="mt-1 text-sm text-neutral-700">
+          {SAG_TYPE_NAVN[sag.type]}
+          {sag.oprindeligType && (
+            <span className="text-neutral-500">
+              {" "}
+              · Rettet fra &quot;{SAG_TYPE_NAVN[sag.oprindeligType]}&quot;
+              {sag.typeRettetKl ? ` ${sagTid(sag.typeRettetKl)}` : ""}
+            </span>
+          )}
+        </p>
+        {sag.pakkeSmidtUd && (
+          <div className="mt-3 rounded-lg border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
+            <p className="font-semibold">Køberen har smidt pakken ud – vurdér forklaringen</p>
+            {sag.pakkeSmidtUdBegrundelse && (
+              <p className="mt-1 whitespace-pre-wrap break-words">{sag.pakkeSmidtUdBegrundelse}</p>
+            )}
+          </div>
+        )}
         <p className="mt-1 text-sm text-neutral-500">
           {SAG_STATUS_NAVN[sag.status]} · Oprettet {sagTid(sag.oprettetKl)}
         </p>
@@ -344,6 +361,28 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
         <Kort titel="Køberens beskrivelse">
           <p className="whitespace-pre-wrap break-words text-sm text-neutral-800">{sag.beskrivelse}</p>
         </Kort>
+        <Kort titel="Sælgerens forklaring">
+          {sag.saelgerSvar ? (
+            <>
+              <p className="text-xs text-neutral-500">Sendt {sagTid(sag.saelgerSvar.oprettetKl)}</p>
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-800">{sag.saelgerSvar.tekst}</p>
+              {sag.saelgerSvar.billeder.length > 0 && (
+                <div className="mt-3">
+                  <SagBilleder billeder={sag.saelgerSvar.billeder} />
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-neutral-600">
+              Sælgeren har ikke svaret
+              {sag.saelgerSvarFristKl
+                ? sag.saelgerKanSvare
+                  ? ` endnu (frist ${sagTid(sag.saelgerSvarFristKl)}).`
+                  : ` (fristen udløb ${sagTid(sag.saelgerSvarFristKl)}). Åbn en chat med sælgeren, hvis du har brug for hans forklaring.`
+                : "."}
+            </p>
+          )}
+        </Kort>
         <Kort titel="Varen i auktionen">
           <dl className="space-y-2 text-sm">
             <div className="flex flex-wrap gap-x-2">
@@ -440,7 +479,9 @@ export default async function AdminSag({ params }: { params: Promise<{ id: strin
                     : "Køberen skal sende varen retur"}
                   {sag.returfragtBetaler === "koeber" && " · Køberen betaler selv returfragten"}
                   {/* Sager afgjort før 3. oktober 2026, hvor BidHamr betalte. */}
-                  {sag.returfragtBetaler === "bidhamr" && " · BidHamr betaler returfragten"}
+                  {sag.returfragtBetaler === "bidhamr" && " · BidHamr betaler returfragten (god indpakning)"}
+                  {sag.returfragtBetaler === "saelger" &&
+                    " · Sælgeren betaler returfragten (dårlig indpakning) – regning som ekstra fragt, når returen er afleveret"}
                   {returfragt && (
                     <span className="mt-1 block">
                       Returfragt: {RETURFRAGT_STATUS[returfragt.status] ?? returfragt.status}

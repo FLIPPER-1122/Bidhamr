@@ -22,7 +22,7 @@ import {
   type MinEkstraFragt,
 } from "@/app/actions/ekstraFragt";
 import { EKSTRA_FRAGT_FRIST_OVERSKREDET_UENIG, EKSTRA_FRAGT_SPAERRET_TEKST } from "@/lib/ekstraFragt/tekster";
-import { ekstraFragtDato, maalingTekst, valgtStoerrelseNavn } from "@/lib/ekstraFragt/visning";
+import { ekstraFragtDato, erReturfragtRegning, maalingTekst, valgtStoerrelseNavn } from "@/lib/ekstraFragt/visning";
 import { transportoerNavn } from "@/lib/fragt/types";
 import { kroner } from "@/lib/kroner";
 import { useHydreret } from "@/lib/useHydreret";
@@ -148,7 +148,7 @@ export default function EkstraFragtKort({
     <Ramme titelId={titelId} tone={r.spaerrer ? "fejl" : "advarsel"}>
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
         <h2 id={titelId} className="text-[20px] leading-tight text-tekst lg:text-[22px]">
-          Ekstra fragt: <span className="font-bold tabular-nums">{beloeb}</span>
+          {erReturfragtRegning(r) ? "Returfragt" : "Ekstra fragt"}: <span className="font-bold tabular-nums">{beloeb}</span>
         </h2>
         <span
           className={`inline-block rounded-none border px-2.5 py-0.5 text-xs font-semibold ${
@@ -158,13 +158,22 @@ export default function EkstraFragtKort({
           {r.spaerrer ? "Fristen er overskredet" : `Betal senest ${ekstraFragtDato(r.frist)}`}
         </span>
       </div>
-      <p className="mt-2 text-[15px] text-tekst">
-        Du valgte <strong className="font-semibold">{valgtStoerrelseNavn(r.valgt_stoerrelse)}</strong>, men{" "}
-        {transportoerNavn(r.transportoer) ?? "fragtfirmaet"} målte pakken til{" "}
-        <strong className="font-semibold">{maalingTekst(r)}</strong>. Derfor har{" "}
-        {transportoerNavn(r.transportoer) ?? "fragtfirmaet"} opkrævet {beloeb} ekstra. Det er fragtfirmaets pris, og som sælger betaler du forskellen.
-      </p>
-      {r.forklaring && <p className="mt-2 text-sm whitespace-pre-wrap break-words text-tekst-daempet">{r.forklaring}</p>}
+      {erReturfragtRegning(r) ? (
+        <p className="mt-2 text-[15px] text-tekst">
+          Varen blev skadet under fragten, og billederne viser, at den ikke var pakket forsvarligt. Køberen har sendt
+          varen retur til dig, og som sælger betaler du returfragten på {beloeb}.
+        </p>
+      ) : (
+        <p className="mt-2 text-[15px] text-tekst">
+          Du valgte <strong className="font-semibold">{valgtStoerrelseNavn(r.valgt_stoerrelse)}</strong>, men{" "}
+          {transportoerNavn(r.transportoer) ?? "fragtfirmaet"} målte pakken til{" "}
+          <strong className="font-semibold">{maalingTekst(r)}</strong>. Derfor har{" "}
+          {transportoerNavn(r.transportoer) ?? "fragtfirmaet"} opkrævet {beloeb} ekstra. Det er fragtfirmaets pris, og som sælger betaler du forskellen.
+        </p>
+      )}
+      {r.forklaring && !erReturfragtRegning(r) && (
+        <p className="mt-2 text-sm whitespace-pre-wrap break-words text-tekst-daempet">{r.forklaring}</p>
+      )}
       <Genaabnet r={r} />
       {r.afgoerelse === "fastholdt" && r.afgoerelse_begrundelse && (
         <p className="mt-2 rounded-lg border border-kant bg-white/70 px-3 py-2 text-sm text-tekst">

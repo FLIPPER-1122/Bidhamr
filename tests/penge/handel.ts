@@ -294,7 +294,9 @@ export async function sendWebhook(
   return { status: res.status, body: (await res.json()) as Record<string, unknown> };
 }
 
-export function piId(clientSecret: string): string {
+export function piId(clientSecret: string | null): string {
+  // null = dækket returfragt (ingen betaling) - må ikke ske her.
+  if (!clientSecret) throw new Error("Ingen client_secret (dækket returfragt?)");
   return clientSecret.split("_secret_")[0];
 }
 

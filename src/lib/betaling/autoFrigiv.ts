@@ -2,7 +2,7 @@ import "server-only";
 
 // Server-only: automatisk frigivelse til sælgeren (ROADMAP-BESLUTNINGER
 // "Sager (Filip, 3. oktober 2026)"):
-//   - 48 timer efter "modtaget", uden sag - køberen trykkede selv, eller
+//   - fristen efter "modtaget" (trades.problem_frist_kl: 72 t; 48 t for ældre handler), uden sag - køberen trykkede selv, eller
 //     fragtfirmaets leveringsmelding startede uret (fragtUr.ts,
 //     trades.modtaget_kilde = 'fragt').
 //   - 14 dage efter afsendelse, hvis køberen hverken har trykket "modtaget"
@@ -72,9 +72,9 @@ export async function frigivAutomatisk(): Promise<number> {
     await send(f.buyer_id, "pakke_leveret", {
       titel: "Handlen er afsluttet",
       tekst: viaFragt
-        ? `Der er gået 48 timer, siden fragtfirmaet meldte "${titel}" leveret, uden at der er oprettet en sag. Handlen er afsluttet, og pengene er frigivet til sælgeren.`
+        ? `Fristen for at melde et problem med "${titel}" er udløbet, uden at der er meldt et problem. Handlen er afsluttet, og pengene er frigivet til sælgeren.`
         : f.grund === "48_timer"
-          ? `Der er gået 48 timer, siden du modtog "${titel}", uden at der er oprettet en sag. Handlen er afsluttet, og pengene er frigivet til sælgeren.`
+          ? `Fristen for at melde et problem med "${titel}" er udløbet, uden at der er meldt et problem. Handlen er afsluttet, og pengene er frigivet til sælgeren.`
           : `Der er gået 14 dage, siden sælgeren sendte "${titel}", uden at du har markeret pakken som modtaget eller oprettet en sag. Handlen er afsluttet automatisk, og pengene er frigivet til sælgeren.`,
       link: `/mine-handler/${f.trade_id}`,
       data: { trade_id: f.trade_id },

@@ -222,27 +222,48 @@ function goerNuSag(sag: MinSag): { tekst: string; handling: boolean } {
   // ny prismodel = kun buddet; gammel handel med tilkøbt BidHamr Beskyttelse =
   // alt undtagen Beskyttelsen. Returfragten betaler køberen selv direkte til
   // fragtfirmaet.
-  const hvad = sag.nyPrismodel
-    ? "prisen for varen (dit bud)"
-    : sag.beskyttelse
-      ? "pengene for varen, gebyret og fragten"
-      : "alle pengene";
-  const beskyttelseNote = sag.nyPrismodel
-    ? " Gebyr og fragt får du ikke tilbage."
-    : sag.beskyttelse
-      ? " Prisen for BidHamr Beskyttelse får du ikke tilbage."
-      : "";
+  // 20261102210000: bortkommet pakke og transportskade = hele beløbet.
+  const hele = sag.type === "bortkommet" || sag.type === "skadet";
+  const hvad = hele
+    ? "hele beløbet – bud, gebyr og fragt"
+    : sag.nyPrismodel
+      ? "prisen for varen (dit bud)"
+      : sag.beskyttelse
+        ? "pengene for varen, gebyret og fragten"
+        : "alle pengene";
+  const beskyttelseNote = hele
+    ? ""
+    : sag.nyPrismodel
+      ? " Gebyr og fragt får du ikke tilbage."
+      : sag.beskyttelse
+        ? " Prisen for BidHamr Beskyttelse får du ikke tilbage."
+        : "";
+  // Hvem betaler returfragten (sager.returfragt_betaler).
+  const rfKoeber = sag.returfragtBetaler === "saelger" || sag.returfragtBetaler === "bidhamr"
+    ? "Du betaler ikke returfragten."
+    : "Du betaler selv returfragten.";
+  const rfSaelger =
+    sag.returfragtBetaler === "saelger"
+      ? "Du betaler returfragten, fordi varen ikke var pakket forsvarligt. Du får en regning, når returpakken er afleveret."
+      : sag.returfragtBetaler === "bidhamr"
+        ? "BidHamr betaler returfragten."
+        : "Køberen betaler selv returfragten.";
 
   switch (sag.status) {
     case "aaben":
       return k
         ? {
-            tekst: `Du skal ikke gøre noget nu. BidHamr kigger på sagen og vender tilbage hurtigst muligt.${
-              sag.nyPrismodel ? ` ${SAG_REFUSION_NY}` : ""
+            tekst: `Du skal ikke gøre noget nu. BidHamr ser på sagen. Sælgeren får ikke pengene, mens sagen kører.${
+              sag.nyPrismodel && !hele ? ` ${SAG_REFUSION_NY}` : ""
             }`,
             handling: false,
           }
-        : { tekst: "Du skal ikke gøre noget nu. Udbetalingen venter, mens BidHamr kigger på sagen.", handling: false };
+        : sag.kanSvare && sag.svarFristKl
+          ? {
+              tekst: `BidHamr ser på sagen. Du kan give din forklaring med tekst og billeder indtil ${datoOgTid(sag.svarFristKl)}. Du får ikke pengene, før sagen er afgjort.`,
+              handling: true,
+            }
+          : { tekst: "Du skal ikke gøre noget nu. Du får ikke pengene, før sagen er afgjort.", handling: false };
     case "afventer_retur":
       // Inden for ankefristen venter køberen med at sende varen: sælgeren kan
       // anke, og en omgørelse ville ellers give sælgeren både varen og pengene.
@@ -250,11 +271,11 @@ function goerNuSag(sag: MinSag): { tekst: string; handling: boolean } {
         const frist = datoOgTid(sag.returVenterTilKl);
         return k
           ? {
-              tekst: `Du har fået medhold. Sælgeren kan anke afgørelsen indtil ${frist}. Vent med at sende varen, til ankefristen er udløbet ${frist}, eller til BidHamr giver dig besked. Derefter sender du varen retur til sælgeren og betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}`,
+              tekst: `Du har fået medhold. Sælgeren kan anke afgørelsen indtil ${frist}. Vent med at sende varen, til ankefristen er udløbet ${frist}, eller til BidHamr giver dig besked. Derefter sender du varen retur til sælgeren. ${rfKoeber} Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}`,
               handling: false,
             }
           : {
-              tekst: `Køberen har fået medhold og sender varen retur til dig, når ankefristen er udløbet ${frist}. Køberen betaler selv returfragten.`,
+              tekst: `Køberen har fået medhold og sender varen retur til dig, når ankefristen er udløbet ${frist}. ${rfSaelger}`,
               handling: false,
             };
       }
@@ -264,7 +285,7 @@ function goerNuSag(sag: MinSag): { tekst: string; handling: boolean } {
         const returFrist = sag.returFristKl ? datoOgTid(sag.returFristKl) : null;
         return k
           ? {
-              tekst: `Send varen retur til sælgeren nu. Du betaler selv returfragten. Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}${
+              tekst: `Send varen retur til sælgeren nu. ${rfKoeber} Når pakken er afleveret, får du ${hvad} tilbage.${beskyttelseNote}${
                 returFrist
                   ? ` Send varen senest ${returFrist} – ellers kan BidHamr afgøre sagen til sælgerens fordel.`
                   : ""
@@ -272,7 +293,7 @@ function goerNuSag(sag: MinSag): { tekst: string; handling: boolean } {
               handling: true,
             }
           : {
-              tekst: `Køberen sender varen retur til dig og betaler selv returfragten.${
+              tekst: `Køberen sender varen retur til dig. ${rfSaelger}${
                 returFrist ? ` Køberen har frist til ${returFrist}.` : ""
               } Du skal ikke gøre noget nu.`,
               handling: false,
@@ -461,6 +482,22 @@ export default function SagVisning({
             <h4 className="mb-2 text-sm font-semibold text-tekst">Billeder ({sag.billeder.length})</h4>
             <SagBilleder billeder={sag.billeder} />
           </div>
+
+          {/* Sælgerens svar (regel 3, 20261102210000) - ses af køber og sælger. */}
+          {sag.svar && (
+            <div>
+              <h4 className="text-sm font-semibold text-tekst">
+                {sag.erKoeber ? "Sælgerens forklaring" : "Din forklaring"}
+              </h4>
+              <p className="mt-0.5 text-xs text-tekst-daempet">Sendt {sagTid(sag.svar.oprettetKl)}</p>
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-tekst">{sag.svar.tekst}</p>
+              {sag.svar.billeder.length > 0 && (
+                <div className="mt-2">
+                  <SagBilleder billeder={sag.svar.billeder} />
+                </div>
+              )}
+            </div>
+          )}
 
           {sag.anke && (
             <div className="rounded-xl border border-info-kant bg-info-bg p-4">

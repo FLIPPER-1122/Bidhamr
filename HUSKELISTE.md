@@ -184,3 +184,9 @@ Testdatabasen er sat op (commit 3e22009). Det her mangler:
 
 Svar til Claude Code, når du har besluttet dig, fx:
 > 1. Ja, åbn gaten kun på testdatabasen. 2. Ja, slet cron-jobbet afslut-auktioner i produktion. 3. Slå mails fra i dev – log dem i stedet.
+
+## BidHamr-bot – småting fra review (27. okt. 2026), før lancering
+- Ændringer af bottens lofter på /admin/bot skal logges i `moderation_log` med gamle og nye værdier.
+- Afvis en ny besked, mens et svar er i gang i samme samtale (kode `svar_i_gang`), så skønnet for svar i gang bliver rigtigt.
+- Hæv `BOT_SKOEN_INPUT_PR_RUNDE` til ca. 60.000, og vis en advarsel på /admin/bot, når prisen for ét svar overstiger loftet pr. bruger (fx ved Opus).
+- Efter lancering: overvej en samlet andel af budgettet for konti uden MitID-verificering.

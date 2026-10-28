@@ -1,6 +1,6 @@
 // Kontaktoplysninger i en auktions titel og beskrivelse (TS-spejlet af
 // public.auktion_kontaktinfo_grund). Samme eksempler kører i testblokken
-// sidst i supabase/migrations/20261102280000_kontaktinfo_rettelser4.sql.
+// sidst i supabase/migrations/20261102300000_kontaktinfo_rettelser5.sql.
 import { describe, expect, it } from "vitest";
 import {
   auktionKontaktFejl,
@@ -22,7 +22,7 @@ describe("auktionKontaktGrund - firma", () => {
   });
 });
 
-// Samme tjek som testblokken i 20261102280000.
+// Samme tjek som testblokken i 20261102300000.
 describe("auktionKontaktGrund - længde og ydeevne", () => {
   const aar = (fra: number, til: number) =>
     Array.from({ length: til - fra + 1 }, (_, i) => String(fra + i)).join(" ");
