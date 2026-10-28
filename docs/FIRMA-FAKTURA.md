@@ -97,7 +97,7 @@ PDF'en og øjebliksbilledet har:
 | Beløb ekskl. moms, momssats, momsbeløb | `beloeb_ekskl_moms_oere`, 25 %, `moms_oere` |
 | Henvisning ved brugtmoms (og ingen moms) | `brugtmoms_tekst` |
 
-**Kilder, der skal tjekkes:** jeg kunne ikke slå kilderne op online, da jeg byggede det (ingen netadgang). Henvisningerne herunder skal derfor tjekkes mod den gældende tekst, før vi går live. Det er spørgsmål 24–30 til revisor.
+**Kilder, der skal tjekkes:** jeg kunne ikke slå kilderne op online, da jeg byggede det (ingen netadgang). Henvisningerne herunder skal derfor tjekkes mod den gældende tekst, før vi går live. Det er spørgsmål 26–32 til revisor.
 
 - **Momsbekendtgørelsen § 58, stk. 1 (fuld faktura) og § 58, stk. 1, nr. 14 (særordningerne, herunder brugte genstande).** Retsinformation.dk: søg "momsbekendtgørelsen". Tjek især den præcise formulering for brugtmoms. Direktivets ordlyd (momssystemdirektivet art. 226, nr. 14) er "Fortjenstmargenordning – brugte genstande". Den valgte tekst "Brugtmoms – særordning for brugte varer" skal bekræftes.
 - **Momsloven § 52 (fakturapligt) og § 69-71 (brugtmoms).**
@@ -110,6 +110,6 @@ Fakturaer slettes aldrig (trigger mod delete og truncate). PDF'en ligger i den p
 
 ## Til Filip / åbne punkter
 
-- Jura: `jura/noter-til-advokat.md` nr. 142–146 og `jura/spoergsmaal-til-revisor.md` nr. 24–30.
+- Jura: `jura/noter-til-advokat.md` nr. 147–151 og `jura/spoergsmaal-til-revisor.md` nr. 26–32.
 - Logo: firmaets profilbillede (`users.avatar_url`) bruges som logo, men kun fra BidHamrs egen avatar-bucket og kun som PNG eller JPEG. Det kan slås fra i indstillingerne.
 - Der er ingen delvis kreditnota. Hvis der bliver brug for det, er det en udvidelse.

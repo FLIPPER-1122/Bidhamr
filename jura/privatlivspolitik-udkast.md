@@ -235,7 +235,8 @@ Når du vælger en pakkeshop, viser vi et kort. Kortbillederne hentes fra MapTil
 ### 6.5 Myndigheder og andre
 
 - **Skattestyrelsen** (DAC7, se afsnit 5) og andre myndigheder, når loven kræver det.
-- **Politiet**, hvis vi har mistanke om alvorlig kriminalitet, eller når politiet beder om det med lovhjemmel.
+- **Politiet**, hvis vi har mistanke om alvorlig kriminalitet, eller når politiet beder om det med lovhjemmel. Ved en sag (fx en tom pakke) kan vi give politiet en samlet dokumentation af handlen og sagen med begge parters navn fra MitID, fødselsdato, e-mail, telefon og handler mellem parterne. Vi logger hver udlevering (hvem, hvornår og til hvem). [ADVOKAT: se noter-til-advokat.md, "Dokumentation til sælger og politi"]
+- **Sælgeren i en sag**, der vil anmelde et forhold til politiet: en dokumentation med de oplysninger om handlen og sagen, som sælgeren i forvejen har adgang til (handlen, sporing, billederne fra sagen, chatten og købers navn og leveringsadresse) – aldrig købers e-mail, telefon eller oplysninger fra MitID.
 - **Din bank eller kortudsteder** via Stripe, hvis du gør indsigelse mod en betaling (fx sporing og leveringskvittering).
 - **Revisor og rådgivere**, når det er nødvendigt.
 - Fragtfirma og regnskabsprogram: se afsnit 3.10.

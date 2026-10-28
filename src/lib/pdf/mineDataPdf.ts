@@ -31,7 +31,7 @@ type Obj = { [k: string]: Json };
 const SKRIFT_MAPPE = path.join(process.cwd(), "src", "lib", "pdf", "skrifter");
 let skrifter: Promise<[Uint8Array, Uint8Array]> | null = null;
 
-function hentSkrifter() {
+export function hentSkrifter() {
   skrifter ??= Promise.all([
     readFile(path.join(SKRIFT_MAPPE, "Inter-Regular.ttf")),
     readFile(path.join(SKRIFT_MAPPE, "Inter-SemiBold.ttf")),
@@ -48,18 +48,18 @@ function hentSkrifter() {
 // ---------------------------------------------------------------------------
 // Layout (A4, punkter). Farver fra DESIGN.md.
 // ---------------------------------------------------------------------------
-const SIDE_B = 595.28;
-const SIDE_H = 841.89;
-const MARGEN = 48;
-const TOP = SIDE_H - 60;
-const BUND = 54;
-const BREDDE = SIDE_B - 2 * MARGEN;
+export const SIDE_B = 595.28;
+export const SIDE_H = 841.89;
+export const MARGEN = 48;
+export const TOP = SIDE_H - 60;
+export const BUND = 54;
+export const BREDDE = SIDE_B - 2 * MARGEN;
 
 function hex(h: string): RGB {
   const n = parseInt(h.slice(1), 16);
   return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
 }
-const F = {
+export const F = {
   groen: hex("#1e5e4a"),
   groenLys: hex("#e8f2ee"),
   tekst: hex("#1a1a1a"),
@@ -73,7 +73,7 @@ const F = {
 // et stort udtræk (tusindvis af beskeder) skal kunne laves på få sekunder.
 // Dansk tekst har ikke brug for dem; bredderne passer så også præcist med
 // ombrydningen, der måler ord for ord.
-const UDEN_FEATURES: Record<string, boolean> = Object.fromEntries(
+export const UDEN_FEATURES: Record<string, boolean> = Object.fromEntries(
   ["rvrn", "ltra", "ltrm", "frac", "numr", "dnom", "ccmp", "locl", "rlig", "mark", "mkmk", "clig", "rclt", "curs", "liga", "kern", "calt"].map(
     (k) => [k, false],
   ),
@@ -355,9 +355,9 @@ const DATO_NOEGLER = ["oprettet_kl", "oprettet", "tidspunkt", "indgivet_kl", "aa
 // ---------------------------------------------------------------------------
 // Skriveren: holder styr på side og position og laver nye sider efter behov.
 // ---------------------------------------------------------------------------
-type Celle = { tekst: string; fed?: boolean; farve?: RGB };
+export type Celle = { tekst: string; fed?: boolean; farve?: RGB };
 
-class Skriver {
+export class Skriver {
   side!: PDFPage;
   y = 0;
   readonly indhold: Array<{ titel: string; side: number }> = [];
