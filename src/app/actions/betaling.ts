@@ -63,7 +63,7 @@ export async function startBetaling(
   handelId: string,
 ): Promise<
   | { ok: true; clientSecret: string; totalOere: number; customerSessionClientSecret: string | null; betalingsmetoder: string[] }
-  | (Fejl & { betalt?: true; kode?: "vaelg_levering" })
+  | (Fejl & { betalt?: true; kode?: "vaelg_levering" | "adresse_mangler" })
 > {
   const user = await indloggetBruger();
   if (!user) return { fejl: "Du skal være logget ind." };
@@ -71,6 +71,7 @@ export async function startBetaling(
   if ("fejl" in r) {
     if (r.kode === "betalt") return { fejl: r.fejl, betalt: true };
     if (r.kode === "vaelg_levering") return { fejl: r.fejl, kode: "vaelg_levering" };
+    if (r.kode === "adresse_mangler") return { fejl: r.fejl, kode: "adresse_mangler" };
     return { fejl: r.fejl };
   }
   return {

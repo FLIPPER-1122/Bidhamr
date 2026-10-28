@@ -190,3 +190,10 @@ Svar til Claude Code, når du har besluttet dig, fx:
 - Afvis en ny besked, mens et svar er i gang i samme samtale (kode `svar_i_gang`), så skønnet for svar i gang bliver rigtigt.
 - Hæv `BOT_SKOEN_INPUT_PR_RUNDE` til ca. 60.000, og vis en advarsel på /admin/bot, når prisen for ét svar overstiger loftet pr. bruger (fx ved Opus).
 - Efter lancering: overvej en samlet andel af budgettet for konti uden MitID-verificering.
+
+## Rækkefølge ved udrulning af prod-pakken (review 28. okt. 2026)
+- **Kode først, migrationer lige efter.** Push `main`, vent til Vercel-deployet er færdigt, og kør så migrationerne.
+- Ellers rammes brugerne mens den gamle kode kører:
+  - Kører `20261102340000_bruger_adresse.sql` før den nye kode, kan alle eksisterende private brugere ikke byde (BHY01 uden formular).
+  - Det samme gælder sagsreglerne (`20261102210000`).
+- Undtagelse: `20261102310000_bot_loft_pr_gruppe.sql` skal køres **før** den nye bot-kode, ellers svarer botten ikke. Den gamle kode tåler migrationen. Kør den sammen med de andre lige efter deployet; botten er alligevel skjult, indtil `ANTHROPIC_API_KEY` er sat i produktion.

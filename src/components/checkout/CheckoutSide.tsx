@@ -222,12 +222,17 @@ export default function CheckoutSide({
       : gemtPakkeshopHos(gemtShop, harFirmavalg, startTransportoer);
   // Ved afhentning er der ingen modtager på valget - forslaget forudfylder.
   const kilde = (valgt && valgt.maade !== "afhentning" ? valgt.modtager : null) ?? forslag?.modtager ?? null;
+  // Uden adresse på valget/forslaget forudfyldes den gemte adresse fra Min
+  // adresse (bruger_adresser, 20261102340000) - samlet, så vej, postnummer
+  // og by altid hører sammen.
+  const kildeHarAdresse = Boolean(kilde?.adresse && kilde?.postnummer);
+  const gemtAdresse = checkout.minAdresse;
   const startModtager: Modtager = {
     navn: kilde?.navn ?? standardNavn ?? "",
     telefon: visTelefon(kilde?.telefon),
-    adresse: kilde?.adresse ?? "",
-    postnummer: kilde?.postnummer ?? "",
-    by: kilde?.by ?? "",
+    adresse: (kildeHarAdresse ? kilde?.adresse : gemtAdresse?.adresse) ?? "",
+    postnummer: (kildeHarAdresse ? kilde?.postnummer : gemtAdresse?.postnummer) ?? "",
+    by: (kildeHarAdresse ? kilde?.by : gemtAdresse?.by) ?? "",
   };
 
   const [maade, setMaade] = useState<Maade>(startMaade);
@@ -325,6 +330,10 @@ export default function CheckoutSide({
         setGemt(null);
         setLeveringFejl(svar.fejl);
         leveringRef.current?.focus();
+      } else if (svar.kode === "adresse_mangler") {
+        // Adressen mangler: siden viser adresseformularen (betal/page.tsx).
+        setBetalFejl(svar.fejl);
+        window.location.reload();
       } else setBetalFejl(svar.fejl);
       return false;
     }

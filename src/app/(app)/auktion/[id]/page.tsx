@@ -33,6 +33,7 @@ import PopulaerSaelgerMaerke from "@/components/PopulaerSaelgerMaerke";
 import { erPopulaerSaelger } from "@/lib/populaerSaelger";
 import { fragtfirmaNavne } from "@/lib/fragt";
 import { hentMitIdStatus } from "@/lib/mitid/status";
+import { hentMinAdresse } from "@/lib/adresse/server";
 import { ERHVERVSSAELGER, ERHVERV_GPSR, FIRMA_DASHBOARD } from "@/lib/tekster/erhverv";
 import { KUNST_TEKST } from "@/lib/kunstForbud";
 import { henvisningskodeTilDeling } from "@/lib/del/henvisning";
@@ -255,6 +256,7 @@ export default async function AuktionPage({
     minMitId,
     saelgerPopulaer,
     henvisningskode,
+    minAdresse,
   ] = await Promise.all([
     supabase.rpc("auktion_spoergsmaal_liste", { p_auktion: id }),
     // staffHandling: staff-handlinger direkte på siden (kun uden ADMIN_VAERT -
@@ -284,6 +286,9 @@ export default async function AuktionPage({
     erPopulaerSaelger(auktion.bruger_id),
     // Del-knappen: koden fra "Henvis en ven" (krog - null indtil den er koblet på).
     henvisningskodeTilDeling(mitId),
+    // Adressen kræves før første bud (BHY01) - budpanelet viser formularen.
+    // "fejl" = kunne ikke læses: ingen formular (databasen afgør det).
+    mitId && mitId !== auktion.bruger_id ? hentMinAdresse(supabase, mitId) : Promise.resolve("fejl" as const),
   ]);
   const erhvervAuktion = auktion.erhverv === true;
   const erFirmakonto = minKontoType === "erhverv";
@@ -621,6 +626,7 @@ export default async function AuktionPage({
               erFirmakonto={erFirmakonto}
               saelgerFrosset={frossen}
               mitidMangler={minMitId?.mangler ?? false}
+              adresseMangler={minAdresse === null && minKontoType !== "erhverv"}
             />
 
             {/* Kvittering for bedømmelsen – den afgives ved godkendelse af varen */}

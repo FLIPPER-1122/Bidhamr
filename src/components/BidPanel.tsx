@@ -7,6 +7,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import MitIDKraeves from "@/components/mitid/MitIDKraeves";
 import { MITID } from "@/lib/tekster/mitid";
+import AdresseFormular from "@/components/konto/AdresseFormular";
+import { ADRESSE_TEKST } from "@/lib/adresse/regler";
 import Ikon from "@/components/Ikon";
 import { afgivBud, saetMaksimum } from "@/app/actions/bud";
 import { AUTOBUD } from "@/lib/tekster/autobud";
@@ -63,6 +65,7 @@ export default function BidPanel({
   erFirmakonto = false,
   saelgerFrosset = false,
   mitidMangler: initialMitidMangler = false,
+  adresseMangler: initialAdresseMangler = false,
 }: {
   auktionId: string;
   initialNuværendeBud: number;
@@ -112,8 +115,12 @@ export default function BidPanel({
   // Den indloggede er ikke MitID-verificeret endnu (kræves før første bud -
   // databasen afviser det også, BHV01). Firmakonti er undtaget.
   mitidMangler?: boolean;
+  // Den indloggede har ingen adresse til fakturaer endnu (kræves før første
+  // bud - databasen afviser det også, BHY01). Formularen vises i panelet.
+  adresseMangler?: boolean;
 }) {
   const [mitidMangler, setMitidMangler] = useState(initialMitidMangler);
+  const [adresseMangler, setAdresseMangler] = useState(initialAdresseMangler);
   const [nuværendeBud, setNuværendeBud] = useState(initialNuværendeBud);
   const [harBud, setHarBud] = useState(initialHarBud);
   if (initialHarBud && !harBud) setHarBud(true);
@@ -412,6 +419,10 @@ export default function BidPanel({
         setMitidMangler(true);
         return;
       }
+      if (svar.adresse) {
+        setAdresseMangler(true);
+        return;
+      }
       setError(svar.fejl);
       if (svar.auktionAendret) router.refresh();
       return;
@@ -469,6 +480,10 @@ export default function BidPanel({
     if ("fejl" in maksSvar) {
       if (maksSvar.mitid) {
         setMitidMangler(true);
+        return;
+      }
+      if (maksSvar.adresse) {
+        setAdresseMangler(true);
         return;
       }
       setError(maksSvar.fejl);
@@ -716,6 +731,26 @@ export default function BidPanel({
           )}
           <MitIDKraeves sted="bud" retur={`/auktion/${auktionId}`} />
         </div>
+      ) : brugerId && adresseMangler ? (
+        <section
+          aria-labelledby="adresse-kraeves-titel"
+          className="mt-4 rounded-xl border border-advarsel-kant bg-advarsel-bg p-4 text-advarsel-tekst"
+        >
+          <h3 id="adresse-kraeves-titel" className="text-[17px] font-semibold">
+            {ADRESSE_TEKST.kraevesTitel}
+          </h3>
+          <p className="mt-1 text-sm">{ADRESSE_TEKST.kraevesBud}</p>
+          <div className="mt-4 rounded-lg bg-white p-4 text-tekst">
+            <AdresseFormular
+              idPrefix="bud-adr-"
+              knapTekst={ADRESSE_TEKST.gemOgFortsaet}
+              onGemt={() => {
+                setAdresseMangler(false);
+                setError(null);
+              }}
+            />
+          </div>
+        </section>
       ) : brugerId ? (
         <form onSubmit={handleSubmit} method="post" noValidate className="mt-4 flex flex-col gap-3">
           {/* Budtype: ét bud eller automatisk bud op til et maksimum. */}
