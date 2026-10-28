@@ -224,3 +224,19 @@ Svar til Claude Code, når du har besluttet dig, fx:
   2. Lav et nyt build, og få det ud til brugerne.
   3. Slå "Captcha protection" til i Supabase, først på Bidhamr Test og så i produktion.
 - Cloudflare-widget (Managed) skal have hostnames `bidhamr.dk`, `www.bidhamr.dk`, `test.bidhamr.dk` og `localhost`.
+
+## Review af 20261102410000 (28. okt. 2026): ikke godkendt, skal rettes før prod
+Migrationen er kun kørt på test.
+1. **Kendt enhed:** må kun tælle, hvis TOTP er gennemført på admin-hosten. Brug fx `admin_mfa_kl` eller en egen tabel. Ryd markeringen ved skift af adgangskode og ved "log ud alle steder". Overvej et loft pr. `enhed_hash`. Ret kommentaren i `src/lib/enheder.ts:38-42`.
+2. **E-mail-outbox:** log-ud, mail og Stripe skal køre uafhængigt af hinanden, hver med sin egen try/catch. Bekræft på testdatabasen, at `email_skift_outbox_log_ud` har rettigheder til `auth.sessions`, `auth.users` og `auth.one_time_tokens`.
+3. **Udvej, hvis en staff-konto spærres ude på en ny enhed:** fx en engangskode til nulstilling af loftet, eller at chefen kan nulstille det. Ellers skal det dokumenteres som accepteret restrisiko.
+4. **Opgivne outbox-rækker:** cron'en skal melde rækker med `forsoeg >= 12 and udfoert_kl is null` til /admin/drift.
+
+Småt:
+- `coalesce(created_at, '-infinity')`
+- idempotency key hos Resend for advarselsmailen og for firmafakturamailen
+- tjek af lås-ejer i `firma_faktura_mail_frigiv`
+- App Store-filteret skal se på hele svaret
+- `bot_indstillinger_log` skal bruge systembrugeren ved ændringer i SQL-editoren
+
+Appen: lås "Send" i botten, mens svaret streames, og håndtér `409 svar_i_gang`.
