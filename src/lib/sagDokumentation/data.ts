@@ -248,7 +248,9 @@ export async function hentDokumentationData(
     status: string;
   }[];
   // Den betalte række frem for den nyeste (fx et senere afbrudt forsøg).
-  const betaling = betalinger.find((b) => b.status === "betalt") ?? betalinger[0] ?? null;
+  // Den betalte række - også efter refusion (status ændres, betalt_kl består).
+  const betaling =
+    betalinger.find((b) => b.status === "betalt") ?? betalinger.find((b) => b.betalt_kl) ?? betalinger[0] ?? null;
   const lev = tjek("handel_levering", leveringR);
   const forsendelser = (tjek("forsendelser", forsendR) ?? []) as {
     id: string;

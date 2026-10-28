@@ -1,16 +1,15 @@
 -- Rettelser efter review af "Dokumentation til sælger og politi"
 -- (20261102360000_sag_dokumentation.sql).
 --
---   1. sag_dokumentation_log tjekker nu også, at medarbejderen er AKTIV staff
---      (godkendt to-trins-login og ingen ukendte faktorer - samme kilde som
---      min_staff_adgang: staff_to_trin_aktiv / staff_to_trin_ukendte_faktorer).
---      Ny fejlkode: ikke_aktiv.
+--   1. (Fravalgt efter genreview 28. okt. 2026: krav om aktivt to-trins-login
+--      i databasen blokerede alle staff, så længe ADMIN_VAERT er slået fra.
+--      To-trins-login håndhæves af routen via assertRole, som i resten af
+--      admin; kravet i databasen kommer med den planlagte aal2-migration.)
 --   2. Loftet på højst 30 PDF'er pr. medarbejder pr. time tælles nu her, under
 --      en pg_advisory_xact_lock pr. medarbejder, så samtidige forespørgsler
 --      ikke kan komme over loftet. Ny fejlkode: for_mange.
 --      (Routen tæller stadig først for at spare arbejdet med PDF'en, men det
 --      er databasen, der afgør.)
---   3. sag_dokumentation_liste giver kun rækker til aktiv staff.
 --   4. Indeks til tællingen (lavet_af, lavet_kl).
 --
 -- Idempotent: create index if not exists / create or replace. Samme
@@ -25,9 +24,9 @@ create index if not exists sag_dokumentation_udlevering_lavet_af_idx
 -- lavet og før den sendes. Fejler loggen, sendes PDF'en ikke.
 -- p_medarbejder er den indloggede staff, som serveren har tjekket. Funktionen
 -- er kun for service-role, så browseren kan ikke kalde den med en anden
--- brugers id. Rolle, aktiv to-trins-login, inhabilitet og loftet tjekkes her.
+-- brugers id. Rolle, inhabilitet og loftet tjekkes her.
 -- Returnerer {"kode": "ok", "id", "lavet_kl"} eller en fejlkode:
---   ingen_adgang, ikke_aktiv, ugyldig_udgave, ugyldig_sag, inhabil,
+--   ingen_adgang, ugyldig_udgave, ugyldig_sag, inhabil,
 --   ugyldig_tekst, for_mange.
 create or replace function public.sag_dokumentation_log(
   p_medarbejder   uuid,
@@ -53,10 +52,6 @@ declare
 begin
   if p_medarbejder is null or not public.staff_chat_har_rolle(p_medarbejder, 'medarbejder') then
     return jsonb_build_object('kode', 'ingen_adgang');
-  end if;
-  if not public.staff_to_trin_aktiv(p_medarbejder)
-     or public.staff_to_trin_ukendte_faktorer(p_medarbejder) then
-    return jsonb_build_object('kode', 'ikke_aktiv');
   end if;
   if p_udgave is null or p_udgave not in ('saelger', 'politi') then
     return jsonb_build_object('kode', 'ugyldig_udgave');
@@ -109,7 +104,7 @@ grant execute on function public.sag_dokumentation_log(uuid, uuid, text, text, t
 
 -- ============================================================ Læs loggen
 
--- Logrækkerne for en sag, nyeste først. Aktiv staff ser kun udgaven
+-- Logrækkerne for en sag, nyeste først. Staff ser kun udgaven
 -- 'saelger'; chefen ser alle. Alle andre får ingen rækker.
 create or replace function public.sag_dokumentation_liste(p_medarbejder uuid, p_sag uuid)
 returns table (
@@ -132,8 +127,6 @@ as $fn$
    where d.sag_id = p_sag
      and p_medarbejder is not null
      and public.staff_chat_har_rolle(p_medarbejder, 'medarbejder')
-     and public.staff_to_trin_aktiv(p_medarbejder)
-     and not public.staff_to_trin_ukendte_faktorer(p_medarbejder)
      and (d.udgave = 'saelger' or public.staff_chat_har_rolle(p_medarbejder, 'chef'))
    order by d.lavet_kl desc
    limit 200;
