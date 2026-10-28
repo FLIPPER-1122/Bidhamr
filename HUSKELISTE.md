@@ -206,3 +206,6 @@ Svar til Claude Code, når du har besluttet dig, fx:
 - Mulig deadlock mellem `firma_faktura_send` og ændring af standard-momsordning. Lås indstillingerne først i `send`, eller vis "Prøv igen" ved 40P01.
 - Backfill i 390000 slår triggeren fra. Brug flaget pr. række i stedet, hvis den skal køres igen manuelt.
 - "Send mailen igen": lås rækken, så to samtidige tryk ikke giver to mails.
+
+## BidHamr-bot og App Store (review 28. okt. 2026)
+- Botten må ALDRIG sige "køb point på bidhamr.dk" eller nævne BidHamrs pointpriser i appen (Apple 3.1.1/3.1.3). Tilføj det i systemprompten (`src/lib/bot/viden.ts`), og et filter, når samtalen kommer fra appen (`kilde = 'app'`).
