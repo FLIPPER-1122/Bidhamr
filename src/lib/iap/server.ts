@@ -35,7 +35,8 @@ import {
 } from "@/lib/iap/regler";
 
 // Køb af boost-point i appen (Filip, 27. okt. 2026). Migrationer
-// 20261102320000_boost_iap.sql og 20261102370000_boost_iap_rettelser.sql.
+// 20261102320000_boost_iap.sql, 20261102370000_boost_iap_rettelser.sql og
+// 20261102400000_boost_iap_rettelser2.sql.
 // Opsætning: docs/IAP.md. Appens kontrakt: docs/APP-ENDPOINTS.md.
 //
 // Pengene: Apple/Google opkræver køberen (de er sælger, opkræver moms og
@@ -329,12 +330,32 @@ async function forbrug(
 
 // ---------------------------------------------------------------- refusion
 
-type RefusionSvar = { kode: string; bruger_id?: string; point?: number; saldo?: number; i_minus?: boolean; id?: string };
+type RefusionSvar = {
+  kode: string;
+  bruger_id?: string;
+  point?: number;
+  saldo?: number;
+  i_minus?: boolean;
+  id?: string;
+  ventende?: boolean;
+  ophaevet?: boolean;
+};
 type RefusionKilde = "apple_notifikation" | "apple_historik" | "google_rtdn" | "google_voided";
 
+// Hvilken notifikation refusionen kommer fra (Apples notificationUUID og
+// signedDate, Googles Pub/Sub-id). Gemmes på en ventende refusion, så en
+// gentaget eller ældre REFUND ikke genåbner en refusion, som Apple har
+// trukket tilbage (REFUND_REVERSED).
+type RefusionHvorfra = { notifikation: string | null; signeretKl: string | null };
+const UDEN_HVORFRA: RefusionHvorfra = { notifikation: null, signeretKl: null };
+
+function signeretKl(ms: unknown): string | null {
+  return typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null;
+}
+
 // Svar: 'tilbagefoert' | 'allerede' | 'ukendt' (købet er ikke krediteret -
-// refusionen er gemt som ventende, så købet afvises, hvis det kommer) |
-// 'ugyldig'.
+// refusionen er gemt som ventende, så købet afvises, hvis det kommer - eller
+// den er allerede ophævet af en nyere REFUND_REVERSED) | 'ugyldig'.
 async function refunder(
   admin: Admin,
   platform: "ios" | "android",
@@ -343,6 +364,7 @@ async function refunder(
   andelMilli: number,
   kilde: RefusionKilde,
   sti: string,
+  hvorfra: RefusionHvorfra = UDEN_HVORFRA,
 ): Promise<string> {
   const { data, error } = await admin.rpc("boost_iap_refusion", {
     p_platform: platform,
@@ -350,6 +372,8 @@ async function refunder(
     p_google_token: token,
     p_andel_milli: andelMilli,
     p_kilde: kilde,
+    p_notifikation: hvorfra.notifikation,
+    p_signeret_kl: hvorfra.signeretKl,
   });
   if (error) throw new Error(`boost_iap_refusion: ${error.code ?? ""} ${error.message}`);
   const r = (data ?? { kode: "fejl" }) as RefusionSvar;
@@ -364,8 +388,13 @@ async function refunder(
     });
   } else if (r.kode === "ukendt") {
     // Fx et firmakøb, der aldrig blev krediteret, eller en refusion, der kom
-    // før appen nåede at sende købet. Gemt som ventende refusion.
-    console.info(`IAP: ${navn(platform)} refunderede et køb, vi ikke har krediteret (${kort(eksternId ?? token ?? "")}) - gemt som ventende.`);
+    // før appen nåede at sende købet. Gemt som ventende refusion - eller
+    // allerede ophævet af en nyere REFUND_REVERSED (så ændres intet).
+    console.info(
+      `IAP: ${navn(platform)} refunderede et køb, vi ikke har krediteret (${kort(eksternId ?? token ?? "")}) - ${
+        r.ophaevet ? "refusionen er allerede trukket tilbage, intet ændret" : "gemt som ventende"
+      }.`,
+    );
   }
   return r.kode;
 }
@@ -393,16 +422,32 @@ async function note(admin: Admin, platform: "ios" | "android", eksternId: string
 
 // En refusion, der er trukket tilbage, før købet blev krediteret: den
 // ventende refusion ophæves (købet må krediteres igen).
-async function ophaevVentende(admin: Admin, platform: "ios" | "android", eksternId: string | null, token: string | null): Promise<boolean> {
-  const { data, error } = await admin.rpc("boost_iap_ventende_ophaev", { p_platform: platform, p_ekstern_id: eksternId, p_google_token: token });
+// Ophæver kun, hvis REFUND_REVERSED er signeret efter den seneste refusion.
+async function ophaevVentende(
+  admin: Admin,
+  platform: "ios" | "android",
+  eksternId: string | null,
+  token: string | null,
+  hvorfra: RefusionHvorfra,
+  kilde: "apple_notifikation" | "apple_historik",
+): Promise<boolean> {
+  const { data, error } = await admin.rpc("boost_iap_ventende_ophaev", {
+    p_platform: platform,
+    p_ekstern_id: eksternId,
+    p_google_token: token,
+    p_notifikation: hvorfra.notifikation,
+    p_signeret_kl: hvorfra.signeretKl,
+    p_kilde: kilde,
+  });
   if (error) throw new Error(`boost_iap_ventende_ophaev: ${error.code ?? ""} ${error.message}`);
   return data === true;
 }
 
-// Resultatet 'ukendt' (refusion af et køb, vi ikke har krediteret) markeres
-// IKKE som behandlet: refusionen er gemt som ventende, og notifikationen kan
-// behandles igen (fx af den daglige historik-kørsel) uden dobbelt effekt.
-const IKKE_FAERDIG = new Set(["ukendt"]);
+// Alle resultater markeres som behandlet - også 'ukendt' (refusion af et køb,
+// vi ikke har krediteret), for den er gemt som ventende refusion. Ellers kørte
+// den daglige historik-kørsel den samme REFUND igen efter en REFUND_REVERSED
+// og blokerede købet igen. En midlertidig fejl (500 eller en undtagelse)
+// markeres ikke, så den prøves igen.
 
 export type WebhookSvar = { status: number; resultat: string };
 
@@ -419,6 +464,7 @@ async function behandlAppleNotifikation(
   if (!id || !/^[0-9a-f-]{8,64}$/i.test(id)) return { status: 401, resultat: "ugyldig" };
   if ((await notifikationStart(admin, "ios", id, type)) === "behandlet") return { status: 200, resultat: "allerede" };
 
+  const hvorfra: RefusionHvorfra = { notifikation: id, signeretKl: signeretKl(n.signedDate) };
   let resultat = "ignoreret";
   if (type === "TEST") {
     resultat = "test";
@@ -435,7 +481,7 @@ async function behandlAppleNotifikation(
         resultat = "ugyldig_transaktion";
       } else if (type === "REFUND") {
         // Hel eller delvis (REFUND_PRORATED) refusion.
-        resultat = await refunder(admin, "ios", t.tx.transactionId, null, appleRefunderetAndel(t.tx), kilde, sti);
+        resultat = await refunder(admin, "ios", t.tx.transactionId, null, appleRefunderetAndel(t.tx), kilde, sti, hvorfra);
       } else if (type === "REFUND_REVERSED") {
         // Apple har trukket en refusion tilbage (fx efter en tvist). Pointene
         // gives ikke automatisk igen - chefen kan justere.
@@ -452,7 +498,18 @@ async function behandlAppleNotifikation(
           resultat = "noteret";
         } else {
           // Købet er ikke krediteret: ophæv en evt. ventende refusion.
-          resultat = (await ophaevVentende(admin, "ios", t.tx.transactionId, null)) ? "ventende_ophaevet" : "ukendt_tilbage";
+          const ophaevet = await ophaevVentende(admin, "ios", t.tx.transactionId, null, hvorfra, kilde);
+          resultat = ophaevet ? "ventende_ophaevet" : "ukendt_tilbage";
+          if (ophaevet) {
+            // Appen kan have fået 'refunderet' og afsluttet købet - så sender
+            // den det ikke igen, og brugeren mangler pointene.
+            await logDriftFejl({
+              kilde: "server",
+              sti,
+              hvor: "boost/iap-refusion-tilbage",
+              fejl: `Apple har trukket en refusion tilbage – brugeren kan mangle point, giv dem manuelt, hvis købet ikke sendes igen (transaktion ${kort(t.tx.transactionId)}, produkt ${t.tx.productId ?? "?"}). Pointene gives under Admin → brugeren → Boost-point.`,
+            });
+          }
         }
       } else {
         // CONSUMPTION_REQUEST: køberen har bedt Apple om en refusion. Vi har
@@ -464,7 +521,7 @@ async function behandlAppleNotifikation(
       }
     }
   }
-  if (!IKKE_FAERDIG.has(resultat)) await notifikationSlut(admin, "ios", id, resultat);
+  await notifikationSlut(admin, "ios", id, resultat);
   return { status: 200, resultat };
 }
 
@@ -484,13 +541,19 @@ export async function haandterAppleNotifikation(signedPayload: string, admin: Ad
   return behandlAppleNotifikation(admin, k, v.notifikation, "apple_notifikation", sti);
 }
 
-// Googles void: bekræft hos Google (purchases.products.get), at købet
-// faktisk er annulleret (purchaseState 1), før pointene trækkes. RTDN'en
-// indeholder ikke produkt-id'et - det findes i vores køb (eller prøves for
-// hvert produkt, hvis købet ikke er krediteret).
-//   'bekraeftet' | 'ikke_bekraeftet' (Google siger noget andet - intet
-//   trækkes; Voided Purchases API i den daglige cron er sikkerhedsnettet) |
-//   'midlertidig'
+// Googles void: bekræft hos Google, at købet faktisk er annulleret, før
+// pointene trækkes. RTDN'en indeholder ikke produkt-id'et - det findes i vores
+// køb (eller prøves for hvert produkt, hvis købet ikke er krediteret).
+//   1. purchases.products.get: Googles dokumentation nævner kun purchaseState
+//      0 (købt), 1 (annulleret) og 2 (afventer) og siger ikke, hvad et
+//      refunderet køb har. Alt andet end 0 (købt) og 2 (afventer - en
+//      betaling, der kan nå at gå igennem) godtages derfor som annulleret.
+//   2. Siger Google 0 eller 2, mangler tilstanden, eller kendes tokenet ikke
+//      (fx 404/410 efter refusionen): slå op i Voided Purchases API (30 dage).
+//      Står købet dér, er det bekræftet.
+// Skal testes med en rigtig refusion i Play Console (docs/IAP.md).
+//   'bekraeftet' | 'ikke_bekraeftet' (intet trækkes; Voided Purchases API i
+//   den daglige cron er sikkerhedsnettet) | 'midlertidig'
 async function bekraeftGoogleVoid(admin: Admin, g: GoogleKonfig, token: string): Promise<"bekraeftet" | "ikke_bekraeftet" | "midlertidig"> {
   const { data, error } = await admin
     .from("boost_iap_koeb")
@@ -507,9 +570,13 @@ async function bekraeftGoogleVoid(admin: Admin, g: GoogleKonfig, token: string):
       if (r.fejl === "ugyldig") continue; // ikke dette produkt (eller ukendt token)
       return "midlertidig";
     }
-    return r.koeb.purchaseState === 1 ? "bekraeftet" : "ikke_bekraeftet";
+    const s = r.koeb.purchaseState;
+    if (typeof s === "number" && s !== 0 && s !== 2) return "bekraeftet";
+    break; // købt (0), afventer (2) eller uden tilstand: spørg Voided Purchases API
   }
-  return "ikke_bekraeftet";
+  const v = await hentGoogleVoided(g, Date.now() - 30 * 24 * 3600 * 1000, 5);
+  if ("fejl" in v) return v.fejl === "midlertidig" ? "midlertidig" : "ikke_bekraeftet";
+  return v.koeb.some((x) => x.purchaseToken === token) ? "bekraeftet" : "ikke_bekraeftet";
 }
 
 // POST /api/webhooks/google-play - Pub/Sub push med RTDN.
@@ -546,13 +613,13 @@ export async function haandterGoogleRtdn(
     if (b === "midlertidig") return { status: 500, resultat: "proev_igen" };
     if (b === "bekraeftet") {
       // Vi tillader kun ét stk. pr. køb, så en void er hele købet.
-      resultat = await refunder(admin, "android", r.orderId, r.purchaseToken, 100000, "google_rtdn", sti);
+      resultat = await refunder(admin, "android", r.orderId, r.purchaseToken, 100000, "google_rtdn", sti, { notifikation: id, signeretKl: null });
     } else {
       resultat = "ikke_bekraeftet";
       console.info(`IAP: Google meldte et køb annulleret (${kort(r.orderId ?? r.purchaseToken)}), men purchases.products.get bekræfter det ikke - Voided Purchases API tjekkes i den daglige cron.`);
     }
   }
-  if (!IKKE_FAERDIG.has(resultat)) await notifikationSlut(admin, "android", id, resultat);
+  await notifikationSlut(admin, "android", id, resultat);
   return { status: 204, resultat };
 }
 
@@ -615,7 +682,8 @@ export async function koerIapCron(admin: Admin = createAdminClient()): Promise<{
       voided = v.koeb.length;
       for (const x of v.koeb) {
         try {
-          if ((await refunder(admin, "android", x.orderId, x.purchaseToken, 100000, "google_voided", sti)) === "tilbagefoert") tilbagefoert++;
+          const hvorfra = { notifikation: null, signeretKl: signeretKl(x.voidedTimeMillis ? Number(x.voidedTimeMillis) : null) };
+          if ((await refunder(admin, "android", x.orderId, x.purchaseToken, 100000, "google_voided", sti, hvorfra)) === "tilbagefoert") tilbagefoert++;
         } catch (err) {
           fejl++;
           await logDriftFejl({ kilde: "cron", sti, hvor: "boost/iap-voided", fejl: err });

@@ -239,6 +239,8 @@ function oidc(o: Record<string, unknown> = {}): string {
 }
 const google = new Map<string, Record<string, unknown>>();
 const googleKald: { metode: string; url: string }[] = [];
+// Googles Voided Purchases API (falsk).
+const voidedListe: { purchaseToken: string; orderId: string; voidedTimeMillis: string }[] = [];
 
 // ------------------------------------------------------------ opsætning
 const ENV = {
@@ -309,7 +311,7 @@ beforeAll(async () => {
     googleKald.push({ metode, url });
     const auth = (init?.headers as Record<string, string> | undefined)?.Authorization;
     if (auth !== "Bearer falsk-adgang") return new Response("{}", { status: 401 });
-    if (/\/purchases\/voidedpurchases\?/.test(url)) return Response.json({ voidedPurchases: [] });
+    if (/\/purchases\/voidedpurchases\?/.test(url)) return Response.json({ voidedPurchases: voidedListe });
     const m = /\/applications\/([^/]+)\/purchases\/products\/([^/]+)\/tokens\/([^/:]+)(:consume)?$/.exec(url);
     if (!m || decodeURIComponent(m[1]) !== BUNDLE) return new Response("{}", { status: 404 });
     const p = google.get(decodeURIComponent(m[3]));
@@ -702,19 +704,37 @@ describe("POST /api/webhooks/apple", () => {
     expect(res.status).toBe(400);
   });
 
-  it("REFUND før kreditering: ventende, notifikationen er IKKE behandlet, og købet afvises bagefter", async () => {
+  it("REFUND før kreditering: ventende, notifikationen er behandlet, og købet afvises bagefter", async () => {
     const { t, signeret } = appleKoeb();
     const n = notifikation("REFUND", jws(kaede, { ...t, revocationDate: Date.now(), revocationType: "REFUND_FULL" }));
     expect(await apple(n)).toEqual({ status: 200, body: { resultat: "ukendt" } });
     expect(db.s.ventende.some((v) => v.ekstern === t.transactionId)).toBe(true);
-    // Samme notifikation igen behandles igen (idempotent i databasen).
+    // Apples notificationUUID og signedDate sendes med til databasen.
+    expect(db.s.rpc.find((x) => x.navn === "boost_iap_refusion")?.args).toMatchObject({
+      p_notifikation: expect.stringMatching(/^0000aaaa-/),
+      p_signeret_kl: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
+    });
+    // Samme notifikation igen: behandlet - intet kald til databasen.
     db.s.rpc = [];
-    expect(await apple(n)).toEqual({ status: 200, body: { resultat: "ukendt" } });
-    expect(rpcNavne()).toContain("boost_iap_refusion");
+    expect(await apple(n)).toEqual({ status: 200, body: { resultat: "allerede" } });
+    expect(rpcNavne()).not.toContain("boost_iap_refusion");
     // Appen sender købet bagefter (Apple siger endnu ikke refunderet): afvist.
     expect(await koeb(ios(signeret))).toMatchObject({ status: 409, body: { kode: "refunderet" } });
-    // REFUND_REVERSED ophæver den ventende refusion.
+    // REFUND_REVERSED ophæver den ventende refusion, og chefen får en note.
+    db.s.drift = [];
     expect((await apple(notifikation("REFUND_REVERSED", jws(kaede, t)))).body.resultat).toBe("ventende_ophaevet");
+    expect(String(db.s.drift.find((d) => d.hvor === "boost/iap-refusion-tilbage")?.fejl)).toMatch(
+      /^Apple har trukket en refusion tilbage – brugeren kan mangle point, giv dem manuelt, hvis købet ikke sendes igen/,
+    );
+    expect(db.s.rpc.find((x) => x.navn === "boost_iap_ventende_ophaev")?.args).toMatchObject({ p_kilde: "apple_notifikation" });
+    // Den daglige historik kører den samme REFUND igen: intet sker (behandlet).
+    historik.set("REFUND", [n]);
+    historik.set("REFUND_REVERSED", []);
+    db.s.rpc = [];
+    db.s.claim = true;
+    await ruter.server.koerIapCron();
+    expect(rpcNavne()).not.toContain("boost_iap_refusion");
+    historik.clear();
     expect((await koeb(ios(signeret))).status).toBe(200);
   });
 });
@@ -758,6 +778,32 @@ describe("POST /api/webhooks/google-play", () => {
     expect(await push(oidc(), void_(k.purchaseToken, orderId), "void-2")).toBe(204);
     expect(rpcNavne()).not.toContain("boost_iap_refusion");
     expect(db.s.notifikationer.get("android|void-2")).toBe(true);
+    // Voided Purchases API er spurgt.
+    expect(googleKald.some((x) => x.url.includes("/purchases/voidedpurchases?"))).toBe(true);
+  });
+
+  it("void: purchaseState 0, men købet står i Voided Purchases API: bekræftet", async () => {
+    const k = googleKoeb();
+    await koeb(k);
+    const orderId = String(google.get(k.purchaseToken)!.orderId);
+    voidedListe.push({ purchaseToken: k.purchaseToken, orderId, voidedTimeMillis: String(Date.now()) });
+    try {
+      expect(await push(oidc(), void_(k.purchaseToken, orderId), "void-2b")).toBe(204);
+      expect(db.s.rpc.find((x) => x.navn === "boost_iap_refusion")?.args).toMatchObject({ p_google_token: k.purchaseToken });
+    } finally {
+      voidedListe.length = 0;
+    }
+  });
+
+  it("void: en anden tilstand end købt og afventer (fx 3) godtages som annulleret", async () => {
+    const k = googleKoeb();
+    await koeb(k);
+    const orderId = String(google.get(k.purchaseToken)!.orderId);
+    google.get(k.purchaseToken)!.purchaseState = 3;
+    googleKald.length = 0;
+    expect(await push(oidc(), void_(k.purchaseToken, orderId), "void-2c")).toBe(204);
+    expect(db.s.rpc.find((x) => x.navn === "boost_iap_refusion")?.args).toMatchObject({ p_google_token: k.purchaseToken });
+    expect(googleKald.some((x) => x.url.includes("/purchases/voidedpurchases?"))).toBe(false);
   });
 
   it("void af et køb, vi ikke har: produkterne prøves, og refusionen gemmes som ventende", async () => {
@@ -766,8 +812,8 @@ describe("POST /api/webhooks/google-play", () => {
     expect(await push(oidc(), void_(k.purchaseToken, orderId), "void-3")).toBe(204);
     expect(db.s.rpc.find((x) => x.navn === "boost_iap_refusion")?.args).toMatchObject({ p_google_token: k.purchaseToken });
     expect(db.s.ventende.some((v) => v.token === k.purchaseToken)).toBe(true);
-    // Ikke markeret som behandlet (kan behandles igen uden dobbelt effekt).
-    expect(db.s.notifikationer.get("android|void-3")).toBe(false);
+    // Markeret som behandlet - den ventende refusion er gemt.
+    expect(db.s.notifikationer.get("android|void-3")).toBe(true);
     // Kommer købet bagefter: afvist.
     expect(await koeb({ ...k, productId: "dk.bidhamr.app.boost700" })).toMatchObject({ status: 409, body: { kode: "annulleret" } });
   });

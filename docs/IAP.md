@@ -4,9 +4,10 @@ Beslutning: ROADMAP-BESLUTNINGER.md, "Køb af boost-point i appen (Filip, 27. ok
 3.1.1 og 3.1.3(g)) og Google Play kræver deres egen betaling for digitale varer. I appen købes boost-point derfor kun
 via Apple og Google. På bidhamr.dk købes de fortsat via Stripe (uændret).
 
-- Migrationer: `supabase/migrations/20261102320000_boost_iap.sql` og `20261102370000_boost_iap_rettelser.sql`
+- Migrationer: `supabase/migrations/20261102320000_boost_iap.sql`, `20261102370000_boost_iap_rettelser.sql`
   (rettelser efter review: markering af testkøb/promo, ventende refusioner, lås mellem kreditering og refusion,
-  "Download dine data")
+  "Download dine data") og `20261102400000_boost_iap_rettelser2.sql` (en ophævet refusion genåbnes ikke af den
+  samme `REFUND` igen, testkøb tilbagekaldes med låse i fast rækkefølge)
 - Kode: `src/lib/iap/` (konfig, regler, apple, google, server)
 - Ruter: `GET/POST /api/app/boost/iap`, `POST /api/webhooks/apple`, `POST /api/webhooks/google-play`
 - Appens kontrakt: docs/APP-ENDPOINTS.md, "Køb af boost-point i appen"
@@ -29,7 +30,8 @@ via Apple og Google. På bidhamr.dk købes de fortsat via Stripe (uændret).
      betalt) krediteres med markeringen `promo` og tælles ikke som omsætning. `purchaseType` 2 (belønnet) afvises.
    - **Kontobindingen er påkrævet i produktion.** `appAccountToken` (Apple) og `obfuscatedAccountId` (Google) er et
      UUID, som serveren regner ud: HMAC-SHA256 af bruger-id'et med `IAP_KONTO_HEMMELIGHED` (formateret som UUID
-     version 8). Appen får værdien fra `GET /api/app/boost/iap`. Bruger-id'et sendes ikke til Apple/Google. Mangler
+     version 8). **`IAP_KONTO_HEMMELIGHED` må aldrig roteres** (se Miljøvariabler). Appen får værdien fra
+     `GET /api/app/boost/iap`. Bruger-id'et sendes ikke til Apple/Google. Mangler
      værdien i købet, afvises det med `409 konto_mangler` (på testdatabasen må den mangle). Står der en anden værdi:
      `409 anden_konto`.
    - Kontoen (firma/spærret) tjekkes **efter** verificeringen. Er købet ægte, men kontoen kan ikke få point (`erhverv`,
@@ -52,14 +54,24 @@ tilbage med `refusion_apple` / `refusion_google`. Sikkerhedsnet i den daglige cr
   miljø. Hver notifikation verificeres og behandles præcis som webhooken - samme idempotens (`notificationUUID`), så
   en notifikation, webhooken allerede har behandlet, gør intet. Delvise refusioner (`REFUND_PRORATED`) virker også.
 - **Google:** Voided Purchases API (de seneste 3 døgn).
-- En Google-RTDN bekræftes hos Google, før pointene trækkes: `purchases.products.get` skal sige `purchaseState` 1
-  (annulleret). Siger Google noget andet, trækkes intet (Voided Purchases API tager det, hvis det er rigtigt). Kan
-  Google ikke nås, svarer serveren 500, og Pub/Sub prøver igen.
+- En Google-RTDN bekræftes hos Google, før pointene trækkes. Googles dokumentation for `purchases.products.get` nævner
+  kun `purchaseState` 0 (købt), 1 (annulleret) og 2 (afventer) og siger ikke, hvilken værdi et refunderet køb har.
+  Derfor godtages alt andet end 0 og 2 som annulleret. Siger Google 0 eller 2, mangler værdien, eller kendes tokenet
+  ikke længere (404/410), slår serveren op i Voided Purchases API (30 dage): står købet dér, er refusionen bekræftet.
+  Ellers trækkes intet (den daglige cron tager det, hvis det er rigtigt). Kan Google ikke nås, svarer serveren 500,
+  og Pub/Sub prøver igen.
+  **Skal testes med en rigtig refusion** (Play Console → Order management → Refund på et licenstester-køb): se i
+  loggen, at RTDN'en giver `tilbagefoert` og ikke `ikke_bekraeftet`, og at pointene trækkes.
 
 **Refusion før kreditering:** kommer en refusion for et køb, vi endnu ikke har krediteret (fx før appen nåede at
-sende købet, eller et firmakøb), gemmes den i `boost_iap_ventende_refusioner`, og notifikationen markeres ikke som
+sende købet, eller et firmakøb), gemmes den i `boost_iap_ventende_refusioner`, og notifikationen markeres som
 behandlet. Sender appen købet bagefter, afviser `boost_iap_krediter` det (`409 refunderet`). Apple `REFUND_REVERSED`
-ophæver den ventende refusion. Kreditering og refusion af samme køb er låst mod hinanden i databasen (advisory lock på
+ophæver den ventende refusion, og chefen får en drift-note (`boost/iap-refusion-tilbage`): "Apple har trukket en
+refusion tilbage – brugeren kan mangle point, giv dem manuelt, hvis købet ikke sendes igen". Rækken husker Apples
+`notificationUUID` og `signedDate` for refusionen og ophævelsen: en ophævet række genåbnes kun af en refusion, der er
+signeret efter ophævelsen, og en `REFUND_REVERSED` ophæver kun en refusion, der er ældre. Så kan den daglige
+historik-kørsel ikke blokere købet igen ved at køre den samme `REFUND` en gang til. Kommer `REFUND_REVERSED` før
+`REFUND`, gemmes en allerede ophævet række, så den ældre `REFUND` ikke blokerer købet. Kreditering og refusion af samme køb er låst mod hinanden i databasen (advisory lock på
 transaktions-id/Google-token), så en samtidig refusion ikke går tabt.
 
 Er pointene brugt, går saldoen i **minus**:
@@ -153,7 +165,7 @@ iap_ikke_klar`).
 | `GOOGLE_PLAY_PACKAGE` | `dk.bidhamr.app` |
 | `GOOGLE_PUBSUB_AUDIENCE` | Audience i push-abonnementet, fx `https://bidhamr.dk/api/webhooks/google-play` |
 | `GOOGLE_PUBSUB_SA_EMAIL` | Den service account, push-abonnementet signerer med |
-| `IAP_KONTO_HEMMELIGHED` | Påkrævet (begge platforme). Mindst 32 tegn, fx `openssl rand -hex 32`. Bruges til kontobindingen (`appAccountToken`). Skift den aldrig, når appen er i brug. Forskellig på bidhamr.dk og test.bidhamr.dk |
+| `IAP_KONTO_HEMMELIGHED` | Påkrævet (begge platforme). Mindst 32 tegn, fx `openssl rand -hex 32`. Bruges til kontobindingen (`appAccountToken`). **Må aldrig roteres**: kontobindingen i alle tidligere køb og installerede apps er regnet ud med den, så med en ny hemmelighed afvises gamle køb (genkøb, gendannelse) som `anden_konto`. Lækker den, så kontakt udvikleren, før noget ændres. Forskellig på bidhamr.dk og test.bidhamr.dk |
 | `IAP_TILLAD_TESTKOEB_TIL` | Valgfri, kun produktion. ISO-dato (fx `2026-11-10`), højst 14 dage frem. Testkøb er tilladt indtil da (kun under App Review) |
 | `IAP_TESTKOEB_KONTI` | Valgfri, kun produktion. Kommaseparerede bruger-id'er, der må lave testkøb (fx App Review-kontoen) |
 
@@ -242,6 +254,7 @@ iap_ikke_klar`).
 4. Send samme køb igen (genstart appen). Svaret er `allerede`, og saldoen er uændret.
 5. Brug pointene på 2 boost, og refundér så købet:
    - Apple: Sandbox → "Refund" i StoreKit Testing eller via reportaproblem.apple.com.
-   - Google: Play Console → Order management → Refund.
+   - Google: Play Console → Order management → Refund. Tjek i Vercel-loggen, at RTDN'en blev bekræftet (resultat
+     `tilbagefoert`, ikke `ikke_bekraeftet`) - det viser, at Googles `purchaseState` for et refunderet køb virker.
 6. Saldoen går til -100. Drift-alarmen kommer, og boost er blokeret.
 7. Log ind som firma. GET giver `kanKoebe: false`, og POST giver 403.
