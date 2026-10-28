@@ -19,7 +19,8 @@ import { toTrinMaksTimer } from "@/lib/staffToTrinRegler";
 // Routes der er tilgængelige uden login, mens resten af appen er bag
 // venteliste-gaten. Kun API-ruter med egen adgangskontrol undtages:
 // /api/waitlist (offentlig tilmelding fra splash-siden), /api/webhooks
-// (Stripe-signatur), /api/fragt/webhook (fragtfirmaets signatur, verificeret
+// (Stripe-signatur; /api/webhooks/apple: Apples JWS-signatur og
+// /api/webhooks/google-play: Pub/Sub OIDC-token), /api/fragt/webhook (fragtfirmaets signatur, verificeret
 // af adapteren, fail closed) og /api/cron (CRON_SECRET, fail closed). Alle andre
 // /api-ruter kræver login + rolle som resten af appen.
 // /api/statistik er den cookiefri besøgsstatistik (gemmer kun antal pr. dag og
@@ -53,8 +54,8 @@ import { toTrinMaksTimer } from "@/lib/staffToTrinRegler";
 // (ingen cookies); login tjekkes i ruten.
 // /api/handel/app (handelstrin), /api/sag/app (sager), /api/bud/app (bud), /api/auktion/app
 // (billedoprydning), /api/konto/adgangskode, /api/konto/email (skift af
-// e-mail), /api/konto/data (dine data) og /api/konto/henvisning (Henvis en
-// ven) er appens endpoints: kun Bearer-token (ingen cookies); login tjekkes i
+// e-mail), /api/konto/data (dine data), /api/konto/henvisning (Henvis en
+// ven) og /api/konto/adresse (Min adresse) er appens endpoints: kun Bearer-token (ingen cookies); login tjekkes i
 // ruterne, som selv afviser med JSON (401 ikke_logget_ind) - ikke med
 // proxyens tekst "Log ind først". /api/konto/glemt er "Glemt adgangskode":
 // ingen login (som /glemt-adgangskode), grænser i ruten og samme svar,
@@ -120,6 +121,7 @@ const OFFENTLIGE_RUTER = [
   "/api/konto/glemt",
   "/api/konto/data",
   "/api/konto/henvisning",
+  "/api/konto/adresse",
   "/robots.txt",
   "/sitemap.xml",
   // Universal links (iOS) og App Links (Android) - Apple og Google henter
@@ -133,6 +135,10 @@ const OFFENTLIGE_RUTER = [
   // selv lanceringen og adgangen (src/lib/bot/synlig.ts) og loftet.
   "/api/bot",
   "/api/app/bot",
+  // Køb af boost-point i appen (Apple/Google): kun Bearer-token, login og
+  // kun private tjekkes i ruten (src/app/api/app/boost/iap/route.ts).
+  // Webhooks fra Apple og Google ligger under /api/webhooks (signatur/OIDC).
+  "/api/app/boost",
 ];
 
 // Rene læsesider, der skal kunne læses af alle uden login, også før lancering

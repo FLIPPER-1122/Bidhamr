@@ -660,3 +660,17 @@ Erstatter "Firmaet sender selv fakturaen på varen fra sit eget regnskabsprogram
   - **Private** udfylder, når de opretter en konto, det der skal stå om kunden på en faktura: fornavn, efternavn, adresse (vej og nr.), postnummer og by, ud over e-mail. Det gælder både på hjemmesiden og i appen.
   - Eksisterende brugere uden adresse bliver bedt om den, før de byder første gang eller betaler første gang.
   - Adressen kan rettes under Min konto. På fakturaen bruges navnet fra MitID, når brugeren er verificeret.
+  - *Bygget 28. okt. 2026 (`20261102340000_bruger_adresse.sql`, app: docs/APP-SIGNUP.md "Adresse"):* adressen ligger i `public.bruger_adresser` (adresse, postnummer, bynavn - byen sættes altid ud fra postnummeret). Kun brugeren selv kan læse den; den skrives kun via `gem_min_adresse()`. Opret konto (hjemmesiden og appen) kræver adresse og postnummer; de gemmes som navnet først efter koden fra mailen. Uden adresse afviser databasen bud og maksimum (BHY01), og serveren afviser betaling (`adresse_mangler`); budpanelet og checkout viser formularen. Checkout forudfylder levering til døren med den. Min konto → Min adresse (`/konto/adresse`) viser også navnet på fakturaer (låst til MitID-navnet, når brugeren er verificeret). Kontosletning: adressen slettes, medmindre brugeren har handler. Med i "Download dine data". Erhvervsformularen og firmakontoen havde allerede alle felter (firmanavn, CVR, adresse, postnummer, by, e-mail, telefon - alle påkrævet på `firmaer`). `users.adresse` (fri tekst til afhentning) er uændret.
+
+- **Sagsregler – afklaringer (Filip, 27. okt. 2026):**
+  - **Svindel** (tom pakke, aldrig sendt): køberen får kun **buddet** tilbage, som i dag.
+  - **Erstatning ved bortkommet pakke:** fragtfirmaets erstatning udbetales til BidHamr (DAO-reglen) og sendes videre til **sælgeren**, ligesom ved transportskade.
+  - **Billedkrav:** ved **tom pakke** kræves kun billede af pakken og labelen, ikke af indholdet. Ved "pakken er smidt ud" kræves billede af varen og en forklaring.
+
+## Dokumentation til politiet (Filip, 27. okt. 2026)
+- Staff kan på en sag i admin lave en samlet PDF, "Dokumentation til politiet". Den kan bruges, når fx en pakke kommer tom frem, og sælgeren mener, at køberen har taget varen ud. Det er den, der har haft tabet, der anmelder via politi.dk: sælgeren som borger, eller BidHamr med MitID Erhverv.
+- **To udgaver:**
+  - **"Til sælger"** indeholder kun det, sælgeren i forvejen har adgang til: handlen, beløb, datoer, sporing og vægt, billederne fra sagen, chatten og købers navn og leveringsadresse. Ingen MitID-oplysninger, ingen e-mail og intet telefonnummer.
+  - **"Til politiet"** er den fulde udgave med MitID-verificering (navn og fødselsdato), e-mail og log. Den udleveres kun til politiet, når de beder om det, eller når BidHamr selv anmelder. Kun chefen kan lave den.
+- Hver udlevering logges (hvem, hvornår, hvilken udgave, til hvem).
+- Skal bekræftes af advokaten (jura/noter-til-advokat.md).

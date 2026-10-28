@@ -157,6 +157,12 @@ export const GRAENSER = {
   betaling_app_bruger: { maks: 60, vindueSek: 10 * 60 },
   // Boost på hjemmesiden (køb af point og "Boost i 24 timer").
   boost_bruger: { maks: 30, vindueSek: 10 * 60 },
+  // Køb af boost-point i appen (POST /api/app/boost/iap): pr. IP før tokenet
+  // er valideret og pr. bruger bagefter (hvert kald rammer Apple/Google).
+  // GET (er køb klar?) pr. IP.
+  iap_ip: { maks: 120, vindueSek: 60 * 60 },
+  iap_bruger: { maks: 30, vindueSek: 10 * 60 },
+  iap_status_ip: { maks: 300, vindueSek: 60 * 60 },
   // Ugens butik i Firma oversigt (køb og annullér - hvert kald rammer Stripe)
   // pr. firma.
   ugens_butik_firma: { maks: 30, vindueSek: 10 * 60 },
@@ -227,6 +233,10 @@ export const GRAENSER = {
   // Henvis en ven i appen (POST /api/konto/henvisning) pr. IP, før tokenet
   // er valideret - kun læsning af eget link og egen status.
   henvisning_app_ip: { maks: 300, vindueSek: 60 * 60 },
+  // Min adresse (hjemmesiden og POST /api/konto/adresse) pr. bruger, og
+  // appens kald pr. IP, før tokenet er valideret.
+  adresse_bruger: { maks: 20, vindueSek: 60 * 60 },
+  adresse_app_ip: { maks: 300, vindueSek: 60 * 60 },
   // Admin-hosten (src/app/actions/adgang.ts og adminToTrin.ts) - fail closed.
   // Login: som på hovedsitet, men strammere. e-mail+IP nulstilles ved et
   // gennemført login. Koden fra app'en: 5 forkerte pr. medarbejder pr. 15

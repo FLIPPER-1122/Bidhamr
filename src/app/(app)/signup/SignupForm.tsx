@@ -13,8 +13,10 @@ import { medHenvisning, renHenvisningskode } from "@/lib/henvisning/kode";
 import { HENVISNING_TEKST } from "@/lib/tekster/henvisning";
 import Turnstile from "@/components/Turnstile";
 import { CAPTCHA_MANGLER, turnstileAktiv } from "@/lib/turnstile";
+import AdresseFelter from "@/components/konto/AdresseFelter";
+import { validerAdresse } from "@/lib/adresse/regler";
 
-type Felt = "fornavn" | "efternavn" | "email" | "password" | "vilkaar" | "henvisningskode";
+type Felt = "fornavn" | "efternavn" | "adresse" | "postnummer" | "email" | "password" | "vilkaar" | "henvisningskode";
 
 // Samme regel som på serveren (renNavn i actions/auth.ts): mellemrum samles og
 // trimmes, før vi tjekker, om feltet er tomt.
@@ -38,6 +40,9 @@ export default function SignupForm({
   const router = useRouter();
   const [fornavn, setFornavn] = useState("");
   const [efternavn, setEfternavn] = useState("");
+  // Adressen til fakturaer (påkrævet). Byen udfyldes ud fra postnummeret.
+  const [adresse, setAdresse] = useState("");
+  const [postnummer, setPostnummer] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [accepterer, setAccepterer] = useState(false);
@@ -75,6 +80,11 @@ export default function SignupForm({
       visFejl("Skriv dit efternavn.", "efternavn");
       return;
     }
+    const adr = validerAdresse({ adresse, postnummer });
+    if ("fejl" in adr) {
+      visFejl(adr.fejl, adr.felt);
+      return;
+    }
 
     const v = vurderAdgangskode(password, person);
     if (!v.ok) {
@@ -102,6 +112,8 @@ export default function SignupForm({
     const svar = await opretKonto({
       fornavn,
       efternavn,
+      adresse,
+      postnummer,
       email,
       password,
       vilkaarVersion: VILKAAR_VERSION,
@@ -176,6 +188,14 @@ export default function SignupForm({
                 />
               </div>
             </div>
+
+            <AdresseFelter
+              adresse={adresse}
+              postnummer={postnummer}
+              onAdresse={setAdresse}
+              onPostnummer={setPostnummer}
+              fejlFelt={fejlFelt === "adresse" || fejlFelt === "postnummer" ? fejlFelt : null}
+            />
 
             <div>
               <label htmlFor="email" className={LABEL}>

@@ -121,6 +121,7 @@ const STATUS: Record<HandlingsFejl["kode"], number> = {
   pause: 503,
   afvist: 409,
   ikke_fundet: 404,
+  adresse_mangler: 409,
   fejl: 500,
 };
 

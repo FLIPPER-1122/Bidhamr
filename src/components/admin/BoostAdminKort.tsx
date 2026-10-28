@@ -8,7 +8,9 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 
 // Admin -> brugeren -> Boost-point (KUN chef - serveren og databasen tjekker
 // det igen): saldo, posteringer og køb, justering med begrundelse (logges i
-// medarbejder-loggen) og refusion af et køb.
+// medarbejder-loggen) og refusion af et køb. Køb i appen (Apple/Google) står
+// for sig: de refunderes kun af Apple/Google (pointene trækkes så tilbage af
+// sig selv - også i minus), og BidHamr laver ingen faktura for dem.
 
 type Posteringer = {
   id: string;
@@ -37,6 +39,32 @@ type Koeb = {
   stripe_payment_intent_id: string | null;
 }[];
 
+type AppKoeb = {
+  id: string;
+  platform: "ios" | "android";
+  produkt_id: string;
+  point: number;
+  miljoe: "produktion" | "test";
+  koebt_kl: string;
+  pris_milli: number | null;
+  valuta: string | null;
+  ekstern_id: string;
+  forbrugt_kl: string | null;
+  refunderet_point: number;
+  refunderet_kl: string | null;
+  kraever_opmaerksomhed: boolean;
+  opmaerksomhed_tekst: string | null;
+}[];
+
+const PLATFORM: Record<string, string> = { ios: "App Store", android: "Google Play" };
+
+// Apples pris i milliunits (39000 = 39,00) i købets valuta.
+function appPris(k: AppKoeb[number]): string {
+  if (k.pris_milli === null || !k.valuta) return "pris ukendt";
+  if (k.valuta === "DKK") return kroner(Math.round(Number(k.pris_milli) / 10));
+  return `${(Number(k.pris_milli) / 1000).toLocaleString("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${k.valuta}`;
+}
+
 const STATUS: Record<string, string> = {
   afventer: "Ikke betalt",
   behandles: "Behandles",
@@ -63,6 +91,9 @@ export default async function BoostAdminKort({
   const { data, error } = await admin.rpc("boost_admin_bruger", { p_staff: chefId, p_bruger: brugerId });
   if (error || !data) return null; // migrationen er ikke kørt, eller ingen adgang
   const v = data as { saldo: number; spaerret: string | null; posteringer: Posteringer; koeb: Koeb };
+  // Køb i appen (20261102320000) - tom liste, hvis migrationen ikke er kørt.
+  const { data: appData } = await admin.rpc("boost_iap_admin_bruger", { p_staff: chefId, p_bruger: brugerId });
+  const appKoeb = (Array.isArray(appData) ? appData : []) as AppKoeb;
   const egen = chefId === brugerId;
 
   return (
@@ -74,6 +105,11 @@ export default async function BoostAdminKort({
         <p className="text-lg font-bold text-neutral-900">{BOOST_TEKST.saldo(v.saldo)}</p>
       </div>
       {v.spaerret === "erhverv" && <p className="mt-1 text-sm text-neutral-500">Firmakonto - kan ikke købe eller bruge boost.</p>}
+      {v.saldo < 0 && (
+        <p className="mt-1 text-sm text-red-700">
+          Saldoen er i minus, fordi Apple eller Google har refunderet et køb, hvor pointene var brugt. Nye boost er blokeret, til saldoen er over prisen for et boost.
+        </p>
+      )}
 
       {!egen && (
         <div className="mt-4">
@@ -81,7 +117,7 @@ export default async function BoostAdminKort({
             triggerLabel="Justér point"
             triggerClassName="btn btn-sekundaer btn-lille"
             title={`Justér ${brugerNavn}s boost-point`}
-            description="Skriv et positivt tal for at give point og et negativt for at trække point. Saldoen kan ikke blive negativ. Justeringen logges i medarbejder-loggen og kan ikke slettes."
+            description="Skriv et positivt tal for at give point og et negativt for at trække point. Et træk kan ikke gøre saldoen negativ (point kan altid lægges til - også når saldoen er i minus efter en refusion i appen). Justeringen logges i medarbejder-loggen og kan ikke slettes."
             confirmLabel="Justér point"
             action={justerBoostPoint}
             hiddenFields={{ brugerId, noegle: randomUUID() }}
@@ -93,7 +129,7 @@ export default async function BoostAdminKort({
         </div>
       )}
 
-      <h3 className="mt-6 text-sm font-semibold text-neutral-800">Køb</h3>
+      <h3 className="mt-6 text-sm font-semibold text-neutral-800">Køb på bidhamr.dk (Stripe)</h3>
       {v.koeb.length === 0 ? (
         <p className="mt-1 text-sm text-neutral-500">Ingen køb.</p>
       ) : (
@@ -130,6 +166,33 @@ export default async function BoostAdminKort({
                   kanIkkeFortrydes
                   kvittering="Købet er refunderet"
                 />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h3 className="mt-6 text-sm font-semibold text-neutral-800">Køb i appen (Apple og Google)</h3>
+      <p className="mt-0.5 text-xs text-neutral-500">
+        Apple og Google er sælger: de har opkrævet køberen, udstedt kvitteringen og refunderer selv. BidHamr laver ingen faktura for disse køb.
+      </p>
+      {appKoeb.length === 0 ? (
+        <p className="mt-1 text-sm text-neutral-500">Ingen køb i appen.</p>
+      ) : (
+        <ul className="mt-2 divide-y divide-neutral-100 text-sm">
+          {appKoeb.map((k) => (
+            <li key={k.id} className="py-2">
+              <p className="text-neutral-900">
+                {k.point} point · {PLATFORM[k.platform] ?? k.platform} · {appPris(k)}
+                {k.miljoe === "test" ? " · testkøb" : ""}
+                {k.refunderet_point > 0 ? ` · refunderet (${k.refunderet_point} point trukket)` : ""}
+              </p>
+              <p className="text-xs text-neutral-500">
+                {dato(k.koebt_kl)} · {k.ekstern_id}
+                {k.platform === "android" && !k.forbrugt_kl && k.refunderet_point < k.point ? " · ikke forbrugt hos Google endnu" : ""}
+              </p>
+              {k.kraever_opmaerksomhed && k.opmaerksomhed_tekst && (
+                <p className="mt-1 whitespace-pre-line text-xs text-red-700">{k.opmaerksomhed_tekst}</p>
               )}
             </li>
           ))}

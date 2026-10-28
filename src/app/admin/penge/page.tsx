@@ -19,6 +19,7 @@ import {
 } from "@/lib/admin/penge";
 import { hentOekonomi } from "@/lib/admin/pengeOekonomi";
 import Oekonomioverblik from "@/components/admin/penge/Oekonomioverblik";
+import BoostSalg from "@/components/admin/penge/BoostSalg";
 
 // Penge - KUN for rollen chef (ROADMAP fase 1B). Admin og medarbejder får 404,
 // også ved direkte URL. Rollen tjekkes her OG igen i hentPengeOversigt.
@@ -655,6 +656,8 @@ export default async function AdminPenge({
       )}
 
       <Fragttilskud r={o.fragtTilskud} />
+
+      <BoostSalg fra={o.fra} til={o.til} />
 
       <Afstemning tal={o.tal} saldo={o.saldo} balance={o.balance} bevaegelser={o.bevaegelser} />
 

@@ -24,6 +24,12 @@ export const BOT_MAKS_TOKENS = 4000;
 export const BOT_DEADLINE_MS = 50_000;
 // Loftet pr. døgn står i databasen (bot_ny_besked) - her kun til tekster.
 export const BOT_LOFT_PR_DOEGN = 30;
+// Groft loft over input-tokens pr. runde (systemprompt, værktøjer, op til
+// BOT_MAKS_HISTORIK beskeder og værktøjsresultater) - kun til skønnet over
+// den højeste pris for ét svar (botMaksPrisUsd). Hellere for højt end for lavt.
+export const BOT_SKOEN_INPUT_PR_RUNDE = 30_000;
+// Siden /kontakt (kontaktformularen) - linket ved lofterne.
+export const BOT_KONTAKT_STI = "/kontakt";
 
 export function botNoegle(env: NodeJS.ProcessEnv = process.env): string | null {
   const v = env.ANTHROPIC_API_KEY?.trim();
@@ -85,8 +91,16 @@ export function laesEmail(v: unknown): string | null {
 }
 
 // Svarkoderne fra bot_ny_besked som danske fejl (HTTP-status, tekst).
-export function loftFejl(kode: string): { status: number; fejl: string; kode: string } {
+// grund er 'grund' fra databasen ved 'loft_alle' (anon/anon_usd = loftet for
+// alle uden login, så indloggede kan stadig skrive).
+export function loftFejl(kode: string, grund?: string | null): { status: number; fejl: string; kode: string } {
   switch (kode) {
+    case "loft_bruger_usd":
+      return {
+        status: 429,
+        kode,
+        fejl: "Du har stillet mange spørgsmål til BidHamr-bot i dag, så den holder pause for dig til i morgen. Skriv til os via kontaktformularen på /kontakt, så hjælper en medarbejder dig.",
+      };
     case "loft_bruger":
     case "loft_ip":
       return {
@@ -95,6 +109,13 @@ export function loftFejl(kode: string): { status: number; fejl: string; kode: st
         fejl: `Du har skrevet ${BOT_LOFT_PR_DOEGN} beskeder til BidHamr-bot det seneste døgn. Prøv igen senere, eller kontakt en rigtig medarbejder.`,
       };
     case "loft_alle":
+      if (grund === "anon" || grund === "anon_usd") {
+        return {
+          status: 429,
+          kode,
+          fejl: "BidHamr-bot holder en kort pause for besøgende uden login. Log ind for at fortsætte, eller skriv til os via kontaktformularen på /kontakt.",
+        };
+      }
       return {
         status: 429,
         kode,
@@ -121,4 +142,58 @@ export function botPrisUsd(model: string, f: BotForbrug): number {
   const p: Priser = erTilladtModel(model) ? BOT_MODELLER[model] : UKENDT;
   const usd = (f.input * p.input + f.output * p.output + f.cacheRead * p.cacheRead + f.cacheWrite * p.cacheWrite) / 1_000_000;
   return Math.round(usd * 1_000_000) / 1_000_000;
+}
+
+// Den højeste pris for ét svar med modellen (alle runder, fuld output og
+// fuld input uden cache). Sendes til bot_ny_besked som skøn for svar, der er
+// i gang, så mange samtidige beskeder ikke kan løbe forbi USD-lofterne.
+export function botMaksPrisUsd(model: string): number {
+  return botPrisUsd(model, {
+    input: BOT_MAKS_RUNDER * BOT_SKOEN_INPUT_PR_RUNDE,
+    output: BOT_MAKS_RUNDER * BOT_MAKS_TOKENS,
+    cacheRead: 0,
+    cacheWrite: 0,
+  });
+}
+
+// Chefens indstillinger på /admin/bot (bot_indstillinger). Samme grænser
+// som tjekket i databasen (bot_indstillinger_vaerdier). Andelen uden login
+// skrives i procent (0-100) og gemmes som 0-1.
+export type BotIndstillinger = {
+  doegnloft_usd: number;
+  anon_andel: number;
+  bruger_loft_usd: number;
+  doegnloft_anon: number;
+};
+
+const tal = (v: unknown): number | null => {
+  if (typeof v !== "string") return null;
+  const t = v.trim().replace(/\s/g, "").replace(",", ".");
+  if (!/^\d+(\.\d+)?$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+};
+
+export function laesBotIndstillinger(f: {
+  doegnloft_usd?: unknown;
+  anon_procent?: unknown;
+  bruger_loft_usd?: unknown;
+  doegnloft_anon?: unknown;
+}): BotIndstillinger | { fejl: string } {
+  const usd = tal(f.doegnloft_usd);
+  if (usd === null || usd > 1000) return { fejl: "Døgnloftet skal være mellem 0 og 1.000 USD." };
+  const procent = tal(f.anon_procent);
+  if (procent === null || procent > 100) return { fejl: "Andelen uden login skal være mellem 0 og 100 %." };
+  const bruger = tal(f.bruger_loft_usd);
+  if (bruger === null || bruger > 100) return { fejl: "Loftet pr. bruger skal være mellem 0 og 100 USD." };
+  const anon = tal(f.doegnloft_anon);
+  if (anon === null || !Number.isInteger(anon) || anon > 1_000_000) {
+    return { fejl: "Beskeder uden login skal være et helt tal mellem 0 og 1.000.000." };
+  }
+  return {
+    doegnloft_usd: Math.round(usd * 100) / 100,
+    anon_andel: Math.round(procent * 10) / 1000,
+    bruger_loft_usd: Math.round(bruger * 10_000) / 10_000,
+    doegnloft_anon: anon,
+  };
 }

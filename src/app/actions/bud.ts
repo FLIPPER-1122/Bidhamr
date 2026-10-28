@@ -10,7 +10,7 @@ import { afgivBudFor, saetMaksimumFor, type BudFejl } from "@/lib/bud/afgivBud";
 // (bids_insert_own) og triggerne gaelder uaendret. Logikken deles med appen
 // (POST /api/bud/app) i src/lib/bud/afgivBud.ts. Fejl RETURNERES.
 
-type Fejl = { fejl: string; auktionAendret?: true; mitid?: true };
+type Fejl = { fejl: string; auktionAendret?: true; mitid?: true; adresse?: true };
 
 // Hjemmesiden bruger kun teksten og markeringerne - koden er til appen.
 function udenKode(f: BudFejl): Fejl {
@@ -18,6 +18,7 @@ function udenKode(f: BudFejl): Fejl {
     fejl: f.fejl,
     ...(f.auktionAendret ? { auktionAendret: true as const } : {}),
     ...(f.mitid ? { mitid: true as const } : {}),
+    ...(f.adresse ? { adresse: true as const } : {}),
   };
 }
 

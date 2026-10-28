@@ -37,6 +37,12 @@
 //     som 15.03.2024 eller 2024-03-15 - medmindre en blok på 6-10 cifre
 //     følger lige efter datoen). Er bankordet kun det svage "bank"/"netbank",
 //     kræves 8-10 cifre efter de 4 lige efter et vareord (EAN/SKU/varenr).
+//     Passivformerne "overføres"/"overført" er ikke bankord; er de det
+//     eneste bankord (også for chattens filter), læser chattens filter ikke
+//     numre efter en mærkat ("Garanti overføres, kvittering nr 1234 5678 90").
+//   - En ISO-dato (åååå-mm-dd, også . og /, måned 1-12, dag 1-31) er ikke et
+//     telefonnummer, når hele cifferkæden er datoen og der intet kontaktord
+//     står ("Købt 2023-11-24"; "Ring 2023-11-24" stoppes).
 //   - MobilePay (også "mobile pay", "mp box 1234", "på mp") stoppes altid.
 //   - E-mail skrevet med mellemrum ("hans @ gmail . com"), som "hans på
 //     gmail", "hans.hansen icloud", "hans123 på outlook" eller "skriv/kontakt
@@ -163,10 +169,12 @@ const KONTAKTORD = new RegExp(
 // Bankord til "4 cifre + 6-10 cifre": fast liste med ordstart ("powerbank"
 // tæller ikke). "reg" kun som reg.nr/regnr/reg nr eller reg + 4 cifre
 // ("reg. højde" tæller ikke). "overfør..." skal stå i starten af et ord.
+// Passivformerne "overføres" og "overført" er ikke bankord ("Garantien
+// overføres, EAN 1234 567890").
 const BANKORD = new RegExp(
   `${B}(bank|banken|netbank|netbanken|bankkonto|bankkontoen|bankoverførsel|bankoverførslen` +
     `|konto|kontoen|kontonr|kontonummer|kontonummeret|regnr|registreringsnummer|registreringsnr|iban` +
-    `|overf(ø|o)r[a-zæøå]*)${E}` +
+    `|overf(ø|o)r(?!(es|t)${E})[a-zæøå]*)${E}` +
     `|${B}reg\\.?\\s*nr${E}|${B}reg[.:]?\\s*[0-9]{4}(?![0-9])`,
   "u",
 );
@@ -176,8 +184,18 @@ const BANKORD = new RegExp(
 const BANKORD_STAERK = new RegExp(
   `${B}(bankkonto|bankkontoen|bankoverførsel|bankoverførslen` +
     `|konto|kontoen|kontonr|kontonummer|kontonummeret|regnr|registreringsnummer|registreringsnr|iban` +
-    `|overf(ø|o)r[a-zæøå]*)${E}` +
+    `|overf(ø|o)r(?!(es|t)${E})[a-zæøå]*)${E}` +
     `|${B}reg\\.?\\s*nr${E}|${B}reg[.:]?\\s*[0-9]{4}(?![0-9])`,
+  "u",
+);
+// Passivformerne "overføres"/"overført". Chattens filter læser dem som
+// bankord; er de det eneste bankord, skjules numre efter en mærkat for
+// chattens filter til sidst ("Garanti overføres, kvittering nr 1234 5678 90").
+const PASSIV = new RegExp(`${B}overf(ø|o)r(es|t)${E}`, "gu");
+// Chattens bankord (P_BANK_ORD i src/lib/tryghed.ts).
+const BANKORD_CHAT = new RegExp(
+  `${B}(bank[a-zæøå]*|konto[a-zæøå]*|overf(ø|o)r[a-zæøå]*|indbetal[a-zæøå]*|indsæt[a-zæøå]*|iban` +
+    `|regnr|registreringsn[a-zæøå]*|reg\\.?\\s*(nr|nummer))${E}`,
   "u",
 );
 // En enhed lige efter et nummer: så er det ikke et kontonummer ("145000 km").
@@ -478,6 +496,16 @@ export function auktionKontaktGrund(tekst: string | null | undefined, erhverv: b
     if (lignerTelefon(m[0].slice(m[0].search(/[0-9]/)))) return "telefon";
   }
 
+  // En ISO-dato (åååå-mm-dd, måned 1-12, dag 1-31 - samme regel som
+  // kontoreglen) er ikke et telefonnummer: "Købt 2023-11-24". Kun når hele
+  // kæden er datoen og uden kontaktord ("Ring 2023-11-24" stoppes).
+  if (!kontakt) {
+    v = v.replace(KAEDE, (m) => {
+      const { blokke, skille } = del(m);
+      return blokke.length === 3 && erDatoAar(blokke, skille, 0) ? " # " : m;
+    });
+  }
+
   // Bankoplysninger skrevet som et varenummer (kræver et bankord).
   const bank = BANKORD.test(v);
   // Undtagelsen for vareord gælder kun med de svage bankord (bank, netbank).
@@ -507,6 +535,10 @@ export function auktionKontaktGrund(tekst: string | null | undefined, erhverv: b
 
   // Intet kontaktord: varenumre med andre længder og signalværdier tæller ikke.
   if (!kontakt) v = v.replace(VAREORD, " # ").replace(SIGNAL, " # ");
+  // Er "overføres"/"overført" det eneste bankord, læser chattens filter ikke
+  // numrene efter en mærkat (8 cifre er allerede tjekket ovenfor).
+  if (!bank && v.search(PASSIV) >= 0 && !BANKORD_CHAT.test(v.replace(PASSIV, " ")))
+    v = v.replace(MAERKAT, " # ");
   g = spamGrund(v);
   if (g !== null) return g;
 

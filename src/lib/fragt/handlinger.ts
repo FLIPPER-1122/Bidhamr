@@ -147,6 +147,9 @@ export type Checkout = {
   } | null;
   // Sælgeren har lavet fragtlabelen - valget kan ikke ændres.
   labelLavet: boolean;
+  // Køberens gemte adresse (Min adresse, bruger_adresser - 20261102340000).
+  // Forudfylder "Levering til døren", når valget/forslaget ingen adresse har.
+  minAdresse: { adresse: string; postnummer: string; by: string } | null;
 };
 
 type CheckoutLevRaekke = {
@@ -197,6 +200,13 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
       .limit(1),
     admin.from("leveringsforslag").select("*").eq("user_id", brugerId).maybeSingle(),
   ]);
+  // Kun køberens egen adresse (brugerId er tjekket som køber ovenfor). En
+  // læsefejl (fx før migrationen) giver bare ingen forudfyldning.
+  const { data: minAdr } = await admin
+    .from("bruger_adresser")
+    .select("adresse, postnummer, bynavn")
+    .eq("bruger_id", brugerId)
+    .maybeSingle<{ adresse: string; postnummer: string; bynavn: string }>();
   // Før migrationen 20261024010000 (ingen kolonne transportoer): intet valg
   // af fragtfirma - alt går som DAO.
   const foerMigration = foerTransportoerMigration(l0.error);
@@ -301,6 +311,7 @@ export async function hentCheckout(tradeId: unknown, brugerId: string): Promise<
           }
         : null,
       labelLavet,
+      minAdresse: minAdr ? { adresse: minAdr.adresse, postnummer: minAdr.postnummer, by: minAdr.bynavn } : null,
     },
   };
 }

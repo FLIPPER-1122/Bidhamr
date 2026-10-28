@@ -279,6 +279,12 @@ Migration `20261102230000_henvis_en_ven.sql`. Samme kald som hjemmesidens `/kont
 - Pointene gives af databasen, når vennen bliver MitID-verificeret (også via appens `/api/mitid/app/afslut`), og
   står i `mine_point().historik` med `type: "henvisning"` ("Henvist en ven").
 
+## GET og POST /api/konto/adresse (Min adresse)
+
+Migration `20261102340000_bruger_adresse.sql`. Adressen til kvitteringer og fakturaer: hent (GET) og gem (POST
+`{ adresse, postnummer }`). Kræves før første bud (`/api/bud/app` svarer 409 `BHY01`) og første betaling
+(`/api/betaling/app/betal` svarer 409 `adresse_mangler`). Hele kontrakten står i docs/APP-SIGNUP.md under "Adresse".
+
 ## POST /api/auktion/app/fjern-billeder
 
 `{ auktion_id, stier: string[] }` (højst 20; storage-stier `<bruger-id>/<fil>.jpg` eller de offentlige URL'er) →
@@ -357,6 +363,71 @@ Det er BidHamrs regler og handelsbetingelser, der gælder."
 - **Samtalen skal ryddes, når en anden logger ind, eller brugeren logger ud** (gem ikke `samtaleId` og beskederne
   på tværs af brugere). Samtaler, der er ældre end 90 dage, kan ikke fortsættes (`409 ukendt_samtale`).
 - Bottens tekst filtreres for ordet "forsikring" (bliver til "BidHamr Beskyttelse") - intet at gøre i appen.
+
+Ændret i `20261102310000_bot_loft_pr_gruppe.sql` (27. okt. 2026):
+- **Ny kode `429 loft_bruger_usd`**: den indloggede bruger har brugt sit eget døgnbudget. Vis `fejl`-teksten (den
+  henviser til /kontakt) og knappen til kontaktformularen - samme håndtering som `loft_bruger`.
+- **`429 loft_alle` uden login** har nu en tekst, der beder brugeren logge ind (indloggede har altid budget
+  tilbage). Vis `fejl`-teksten og et link til login og til kontaktformularen.
+- Filteret: selve ordet "forsikring" (og bøjninger) bliver til "BidHamr Beskyttelse", sammensatte ord som
+  "indboforsikring" til "dækning" - intet at gøre i appen.
+
+## Køb af boost-point i appen: GET/POST /api/app/boost/iap (Apple og Google)
+
+Migration `20261102320000_boost_iap.sql`. Beslutning: "Køb af boost-point i appen (Filip, 27. okt. 2026)". Opsætning
+hos Apple og Google: docs/IAP.md. **I appen købes boost-point kun via Apple In-App Purchase (iOS) og Google Play
+Billing (Android)** - ikke via `POST /api/betaling/app/boost-koeb` (Stripe), som kun er til hjemmesiden. Appen må
+ikke nævne, at det er billigere på hjemmesiden, og må ikke linke dertil for at købe. Point købt i appen udløber aldrig.
+
+Produkterne er **forbrugsprodukter** (consumable) med samme id på begge platforme:
+
+| Produkt-id | Point | Pris (sættes i App Store Connect / Play Console) |
+|---|---|---|
+| `dk.bidhamr.app.boost100` | 100 | 39 kr. |
+| `dk.bidhamr.app.boost300` | 300 | 99 kr. |
+| `dk.bidhamr.app.boost700` | 700 | 199 kr. |
+
+Pointene bestemmes af serveren ud fra produkt-id'et. Vis prisen fra StoreKit/Play Billing (den lokale pris), ikke
+fra BidHamr.
+
+**GET /api/app/boost/iap** (`Authorization: Bearer <token>` valgfri)
+→ `200 { ok, klar: { ios, android }, produkter: [{ id, point }], kanKoebe?, grund?, appAccountToken? }`
+- Skjul køb på platformen, når `klar.<platform>` er `false` (serveren er ikke sat op).
+- Med login: `kanKoebe: false` og `grund: "erhverv" | "spaerret"` - vis ikke køb (firmaer kan ikke bruge boost).
+- `appAccountToken` (uuid = brugerens id) **skal** sendes med ved købet:
+  - iOS (StoreKit 2): `product.purchase(options: [.appAccountToken(UUID(uuidString: appAccountToken)!)])`
+  - Android: `BillingFlowParams.newBuilder().setObfuscatedAccountId(appAccountToken)`
+  Så kan serveren se, at købet hører til den indloggede konto (et køb med en anden kontos token afvises).
+
+**POST /api/app/boost/iap** (`Authorization: Bearer <token>`, `Content-Type: application/json`)
+- iOS: `{ "platform": "ios", "signedTransaction": "<Transaction.jwsRepresentation>" }` (StoreKit 2,
+  `VerificationResult.jwsRepresentation`)
+- Android: `{ "platform": "android", "productId": "dk.bidhamr.app.boost300", "purchaseToken": "<Purchase.getPurchaseToken()>" }`
+- Ingen andre felter (point, pris osv. giver `400`).
+
+Svar:
+- `200 { ok: true, kode: "ok" | "allerede", point, saldo }` - pointene er krediteret (eller var det allerede).
+  **Først nu** afslutter appen købet: iOS `await transaction.finish()`. Android: **forbrug ikke købet i appen**
+  (ingen `consumeAsync`/`acknowledgePurchase`) - serveren kalder `consume` hos Google efter krediteringen.
+- `409 refunderet | annulleret` - købet giver aldrig point: afslut transaktionen (iOS `finish()`).
+- `409 afventer` (Android, ventende betaling) - vent på `PURCHASED` i `PurchasesUpdatedListener`, og send igen.
+- `409 anden_konto` - købet tilhører en anden BidHamr-konto. Vis `fejl`.
+- `409 forkert_miljoe | produkt_ukendt | ikke_forbrug | antal` og `422 ugyldigt_koeb` - vis `fejl`; send ikke igen.
+- `403 erhverv | spaerret` - vis `fejl`. Afslut **ikke** transaktionen (en spærret konto kan få pointene, når den er
+  åben igen; Google refunderer selv et køb, der ikke er forbrugt efter 3 dage).
+- `503 iap_ikke_klar | proev_igen` og `500 fejl` - **afslut ikke** transaktionen; prøv igen senere.
+- `400 ugyldig`, `401 ikke_logget_ind`, `429 for_mange`.
+
+Robusthed (anbefalet af Apple/Google): lyt hele tiden på `Transaction.updates` (iOS) og kald
+`queryPurchasesAsync` ved opstart (Android), og send alle køb, der ikke er afsluttet, til endpointet igen. Det er
+idempotent - samme køb giver aldrig point to gange. Brug "Køb én pakke ad gangen" (ingen antal > 1).
+
+Refusion: refunderer Apple eller Google købet, trækker serveren pointene tilbage. Er de brugt, går saldoen i minus
+(`mine_point.saldo < 0`, historiktyperne `refusion_apple` / `refusion_google`), og der kan ikke boostes, før
+saldoen er over prisen for et boost (`boost-brug` svarer `for_faa_point`). Nye historiktyper: `koeb_apple`
+("Købt i appen (App Store)"), `koeb_google` ("Købt i appen (Google Play)"), `refusion_apple` ("Refunderet af
+Apple"), `refusion_google` ("Refunderet af Google") - teksterne står i `src/lib/boost/tekster.ts`
+(`BOOST_TEKST.type` og `BOOST_TEKST.iMinus`).
 
 ## Ændret i eksisterende endpoints
 

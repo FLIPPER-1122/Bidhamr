@@ -8,6 +8,7 @@ import { createAnonClient } from "@/lib/supabase/anon";
 import { registrerLogin } from "@/lib/enheder";
 import { logDriftFejl } from "@/lib/drift";
 import { UGYLDIG, fremmedOrigin, jsonKrop, svar } from "@/lib/mitid/appAuth";
+import { validerAdresse } from "@/lib/adresse/regler";
 
 // Appen bekræfter e-mailen her (docs/APP-SIGNUP.md) med koden fra mailen -
 // og sætter den valgte adgangskode, navnet og vilkårsaccepten i samme kald,
@@ -18,14 +19,18 @@ import { UGYLDIG, fremmedOrigin, jsonKrop, svar } from "@/lib/mitid/appAuth";
 // POST /api/konto/bekraeft
 //   Content-Type: application/json
 //   { "email": "...", "kode": "123456", "password": "...",
-//     "fornavn": "...", "efternavn": "...", "vilkaar_version": "<VILKAAR_VERSION>",
+//     "fornavn": "...", "efternavn": "...", "adresse": "Testvej 12, 2. th.",
+//     "postnummer": "2100", "by": "København Ø", "vilkaar_version": "<VILKAAR_VERSION>",
 //     "henvisningskode": "ABCDEFGHJK" }
+//   adresse + postnummer: påkrævet - de samme som til /api/konto/opret
+//   (sendes igen ligesom navnet). by: valgfri, serveren bruger bynavnet for
+//   postnummeret.
 //   henvisningskode (valgfri): koden fra et henvisningslink
 //   (bidhamr.dk/?ven=KODE - Henvis en ven). Knyttes kun til en NY konto;
 //   en ugyldig eller ukendt kode ignoreres stille (svaret er det samme).
 //
 // Svar (JSON):
-//   200 { ok: true, adgangskode_sat: boolean, navn_sat: boolean, vilkaar_sat: boolean,
+//   200 { ok: true, adgangskode_sat: boolean, navn_sat: boolean, vilkaar_sat: boolean, adresse_sat: boolean,
 //         session: { access_token, refresh_token, expires_in, expires_at, token_type },
 //         bruger: { id, email } }
 //       Appen gemmer sessionen med supabase.auth.setSession({ access_token,
@@ -34,8 +39,10 @@ import { UGYLDIG, fremmedOrigin, jsonKrop, svar } from "@/lib/mitid/appAuth";
 //       password }) med den nye session. navn_sat = false: navnet kunne ikke
 //       gemmes (fx kontaktoplysninger i navnet, BHN02) - bed om det igen.
 //       vilkaar_sat = false: vis accept-vinduet (accepter_vilkaar).
+//       adresse_sat = false: adressen kunne ikke gemmes - bed om den igen
+//       (POST /api/konto/adresse) før første bud/betaling.
 //   400 { fejl, kode: "ugyldig" | "email" | "kode_forkert" | "adgangskode" |
-//         "fornavn" | "efternavn" | "vilkaar" }
+//         "fornavn" | "efternavn" | "adresse" | "postnummer" | "vilkaar" }
 //       kode_forkert: forkert eller udløbet kode (få en ny via /api/konto/opret).
 //       adgangskode: adgangskoden opfylder ikke kravene - tjekket FØR koden
 //       bruges, så koden stadig gælder.
@@ -77,6 +84,9 @@ export async function POST(req: NextRequest) {
   const efternavn = renNavn(krop.efternavn);
   if (!fornavn) return svar(400, { fejl: "Skriv dit fornavn.", kode: "fornavn" });
   if (!efternavn) return svar(400, { fejl: "Skriv dit efternavn.", kode: "efternavn" });
+  // Adressen tjekkes også før koden bruges.
+  const adr = validerAdresse({ adresse: krop.adresse, postnummer: krop.postnummer });
+  if ("fejl" in adr) return svar(400, { fejl: adr.fejl, kode: adr.felt });
   // Hjemmesidens eller databasens aktive version (appen sender databasens).
   const vilkaarVersion = await godkendtSignupVersion(krop.vilkaar_version);
   if (!vilkaarVersion) {
@@ -96,7 +106,12 @@ export async function POST(req: NextRequest) {
     kode,
     ip,
     adgangskode: password,
-    profil: { fornavn, efternavn, vilkaarVersion },
+    profil: {
+      fornavn,
+      efternavn,
+      vilkaarVersion,
+      adresse: { adresse: adr.adresse.adresse, postnummer: adr.adresse.postnummer },
+    },
     henvisningskode: typeof krop.henvisningskode === "string" ? krop.henvisningskode : null,
   });
   if ("fejl" in res) {
@@ -130,6 +145,7 @@ export async function POST(req: NextRequest) {
       adgangskode_sat: res.adgangskodeSat,
       navn_sat: res.navnSat,
       vilkaar_sat: res.vilkaarSat,
+      adresse_sat: res.adresseSat,
       session: {
         access_token: res.session.access_token,
         refresh_token: res.session.refresh_token,
