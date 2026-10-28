@@ -19,6 +19,10 @@ type Platform = {
   refunderet_point: number;
   refunderet_oere: number;
   test_antal: number;
+  // 20261102370000 (mangler, hvis migrationen ikke er kørt).
+  promo_antal?: number;
+  promo_point?: number;
+  testkoeb_prod_antal?: number;
 };
 type Oversigt = {
   stripe: { antal: number; brutto_oere: number; refunderet_antal: number; refunderet_oere: number };
@@ -48,6 +52,15 @@ function AppKolonne({ titel, p, prisKendt }: { titel: string; p: Platform; prisK
         <Linje navn="Refunderet" vaerdi={`${p.refunderet_antal} (${p.refunderet_point.toLocaleString("da-DK")} point)`} />
         {prisKendt && p.refunderet_oere > 0 && <Linje navn="Refunderet (DKK)" vaerdi={kroner(Number(p.refunderet_oere))} />}
         {p.test_antal > 0 && <Linje navn="Testkøb (tæller ikke med)" vaerdi={String(p.test_antal)} />}
+        {(p.testkoeb_prod_antal ?? 0) > 0 && (
+          <Linje navn="Heraf testkøb i produktion" vaerdi={String(p.testkoeb_prod_antal)} />
+        )}
+        {(p.promo_antal ?? 0) > 0 && (
+          <Linje
+            navn="Promokoder (ikke betalt, tæller ikke med)"
+            vaerdi={`${p.promo_antal} (${Number(p.promo_point ?? 0).toLocaleString("da-DK")} point)`}
+          />
+        )}
       </dl>
     </div>
   );

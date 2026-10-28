@@ -138,7 +138,7 @@ const OFFENTLIGE_RUTER = [
   // Køb af boost-point i appen (Apple/Google): kun Bearer-token, login og
   // kun private tjekkes i ruten (src/app/api/app/boost/iap/route.ts).
   // Webhooks fra Apple og Google ligger under /api/webhooks (signatur/OIDC).
-  "/api/app/boost",
+  "/api/app/boost/iap",
 ];
 
 // Rene læsesider, der skal kunne læses af alle uden login, også før lancering

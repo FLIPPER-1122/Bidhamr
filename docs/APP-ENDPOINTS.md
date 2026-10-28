@@ -409,10 +409,14 @@ fra BidHamr.
 → `200 { ok, klar: { ios, android }, produkter: [{ id, point }], kanKoebe?, grund?, appAccountToken? }`
 - Skjul køb på platformen, når `klar.<platform>` er `false` (serveren er ikke sat op).
 - Med login: `kanKoebe: false` og `grund: "erhverv" | "spaerret"` - vis ikke køb (firmaer kan ikke bruge boost).
-- `appAccountToken` (uuid = brugerens id) **skal** sendes med ved købet:
+- `appAccountToken` (et UUID, som serveren regner ud af brugerens id med en hemmelig nøgle - **ikke** brugerens id;
+  samme værdi hver gang for samme bruger) **skal** sendes med ved købet. Brug værdien fra GET uændret - appen må ikke
+  selv lave den:
   - iOS (StoreKit 2): `product.purchase(options: [.appAccountToken(UUID(uuidString: appAccountToken)!)])`
   - Android: `BillingFlowParams.newBuilder().setObfuscatedAccountId(appAccountToken)`
-  Så kan serveren se, at købet hører til den indloggede konto (et køb med en anden kontos token afvises).
+  Så kan serveren se, at købet hører til den indloggede konto. Et køb med en anden kontos token afvises
+  (`409 anden_konto`), og på bidhamr.dk afvises et køb **uden** token (`409 konto_mangler`).
+  Hent GET igen efter login/skift af konto, før næste køb.
 
 **POST /api/app/boost/iap** (`Authorization: Bearer <token>`, `Content-Type: application/json`)
 - iOS: `{ "platform": "ios", "signedTransaction": "<Transaction.jwsRepresentation>" }` (StoreKit 2,
@@ -427,6 +431,9 @@ Svar:
 - `409 refunderet | annulleret` - købet giver aldrig point: afslut transaktionen (iOS `finish()`).
 - `409 afventer` (Android, ventende betaling) - vent på `PURCHASED` i `PurchasesUpdatedListener`, og send igen.
 - `409 anden_konto` - købet tilhører en anden BidHamr-konto. Vis `fejl`.
+- `409 konto_mangler` - købet er lavet uden `appAccountToken`/`obfuscatedAccountId`. Vis `fejl`; send ikke igen.
+  Chefen får besked (brugeren har betalt).
+- `409 refunderet` kan også komme, hvis Apple/Google har refunderet købet, før appen nåede at sende det.
 - `409 forkert_miljoe | produkt_ukendt | ikke_forbrug | antal` og `422 ugyldigt_koeb` - vis `fejl`; send ikke igen.
 - `403 erhverv | spaerret` - vis `fejl`. Afslut **ikke** transaktionen (en spærret konto kan få pointene, når den er
   åben igen; Google refunderer selv et køb, der ikke er forbrugt efter 3 dage).
