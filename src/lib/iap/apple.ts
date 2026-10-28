@@ -183,6 +183,8 @@ export type AppleNotifikation = {
   notificationType?: string;
   subtype?: string;
   notificationUUID?: string;
+  // UNIX-tid i millisekunder, hvor App Store signerede notifikationen.
+  signedDate?: number;
   data?: { signedTransactionInfo?: string; environment?: string; bundleId?: string; consumptionRequestReason?: string };
 };
 

@@ -23,6 +23,7 @@ const BOOST = readFileSync(path.join(MIGRATIONER, "20261023030000_boost.sql"), "
 const PAKKER = readFileSync(path.join(MIGRATIONER, "20261026010000_boost_pakker.sql"), "utf8");
 const MIGRATION = readFileSync(path.join(MIGRATIONER, "20261102320000_boost_iap.sql"), "utf8");
 const RETTELSER = readFileSync(path.join(MIGRATIONER, "20261102370000_boost_iap_rettelser.sql"), "utf8");
+const RETTELSER2 = readFileSync(path.join(MIGRATIONER, "20261102400000_boost_iap_rettelser2.sql"), "utf8");
 
 // mine_data som i produktion (med andre migrationers udvidelser).
 const MINE_DATA_STUB = `
@@ -53,6 +54,7 @@ const PRIVAT3 = "00000000-0000-4000-8000-0000000000a3";
 const PRIVAT4 = "00000000-0000-4000-8000-0000000000a4";
 const PRIVAT5 = "00000000-0000-4000-8000-0000000000a5";
 const PRIVAT6 = "00000000-0000-4000-8000-0000000000a6";
+const PRIVAT7 = "00000000-0000-4000-8000-0000000000a7";
 
 let db: PGlite;
 
@@ -100,7 +102,7 @@ beforeAll(async () => {
   db = new PGlite();
   await db.exec(STUB);
   await db.exec(`insert into public.users (id, navn) values ('${PRIVAT3}', 'Privat 3'), ('${PRIVAT4}', 'Privat 4'),
-                 ('${PRIVAT5}', 'Privat 5'), ('${PRIVAT6}', 'Privat 6')`);
+                 ('${PRIVAT5}', 'Privat 5'), ('${PRIVAT6}', 'Privat 6'), ('${PRIVAT7}', 'Privat 7')`);
   await db.exec(BOOST);
   await db.exec(APP_ENDPOINTS_MIN_AUKTION_BOOST);
   await db.exec(PAKKER);
@@ -111,6 +113,8 @@ beforeAll(async () => {
   await db.exec(RETTELSER);
   // Rettelserne kan også køres igen.
   await db.exec(RETTELSER);
+  await db.exec(RETTELSER2);
+  await db.exec(RETTELSER2);
 });
 
 afterAll(async () => {
@@ -366,7 +370,7 @@ describe("chefens oversigt og rettigheder", () => {
     const r = await en<Record<string, unknown>>(`
       select has_function_privilege('service_role', 'public.boost_iap_krediter(uuid,text,text,text,text,text,text,timestamptz,bigint,text,text,text)', 'execute') as sr,
              has_function_privilege('authenticated', 'public.boost_iap_krediter(uuid,text,text,text,text,text,text,timestamptz,bigint,text,text,text)', 'execute') as auth,
-             has_function_privilege('anon', 'public.boost_iap_refusion(text,text,text,integer,text)', 'execute') as anon_ref,
+             has_function_privilege('anon', 'public.boost_iap_refusion(text,text,text,integer,text,text,timestamptz)', 'execute') as anon_ref,
              has_function_privilege('authenticated', 'public.boost_salg_oversigt(uuid,timestamptz,timestamptz)', 'execute') as auth_overs,
              has_table_privilege('authenticated', 'public.boost_iap_koeb', 'insert') as auth_skriv,
              has_table_privilege('service_role', 'public.boost_iap_koeb', 'update') as sr_skriv,
@@ -494,11 +498,100 @@ describe("rettelser: ventende refusion, markering, testkøb, Download dine data"
     const r = await en<Record<string, unknown>>(`
       select has_function_privilege('authenticated', 'public.boost_iap_tilbagekald_testkoeb()', 'execute') as auth_tilbage,
              has_function_privilege('service_role', 'public.boost_iap_tilbagekald_testkoeb()', 'execute') as sr_tilbage,
-             has_function_privilege('authenticated', 'public.boost_iap_ventende_ophaev(text,text,text)', 'execute') as auth_ophaev,
+             has_function_privilege('authenticated', 'public.boost_iap_ventende_ophaev(text,text,text,text,timestamptz,text)', 'execute') as auth_ophaev,
              has_function_privilege('authenticated', 'public.boost_iap_laas_koeb(text,text)', 'execute') as auth_laas,
              has_function_privilege('authenticated', 'public.mine_data_boost(uuid)', 'execute') as auth_mdb,
              has_table_privilege('authenticated', 'public.boost_iap_ventende_refusioner', 'select') as auth_vent,
              has_table_privilege('service_role', 'public.boost_iap_ventende_refusioner', 'insert') as sr_vent_skriv`);
     expect(r).toEqual({ auth_tilbage: false, sr_tilbage: true, auth_ophaev: false, auth_laas: false, auth_mdb: false, auth_vent: false, sr_vent_skriv: false });
+  });
+});
+
+// 20261102400000_boost_iap_rettelser2.sql
+describe("rettelser 2: REFUND_REVERSED holder, og testkøb låses i fast rækkefølge", () => {
+  // Apples notifikation: notificationUUID og signedDate.
+  const apple = (ekstern: string, uuid: string, signeret: string, kilde = "apple_notifikation") =>
+    j(`select public.boost_iap_refusion('ios', $1, null, 100000, $2, $3, $4::timestamptz) as v`, [ekstern, kilde, uuid, signeret]);
+  const ophaev = async (ekstern: string, uuid: string | null, signeret: string | null, kilde = "apple_notifikation") =>
+    (await en<{ v: boolean }>(`select public.boost_iap_ventende_ophaev('ios', $1, null, $2, $3::timestamptz, $4) as v`, [ekstern, uuid, signeret, kilde])).v;
+  const raekke = (ekstern: string) =>
+    en<Record<string, unknown>>(
+      `select ophaevet_kl, refusion_notifikation, refusion_signeret_kl, ophaevet_notifikation, ophaevet_signeret_kl
+         from public.boost_iap_ventende_refusioner where platform = 'ios' and ekstern_id = $1`,
+      [ekstern],
+    );
+
+  it("REFUND → REFUND_REVERSED → samme REFUND igen (daglig historik): købet kan krediteres", async () => {
+    expect(await apple("7000000001", "uuid-r1", "2026-10-20T10:00:00Z")).toEqual({ kode: "ukendt", ventende: true });
+    expect(await krediter({ bruger: PRIVAT7, ekstern: "7000000001" })).toEqual({ kode: "refunderet" });
+    expect(await ophaev("7000000001", "uuid-rr1", "2026-10-21T10:00:00Z")).toBe(true);
+    // Cron'en kører den samme REFUND igen (historikken): genåbner ikke.
+    expect(await apple("7000000001", "uuid-r1", "2026-10-20T10:00:00Z", "apple_historik")).toEqual({ kode: "ukendt", ventende: false, ophaevet: true });
+    expect(await apple("7000000001", "uuid-r1", "2026-10-20T10:00:00Z")).toMatchObject({ ophaevet: true });
+    // Uden tidspunkt kan en refusion heller ikke genåbne.
+    expect(await j(`select public.boost_iap_refusion('ios', '7000000001', null, 100000, 'apple_opslag') as v`)).toMatchObject({ ophaevet: true });
+    expect((await raekke("7000000001")).ophaevet_kl).not.toBeNull();
+    // En gentaget REFUND_REVERSED ændrer intet.
+    expect(await ophaev("7000000001", "uuid-rr1", "2026-10-21T10:00:00Z", "apple_historik")).toBe(false);
+    // Bagefter kan købet krediteres.
+    expect(await krediter({ bruger: PRIVAT7, ekstern: "7000000001" })).toMatchObject({ kode: "ok", point: 100 });
+    expect(await saldo(PRIVAT7)).toBe(100);
+  });
+
+  it("en NY refusion efter ophævelsen genåbner rækken; en ældre REFUND_REVERSED ophæver den ikke", async () => {
+    expect(await apple("7000000002", "uuid-r2", "2026-10-20T10:00:00Z")).toEqual({ kode: "ukendt", ventende: true });
+    expect(await ophaev("7000000002", "uuid-rr2", "2026-10-21T10:00:00Z")).toBe(true);
+    // Apple refunderer igen (nyere signedDate): blokeret igen.
+    expect(await apple("7000000002", "uuid-r3", "2026-10-22T10:00:00Z")).toEqual({ kode: "ukendt", ventende: true });
+    const r = await raekke("7000000002");
+    expect(r.ophaevet_kl).toBeNull();
+    expect(r.refusion_notifikation).toBe("uuid-r3");
+    expect(await krediter({ bruger: PRIVAT7, ekstern: "7000000002" })).toEqual({ kode: "refunderet" });
+    // Den gamle REFUND_REVERSED fra historikken ophæver ikke den nye refusion.
+    expect(await ophaev("7000000002", "uuid-rr2", "2026-10-21T10:00:00Z", "apple_historik")).toBe(false);
+    expect(await krediter({ bruger: PRIVAT7, ekstern: "7000000002" })).toEqual({ kode: "refunderet" });
+    // En nyere REFUND_REVERSED gør.
+    expect(await ophaev("7000000002", "uuid-rr3", "2026-10-23T10:00:00Z")).toBe(true);
+    expect(await krediter({ bruger: PRIVAT7, ekstern: "7000000002" })).toMatchObject({ kode: "ok" });
+  });
+
+  it("REFUND_REVERSED før REFUND (tabt webhook): den ældre REFUND blokerer ikke købet", async () => {
+    expect(await ophaev("7000000003", "uuid-rr4", "2026-10-21T10:00:00Z", "apple_historik")).toBe(false);
+    expect((await raekke("7000000003")).ophaevet_signeret_kl).not.toBeNull();
+    expect(await apple("7000000003", "uuid-r4", "2026-10-20T10:00:00Z", "apple_historik")).toMatchObject({ ophaevet: true });
+    expect(await krediter({ bruger: PRIVAT7, ekstern: "7000000003" })).toMatchObject({ kode: "ok" });
+  });
+
+  it("ugyldige kald til ophævelsen og rettigheder", async () => {
+    expect(await ophaev("", null, null)).toBe(false);
+    expect(await ophaev("7000000009", null, null, "google_rtdn")).toBe(false);
+    expect((await en<{ n: number }>(`select count(*)::int as n from public.boost_iap_ventende_refusioner where ekstern_id = '7000000009'`)).n).toBe(0);
+    const r = await en<Record<string, unknown>>(`
+      select has_function_privilege('authenticated', 'public.boost_iap_refusion(text,text,text,integer,text,text,timestamptz)', 'execute') as auth_ref,
+             has_function_privilege('service_role', 'public.boost_iap_refusion(text,text,text,integer,text,text,timestamptz)', 'execute') as sr_ref,
+             has_function_privilege('anon', 'public.boost_iap_ventende_ophaev(text,text,text,text,timestamptz,text)', 'execute') as anon_oph,
+             has_function_privilege('service_role', 'public.boost_iap_ventende_ophaev(text,text,text,text,timestamptz,text)', 'execute') as sr_oph,
+             to_regprocedure('public.boost_iap_refusion(text,text,text,integer,text)') is null as gammel_ref_vaek,
+             to_regprocedure('public.boost_iap_ventende_ophaev(text,text,text)') is null as gammel_oph_vaek`);
+    expect(r).toEqual({ auth_ref: false, sr_ref: true, anon_oph: false, sr_oph: true, gammel_ref_vaek: true, gammel_oph_vaek: true });
+  });
+
+  it("tilbagekald af testkøb: flere køb og brugere i én kørsel, én gang, låse i fast rækkefølge", async () => {
+    await krediter({ bruger: PRIVAT7, ekstern: "7100000001", miljoe: "test", markering: "testkoeb_prod" });
+    await krediter({ bruger: PRIVAT6, ekstern: "7100000002", miljoe: "test", markering: "testkoeb_prod" });
+    await krediter({ bruger: PRIVAT7, platform: "android", ekstern: "GPA.TEST7", token: "token-test70001", miljoe: "test", markering: "testkoeb_prod" });
+    const foer7 = await saldo(PRIVAT7);
+    const foer6 = await saldo(PRIVAT6);
+    expect(await j(`select public.boost_iap_tilbagekald_testkoeb() as v`)).toEqual({ tilbagekaldt: 3, point: 300 });
+    expect(await saldo(PRIVAT7)).toBe(foer7 - 200);
+    expect(await saldo(PRIVAT6)).toBe(foer6 - 100);
+    expect(await j(`select public.boost_iap_tilbagekald_testkoeb() as v`)).toEqual({ tilbagekaldt: 0, point: 0 });
+    // Låsene tages i fast rækkefølge: tokens, transaktioner, pointkonti, så refusionerne.
+    const def = (await en<{ d: string }>(`select pg_get_functiondef('public.boost_iap_tilbagekald_testkoeb()'::regprocedure) as d`)).d;
+    const t = def.indexOf("'t:' || k.google_token");
+    const e = def.indexOf("'e:' || k.ekstern_id");
+    const b = def.indexOf("boost_laas_bruger(k.bruger_id)");
+    const f = def.indexOf("boost_iap_refusion(");
+    expect(t > 0 && t < e && e < b && b < f).toBe(true);
   });
 });
