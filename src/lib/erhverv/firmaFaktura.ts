@@ -105,7 +105,8 @@ export const MOMS_SATS = 25;
 // Beregning (samme som databasen: netto = round(inkl * 4/5), halv væk fra 0)
 // ---------------------------------------------------------------------------
 function rundHalvVaekFraNul(x: number): number {
-  return Math.sign(x) * Math.round(Math.abs(x));
+  const r = Math.sign(x) * Math.round(Math.abs(x));
+  return r === 0 ? 0 : r; // aldrig -0
 }
 
 export function nettoAfInkl(inklOere: number): number {

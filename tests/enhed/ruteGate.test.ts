@@ -96,6 +96,8 @@ const OFFENTLIGE_RUTER: Record<string, Exclude<Klasse, "login" | "admin-vaert" |
   "/api/betaling/app/[handling]": "offentlig",
   "/api/betaling/app/retur": "offentlig",
   "/api/faktura/[id]": "offentlig",
+  "/api/firma-faktura": "offentlig",
+  "/api/firma-faktura/[id]": "offentlig",
   "/api/ekstra-fragt/[id]/dokumentation": "offentlig",
   "/api/fragt/app/[handling]": "offentlig",
   "/api/helbred": "offentlig",

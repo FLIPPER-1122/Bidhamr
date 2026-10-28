@@ -125,6 +125,8 @@ alter table public.auctions add column if not exists momsordning text;
 alter table public.auctions drop constraint if exists auctions_momsordning_check;
 alter table public.auctions add constraint auctions_momsordning_check
   check (momsordning is null or momsordning in ('moms', 'brugtmoms'));
+-- Kan læses (Redigér auktion viser valget); skrives kun via RPC'en herunder.
+grant select (momsordning) on public.auctions to anon, authenticated;
 
 create or replace function public.auctions_momsordning_laas()
 returns trigger

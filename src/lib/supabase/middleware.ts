@@ -103,6 +103,9 @@ const OFFENTLIGE_RUTER = [
   "/api/betaling/kort",
   "/api/betaling/app",
   "/api/faktura",
+  // Købers fakturaer fra et firma (cookie eller Bearer; login og adgang
+  // tjekkes i ruterne - src/app/api/firma-faktura).
+  "/api/firma-faktura",
   "/api/ekstra-fragt",
   "/api/fragt/app",
   "/api/helbred",
