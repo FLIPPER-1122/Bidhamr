@@ -43,7 +43,7 @@ Dataansvarlig for behandlingen af dine personoplysninger på bidhamr.dk og i Bid
 
 - **Navn og e-mail**, når du opretter en konto. Din adgangskode gemmes kun krypteret (som en hash) hos vores leverandør Supabase – vi kan ikke se den.
 - **Accept af brugerbetingelserne**: når du opretter en konto, gemmer vi, hvilken version af brugerbetingelserne du har accepteret, og hvornår. Har du accepteret senere (fx via bjælken på Min konto), gemmer vi det tidspunkt.
-- **Adresse til kvitteringer og fakturaer** (vej og nr., postnummer og by), som du skriver, når du opretter en konto, eller før du byder eller betaler første gang. Den står på kvitteringer og fakturaer, når du køber noget, og kan rettes under Min konto → Min adresse. Andre brugere kan ikke se den, men køber du hos et firma, får firmaet den på fakturaen for købet (aftale – litra b, og firmaets bogføringspligt – litra c). Sletter du kontoen, slettes adressen, medmindre du har handler – så gemmes den, så længe bogføringsloven kræver det; en sendt faktura ændres aldrig. [ADVOKAT]
+- **Adresse til kvitteringer og fakturaer** (vej og nr., postnummer og by), som du skriver, når du opretter en konto, eller før du byder eller betaler første gang. Den står på kvitteringer og fakturaer, når du køber noget, og kan rettes under Min konto → Min adresse. Andre brugere kan ikke se den, men køber du hos et firma, får firmaet den på fakturaen for købet (aftale – litra b, og firmaets bogføringspligt – litra c) – se afsnit 6.1. Er købet betalt tilbage eller annulleret, får firmaet ikke din adresse til en faktura. Sletter du kontoen, slettes adressen, medmindre du har handler – så gemmes den, så længe bogføringsloven kræver det; en sendt faktura ændres aldrig. [ADVOKAT]
 - **Telefonnummer og adresse til afhentning**, hvis du selv skriver dem under Min konto (frivilligt).
 - **Profilbillede**, hvis du lægger et op.
 - **Sikkerhedskode ved oprettelse**: når du opretter en konto, sender vi en 6-cifret kode til din e-mail for at bekræfte, at e-mailen er din. Koden gemmes kun i kort tid (højst 1 time) hos Supabase.
@@ -199,7 +199,8 @@ Retsgrundlag: retlig forpligtelse (GDPR art. 6, stk. 1, litra c). CPR-nummeret b
 - **Offentligt**: dit navn, profilbillede, dine auktioner, spørgsmål og svar, dine bedømmelser og dine offentlige tal (fx antal auktioner og salg), og om du er MitID-verificeret (mærket – aldrig navnet fra MitID). Bud vises uden navn.
 - **Køber og sælger i en handel** ser hinandens navn og beskederne i handlen.
 - **Ved afhentning** ser køberen sælgerens adresse og telefonnummer, når varen er betalt, og indtil den er hentet.
-- Din e-mail vises aldrig for andre brugere. Telefonnummer og adresse vises kun ved afhentning som beskrevet ovenfor.
+- **Køber du hos et firma**, får firmaet, du har købt af, dit navn (fra MitID, hvis du er verificeret), din adresse og din e-mail, så det kan lave og sende fakturaen for købet. Firmaet udsteder fakturaen og sender den til din e-mail via BidHamr. Fakturaen opbevares i 5 år efter udgangen af det regnskabsår, den hører til (bogføringsloven) – både hos BidHamr og hos firmaet – og en sendt faktura ændres aldrig. Har du selv oplyst firmanavn og CVR til fakturaen, står de også på den (aftale – litra b, og firmaets bogføringspligt – litra c).
+- Din e-mail vises aldrig for andre brugere – undtagen for et firma, du har købt af, til fakturaen som beskrevet ovenfor. Telefonnummer og adresse vises kun ved afhentning og på fakturaer fra firmaer som beskrevet ovenfor.
 - Har du anmeldt noget, ser den, der har lagt indholdet op, aldrig hvem du er.
 
 ### 6.2 BidHamrs medarbejdere
@@ -260,6 +261,7 @@ Vores database og vores serverkode kører i EU (Irland). Nogle af vores leverand
 | Konto og profil | Så længe du har en konto. Når du sletter den, fjernes eller anonymiseres oplysningerne (se afsnit 9) |
 | Accept af brugerbetingelserne (version og tidspunkt) | Så længe du har en konto. Har du handlet på BidHamr, gemmes den derefter som dokumentation for de handler, du har lavet, lige så længe som handelsdata [TODO Filip: bekræft, at sletning af kontoen bevarer felterne] [ADVOKAT] |
 | Handelsdata: handler, betalinger, gebyrer, forsendelser, pakkebilleder, sager, anker, sagsbilleder og beskeder i handler | Mindst 5 år efter udgangen af det regnskabsår, handlen hører til (bogføringsloven). I dag slettes de ikke automatisk. [ADVOKAT: se nedenfor] |
+| Fakturaer fra et firma, du har købt af (dit navn, din adresse og e-mail) | 5 år efter udgangen af det regnskabsår, fakturaen hører til (bogføringsloven) – også hvis du eller firmaet sletter kontoen. Firmaet opbevarer også selv fakturaen |
 | Bedømmelser og sælgers svar | Så længe BidHamr findes. Efter sletning af kontoen vises de som fra "Slettet bruger" |
 | Samtaler med BidHamr | Slettes ikke automatisk i dag [ADVOKAT] |
 | Henvendelser via kontaktformularen | Slettes ikke automatisk i dag [ADVOKAT] |

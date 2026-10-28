@@ -21,7 +21,8 @@ import { erAnnulleretUbetalt } from "@/app/actions/andenchanceBruger";
 import SaelgerUbetaltBoks from "@/components/andenchance/SaelgerUbetaltBoks";
 import { hentSagForHandel, hentSagMuligheder } from "@/app/actions/sager";
 import SagVisning from "@/components/sager/SagVisning";
-import OpretSagForm from "@/components/sager/OpretSagForm";
+import { HvordanErVaren, IkkeKommet } from "@/components/sager/HvordanErVaren";
+import { sagFristVisning } from "@/lib/sagSide";
 import { sagTid } from "@/components/sager/visning";
 import { sagProblemFristKl } from "@/lib/sager";
 import { hentMinSagSamtale } from "@/app/actions/staffChat";
@@ -35,7 +36,6 @@ import { hentAfsendelsesfristAnnullering } from "@/lib/betaling/afsendelsesfrist
 import { hentAfhentningsfristAnnullering } from "@/lib/betaling/afhentningsfrist";
 import { hentIkkeAfhentet } from "@/lib/betaling/ikkeAfhentet";
 import { kroner } from "@/lib/kroner";
-import { erNyPrivatPrismodel } from "@/lib/betaling/beregn";
 import { afhentningTilbagebetalKl, afhentningsfristTekst } from "@/lib/afhentningsfrist";
 import ForlaengAfhentningsfrist from "@/components/ForlaengAfhentningsfrist";
 import FragtlabelBoks from "@/components/fragt/FragtlabelBoks";
@@ -455,6 +455,10 @@ export default async function HandelDetalje({
   const sagAktiv = sag?.status === "aaben" || sag?.status === "afventer_retur";
   const sagSamtale = samtaleRes && "samtale" in samtaleRes ? samtaleRes.samtale : null;
   const muligheder = mulighederRes && !("fejl" in mulighederRes) ? mulighederRes : null;
+  // "Hvordan er varen?" øverst (showcase/opret-sag-showcase.html): køberen,
+  // pakken er leveret, og der er ingen sag.
+  const visHvordan = erKoeber && !afhentning && handel.status === "modtaget" && !sag && !!muligheder;
+  const meldFrist = muligheder?.fristEfterLevering ? sagFristVisning(muligheder.fristKl) : null;
 
   // Retur i sagen (køberen sender varen retur nu) - kun bag flaget
   // FRAGT_RETURLABEL_AKTIV. Køberen betaler selv returfragten, før returkoden
@@ -583,6 +587,15 @@ export default async function HandelDetalje({
           <ReklamationKort r={reklamation} />
         )}
         {sag && <SagVisning sag={sag} brugerId={user.id} samtale={sagSamtale} />}
+        {visHvordan && muligheder && (
+          <HvordanErVaren
+            tradeId={handel.id}
+            muligheder={muligheder}
+            frist={meldFrist}
+            udloebetKl={!meldFrist && muligheder.fristEfterLevering ? muligheder.fristKl : null}
+            erhverv={erhvervHandel}
+          />
+        )}
         {visReturlabel && returfragt && returAfsender && (
           <ReturlabelBoks
             tradeId={handel.id}
@@ -1177,11 +1190,13 @@ export default async function HandelDetalje({
               bagefter — først da får sælgeren pengene.
             </p>
             <MarkerModtagetKnap tradeId={handel.id} />
+            {/* "Jeg har ikke fået pakken" - eller hvornår det kan meldes. */}
+            {muligheder && !muligheder.harSag && <IkkeKommet tradeId={handel.id} muligheder={muligheder} />}
           </div>
         )}
 
         {/* TRIN 2: godkendelse udbetaler til sælgeren. */}
-        {erKoeber && !afhentning && handel.status === "modtaget" && !sagAktiv && (
+        {erKoeber && !afhentning && handel.status === "modtaget" && !sagAktiv && !visHvordan && (
           <div className="rounded-none border border-succes-kant bg-groen-lys p-5 sm:p-6">
             <h2 className="text-[17px] leading-snug lg:text-lg">
               Tjek varen
@@ -1247,27 +1262,6 @@ export default async function HandelDetalje({
         <FakturaBoks tradeId={handel.id} />
         {/* Faktura på varen fra firmaet (firmaet udsteder og sender selv). */}
         {erKoeber && erhvervHandel && <KoeberFirmaFakturaBoks tradeId={handel.id} />}
-
-        {/* Køberen kan oprette en sag */}
-        {muligheder && !muligheder.harSag && (muligheder.typer.length > 0 || muligheder.kraeverBeskyttelse.length > 0) && (
-          <OpretSagForm
-            tradeId={handel.id}
-            koeberId={user.id}
-            muligheder={muligheder}
-            erhverv={erhvervHandel}
-            nyPrismodel={kvittering?.rolle === "koeber" && erNyPrivatPrismodel(kvittering.prismodel)}
-          />
-        )}
-        {muligheder &&
-          muligheder.typer.length === 0 &&
-          // Typerne er tomme, men datoen er sat: fristen for "bortkommet" er
-          // ikke nået endnu (ellers ville typen være mulig).
-          muligheder.bortkommetFraKl && (
-            <p className="rounded-xl border border-kant bg-groen-lys px-4 py-3 text-sm text-tekst-daempet">
-              Er pakken ikke kommet frem? Du kan melde det fra {sagTid(muligheder.bortkommetFraKl)}
-              {muligheder.fristKl && <> til {sagTid(muligheder.fristKl)}</>}.
-            </p>
-          )}
 
         {erhvervHandel ? (
           <>

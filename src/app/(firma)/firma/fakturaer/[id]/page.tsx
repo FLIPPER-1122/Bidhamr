@@ -7,6 +7,7 @@ import { E_HJAELP, E_KNAP_SEKUNDAER } from "@/components/erhverv/stil";
 import FirmaFakturaVisning from "@/components/firma/FirmaFakturaVisning";
 import FirmaFakturaKnapper from "@/components/firma/FirmaFakturaKnapper";
 import FirmaFakturaKladdeForm from "@/components/firma/FirmaFakturaKladdeForm";
+import FirmaFakturaMomsValg from "@/components/firma/FirmaFakturaMomsValg";
 import { FIRMA_FAKTURA_TEKST as T, MANGLER_TEKST, dokumentNavn, type FirmaFakturaData } from "@/lib/erhverv/firmaFaktura";
 import { ADRESSE_KILDE_TEKST, hentKoeberFakturaOplysninger } from "@/lib/erhverv/koeberFakturaOplysninger";
 
@@ -24,6 +25,12 @@ type Hent = {
   status: "kladde" | "sendt";
   trade_id: string;
   kreditnota_id: string | null;
+  krediteret_kl: string | null;
+  ny_faktura_id: string | null;
+  kan_lave_ny: boolean;
+  momsordning_fra_standard: boolean;
+  email_afviger: boolean;
+  kun_laes: boolean;
   fakturanummer: string | null;
   sendt_kl: string | null;
   mail_sendt_kl: string | null;
@@ -58,7 +65,11 @@ export default async function FirmaFakturaSide({ params }: { params: Promise<{ i
   const d = f.data;
   // Firmaet er bekræftet ejer (firma_faktura_hent) - så må vi vise, hvor
   // købers adresse kommer fra.
-  const auto = f.status === "kladde" && f.type === "faktura" ? await hentKoeberFakturaOplysninger(f.trade_id) : null;
+  const kanRettes = f.status === "kladde" && f.type === "faktura" && !f.kun_laes;
+  // Refunderet/annulleret handel: kladden kan ikke sendes, og købers adresse
+  // vises ikke (heller ikke som forslag i formularen).
+  const handelLukket = d.mangler.includes("refunderet");
+  const auto = kanRettes && !handelLukket ? await hentKoeberFakturaOplysninger(f.trade_id) : null;
   const navn = dokumentNavn(d);
 
   return (
@@ -79,6 +90,12 @@ export default async function FirmaFakturaSide({ params }: { params: Promise<{ i
           mailFejl={f.mail_fejl}
           mailSendtKl={f.mail_sendt_kl}
           kreditnotaId={f.kreditnota_id}
+          tradeId={f.trade_id}
+          krediteretKl={f.krediteret_kl}
+          nyFakturaId={f.ny_faktura_id}
+          kanLaveNy={f.kan_lave_ny}
+          emailAfviger={f.email_afviger}
+          kunLaes={f.kun_laes}
           visSe={false}
         />
         <a href={`/firma/fakturaer/${f.id}/pdf`} target="_blank" rel="noopener" className={`${E_KNAP_SEKUNDAER} mt-3 w-full sm:w-auto`}>
@@ -88,7 +105,13 @@ export default async function FirmaFakturaSide({ params }: { params: Promise<{ i
 
       <FirmaFakturaVisning d={d} />
 
-      {f.status === "kladde" && f.type === "faktura" && (
+      {kanRettes && !handelLukket && (
+        <Kort id="moms">
+          <FirmaFakturaMomsValg id={f.id} momsordning={d.momsordning} fraStandard={f.momsordning_fra_standard} stand={d.vare_stand ?? null} />
+        </Kort>
+      )}
+
+      {kanRettes && !handelLukket && (
         <Kort id="ret" titel="Ret kladden">
           {auto?.adresse_kilde && <p className={`mb-3 ${E_HJAELP}`}>{ADRESSE_KILDE_TEKST[auto.adresse_kilde]}</p>}
           {auto?.navn_kilde === "mitid" && <p className={`mb-3 ${E_HJAELP}`}>Navnet er købers navn fra MitID.</p>}

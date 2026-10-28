@@ -1,6 +1,15 @@
 // Forhåndsvisning af en faktura/kreditnota fra firma til køber i HTML -
 // samme indhold som PDF'en (src/lib/pdf/firmaFakturaPdf.ts).
-import { adresseLinjer, datoTekst, dokumentNavn, kroner, type FirmaFakturaData } from "@/lib/erhverv/firmaFaktura";
+import {
+  BRUGTMOMS_FAKTURA_TEKST,
+  MOMS_SATS,
+  adresseLinjer,
+  datoTekst,
+  dokumentNavn,
+  enhedsprisEksklMoms,
+  kroner,
+  type FirmaFakturaData,
+} from "@/lib/erhverv/firmaFaktura";
 
 export default function FirmaFakturaVisning({ d }: { d: FirmaFakturaData }) {
   const kladde = d.status !== "sendt";
@@ -58,27 +67,59 @@ export default function FirmaFakturaVisning({ d }: { d: FirmaFakturaData }) {
         {d.koeber.email && <p>{d.koeber.email}</p>}
       </div>
 
-      <table className="relative mt-6 w-full border-collapse text-left">
-        <thead>
-          <tr className="bg-[#F6F7F5]">
-            <th scope="col" className="px-2 py-2">Beskrivelse</th>
-            <th scope="col" className="px-2 py-2 text-right">Antal</th>
-            <th scope="col" className="px-2 py-2 text-right">Pris</th>
-            <th scope="col" className="px-2 py-2 text-right">Beløb</th>
-          </tr>
-        </thead>
-        <tbody>
-          {d.linjer.map((l, i) => (
-            <tr key={i} className="border-b border-kant">
-              <td className="px-2 py-2 break-words">{l.tekst}</td>
-              <td className="px-2 py-2 text-right">{l.antal}</td>
-              <td className="px-2 py-2 text-right whitespace-nowrap">{kroner(l.enhedspris_oere)}</td>
-              <td className="px-2 py-2 text-right whitespace-nowrap">{kroner(l.beloeb_oere)}</td>
+      {d.momsordning === "moms" ? (
+        // § 58, stk. 1: enhedspris og beløb ekskl. moms, momssats og beløb inkl. moms pr. linje.
+        <div className="relative mt-6 overflow-x-auto">
+          <table className="w-full min-w-[560px] border-collapse text-left">
+            <thead>
+              <tr className="bg-[#F6F7F5] align-bottom">
+                <th scope="col" className="px-2 py-2">Beskrivelse</th>
+                <th scope="col" className="px-2 py-2 text-right">Antal</th>
+                <th scope="col" className="px-2 py-2 text-right">Enhedspris ekskl. moms</th>
+                <th scope="col" className="px-2 py-2 text-right">Beløb ekskl. moms</th>
+                <th scope="col" className="px-2 py-2 text-right">Moms</th>
+                <th scope="col" className="px-2 py-2 text-right">Beløb inkl. moms</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.linjer.map((l, i) => {
+                const enhed = enhedsprisEksklMoms(l);
+                return (
+                  <tr key={i} className="border-b border-kant">
+                    <td className="px-2 py-2 break-words">{l.tekst}</td>
+                    <td className="px-2 py-2 text-right">{l.antal}</td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap">{enhed === null ? "" : kroner(enhed)}</td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap">{l.netto_oere === null ? "" : kroner(Number(l.netto_oere))}</td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap">{l.moms_sats ?? d.moms_sats ?? MOMS_SATS} %</td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap">{kroner(l.beloeb_oere)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <table className="relative mt-6 w-full border-collapse text-left">
+          <thead>
+            <tr className="bg-[#F6F7F5]">
+              <th scope="col" className="px-2 py-2">Beskrivelse</th>
+              <th scope="col" className="px-2 py-2 text-right">Antal</th>
+              <th scope="col" className="px-2 py-2 text-right">Pris</th>
+              <th scope="col" className="px-2 py-2 text-right">Beløb</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {d.momsordning === "moms" && <p className="relative mt-1 text-[14px] text-tekst-daempet">Priserne er inkl. moms.</p>}
+          </thead>
+          <tbody>
+            {d.linjer.map((l, i) => (
+              <tr key={i} className="border-b border-kant">
+                <td className="px-2 py-2 break-words">{l.tekst}</td>
+                <td className="px-2 py-2 text-right">{l.antal}</td>
+                <td className="px-2 py-2 text-right whitespace-nowrap">{kroner(l.enhedspris_oere)}</td>
+                <td className="px-2 py-2 text-right whitespace-nowrap">{kroner(l.beloeb_oere)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <dl className="relative mt-4 ml-auto max-w-sm space-y-1">
         {d.momsordning === "moms" && (
@@ -98,7 +139,12 @@ export default function FirmaFakturaVisning({ d }: { d: FirmaFakturaData }) {
           <dd>{kroner(Number(d.total_oere))}</dd>
         </div>
       </dl>
-      {d.momsordning === "brugtmoms" && <p className="relative mt-3 font-semibold">{d.brugtmoms_tekst}</p>}
+      {d.momsordning === "brugtmoms" && (
+        <div className="relative mt-3">
+          <p className="font-semibold">{d.brugtmoms_tekst ?? BRUGTMOMS_FAKTURA_TEKST}</p>
+          {d.brugtmoms_forklaring && <p className="text-[14px] text-tekst-daempet">{d.brugtmoms_forklaring}</p>}
+        </div>
+      )}
       <p className="relative mt-4">
         {d.type === "kreditnota"
           ? `Kreditnotaen krediterer faktura nr. ${d.krediterer?.fakturanummer ?? ""} fuldt ud.`

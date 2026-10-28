@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { E_FEJL, E_HJAELP, E_KNAP_PRIMAER, E_KNAP_SEKUNDAER } from "@/components/erhverv/stil";
-import { lavFirmaKreditnota, sendFirmaFaktura, sendFirmaFakturaMailIgen } from "@/app/actions/firmaFaktura";
+import { lavFirmaKreditnota, lavNyFirmaFaktura, sendFirmaFaktura, sendFirmaFakturaMailIgen } from "@/app/actions/firmaFaktura";
 import { FIRMA_FAKTURA_TEKST as T, datoTekst } from "@/lib/erhverv/firmaFaktura";
 
 export type FakturaKnapperProps = {
@@ -23,6 +23,16 @@ export type FakturaKnapperProps = {
   mailFejl: string | null;
   mailSendtKl: string | null;
   kreditnotaId: string | null;
+  // Handlen (til "Lav ny faktura" efter kreditnota).
+  tradeId?: string;
+  // Fakturaen er krediteret (kreditnotaen er sendt).
+  krediteretKl?: string | null;
+  nyFakturaId?: string | null;
+  kanLaveNy?: boolean;
+  // Firmaet har ændret modtagerens e-mail, så den afviger fra købers.
+  emailAfviger?: boolean;
+  // Lukket firmakonto: kun se og hente.
+  kunLaes?: boolean;
   // Vis "Se din faktura" (ikke på selve fakturasiden).
   visSe?: boolean;
 };
@@ -52,8 +62,18 @@ export default function FirmaFakturaKnapper(p: FakturaKnapperProps) {
         setFejlListe(svar.mangler ?? []);
         return;
       }
-      setBesked(svar.mailSendt ? null : T.mailFejl);
+      // Det endelige nummer vises nu (bekræftelsen viste kun et eksempel).
+      setBesked(svar.mailSendt ? T.sendtSom(svar.fakturanummer, svar.modtager) : T.mailFejl);
       router.refresh();
+    });
+
+  const nyFaktura = () =>
+    startTransition(async () => {
+      setFejl(null);
+      if (!p.tradeId) return;
+      const svar = await lavNyFirmaFaktura(p.tradeId);
+      if ("fejl" in svar) setFejl(svar.fejl);
+      else router.push(`/firma/fakturaer/${svar.id}`);
     });
 
   const mailIgen = () =>
@@ -90,7 +110,7 @@ export default function FirmaFakturaKnapper(p: FakturaKnapperProps) {
           <a href={`/firma/fakturaer/${p.id}/pdf?download=1`} className={`${E_KNAP_SEKUNDAER} w-full sm:w-auto`}>
             {T.downloadPdf}
           </a>
-          {!kredit && !p.kreditnotaId && (
+          {!kredit && !p.kreditnotaId && !p.kunLaes && (
             <button type="button" onClick={kreditnota} disabled={travl} className={`${E_KNAP_SEKUNDAER} w-full sm:w-auto`}>
               {T.lavKreditnota}
             </button>
@@ -100,8 +120,18 @@ export default function FirmaFakturaKnapper(p: FakturaKnapperProps) {
               {T.seKreditnota}
             </Link>
           )}
+          {!kredit && p.krediteretKl && p.kanLaveNy && !p.kunLaes && p.tradeId && (
+            <button type="button" onClick={nyFaktura} disabled={travl} className={`${E_KNAP_PRIMAER} w-full sm:w-auto`}>
+              {T.lavNyFaktura}
+            </button>
+          )}
+          {!kredit && p.nyFakturaId && (
+            <Link href={`/firma/fakturaer/${p.nyFakturaId}`} className={`${E_KNAP_SEKUNDAER} w-full sm:w-auto`}>
+              {T.seNyFaktura}
+            </Link>
+          )}
         </div>
-        {(p.mailFejl || besked === T.mailFejl) && !p.mailSendtKl && (
+        {(p.mailFejl || besked === T.mailFejl) && !p.mailSendtKl && !p.kunLaes && (
           <div role="alert" className="rounded-xl border border-advarsel-kant bg-advarsel-bg px-4 py-3 text-[16px] text-advarsel-tekst">
             <p>{T.mailFejl}</p>
             <button type="button" onClick={mailIgen} disabled={travl} className={`${E_KNAP_SEKUNDAER} mt-3`}>
@@ -119,6 +149,15 @@ export default function FirmaFakturaKnapper(p: FakturaKnapperProps) {
             {fejl}
           </p>
         )}
+      </div>
+    );
+  }
+
+  if (p.kunLaes) {
+    return (
+      <div className="space-y-3">
+        <p className={E_HJAELP}>{T.kunLaes}</p>
+        {seLink && <div className="flex flex-wrap gap-3">{seLink}</div>}
       </div>
     );
   }
@@ -156,8 +195,23 @@ export default function FirmaFakturaKnapper(p: FakturaKnapperProps) {
       {bekraeft && (
         <div role="alertdialog" aria-labelledby={`bekraeft-${p.id}`} className="rounded-xl border-2 border-groen bg-groen-lys px-4 py-4">
           <p id={`bekraeft-${p.id}`} className="text-[18px] font-semibold text-tekst">
-            {T.sendBekraeft(p.naesteNummer, p.koeberEmail ?? "", kredit)}
+            {T.sendBekraeft(kredit)}
           </p>
+          <dl className="mt-2 space-y-1 text-[17px] text-tekst">
+            <div>
+              <dt className="inline font-semibold">{T.modtager}: </dt>
+              <dd className="inline break-all">{p.koeberEmail || T.modtagerMangler}</dd>
+            </div>
+            <div>
+              <dt className="inline font-semibold">{T.nummer}: </dt>
+              <dd className="inline">{T.naesteLedige(p.naesteNummer)}</dd>
+            </div>
+          </dl>
+          {p.emailAfviger && (
+            <p role="alert" className="mt-2 rounded-xl border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-[16px] text-advarsel-tekst">
+              {T.emailAfviger}
+            </p>
+          )}
           <p className={E_HJAELP}>{T.sendBekraeftForklaring}</p>
           <div className="mt-3 flex flex-wrap gap-3">
             <button ref={jaRef} type="button" onClick={send} disabled={travl} className={`${E_KNAP_PRIMAER} w-full sm:w-auto`}>

@@ -59,10 +59,14 @@ export default function FirmaFakturaIndstillingerForm({ i, kontaktEmail }: { i: 
         </label>
         <label className="flex items-start gap-3 text-[18px]">
           <input type="radio" name="momsordning" value="brugtmoms" defaultChecked={i.momsordning === "brugtmoms"} className="mt-1 h-6 w-6" />
-          <span>Brugtmoms – fakturaen viser ingen moms, men teksten &quot;Brugtmoms – særordning for brugte varer&quot;.</span>
+          <span>
+            Brugtmoms – fakturaen viser ingen moms, men teksten &quot;Fortjenstmargenordning – brugte genstande&quot;. Gælder kun brugte
+            varer, som du har købt uden moms.
+          </span>
         </label>
         <p className={E_HJAELP}>
-          Du kan vælge en anden momsordning på den enkelte auktion. Valget låses, når varen er solgt. Spørg din revisor, hvis du er i tvivl.
+          Du kan vælge en anden momsordning på den enkelte auktion (låst, når der er budt) og på hver fakturakladde, indtil den er
+          sendt. Kladder uden eget valg følger standarden. Spørg din revisor, hvis du er i tvivl.
         </p>
       </fieldset>
 

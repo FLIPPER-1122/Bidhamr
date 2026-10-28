@@ -16,7 +16,7 @@ import { FIRMA_DASHBOARD as D } from "@/lib/tekster/erhverv";
 import { kr, langDato } from "@/lib/erhverv/visning";
 import { FAKTURA_TEKST } from "@/lib/erhverv/fakturaOplysninger";
 import FirmaFakturaKnapper from "@/components/firma/FirmaFakturaKnapper";
-import { MANGLER_TEKST } from "@/lib/erhverv/firmaFaktura";
+import { aktuelFaktura, fakturaKnapperProps } from "@/lib/erhverv/firmaFaktura";
 
 // Salg: alle handler, hvor firmaet er sælger (firma_salg), med tydelig
 // status. "Send pakke" og detaljer sker inde i dashboardet
@@ -29,9 +29,12 @@ export default async function FirmaSalgSide() {
   const [salg, fakturaer] = await Promise.all([hentFirmaSalg(), hentFirmaFakturaer()]);
   const lukket = foerLancering();
   // Fakturakladden pr. betalt salg (firma til køber - sendes kun ved tryk).
+  // Den aktuelle faktura pr. handel (den ikke-krediterede, ellers den nyeste).
+  const alle = fakturaer?.fakturaer ?? [];
   const fakturaPrHandel = new Map(
-    (fakturaer?.fakturaer ?? []).filter((f) => f.type === "faktura").map((f) => [f.trade_id, f]),
+    [...new Set(alle.filter((f) => f.type === "faktura").map((f) => f.trade_id))].map((t) => [t, aktuelFaktura(alle, t)!]),
   );
+  const kunLaes = fakturaer?.indstillinger.kun_laes ?? false;
   const naeste = fakturaer?.indstillinger.naeste_fakturanummer ?? "";
   const idag = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Copenhagen" });
   const maanedStart = `${idag.slice(0, 8)}01`;
@@ -65,19 +68,7 @@ export default async function FirmaSalgSide() {
                       const f = fakturaPrHandel.get(s.trade_id)!;
                       return (
                         <div className="mt-4">
-                          <FirmaFakturaKnapper
-                            id={f.id}
-                            type={f.type}
-                            status={f.status}
-                            fakturanummer={f.fakturanummer}
-                            naesteNummer={naeste}
-                            koeberEmail={f.data?.koeber.email ?? null}
-                            mangler={(f.data?.mangler ?? []).map((k) => MANGLER_TEKST[k] ?? k)}
-                            sendtKl={f.sendt_kl}
-                            mailFejl={f.mail_fejl}
-                            mailSendtKl={f.mail_sendt_kl}
-                            kreditnotaId={f.kreditnota_id}
-                          />
+                          <FirmaFakturaKnapper {...fakturaKnapperProps(f, naeste, kunLaes)} />
                         </div>
                       );
                     })()

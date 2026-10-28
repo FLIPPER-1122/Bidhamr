@@ -292,6 +292,192 @@ export const SAG_SAELGER_SVAR = {
   efterFrist: "Fristen for at give din forklaring er udløbet. BidHamr skriver til dig, hvis vi har brug for mere.",
 } as const;
 
+// ------------------------------------------------------------------ Skærmene
+// Faste tekster til "Meld et problem" (4 trin, kvittering, handelssiden og
+// sagssiden) - fælles for hjemmesiden og appen. Pladsholdere i {krøllede}
+// udfyldes med sagUdfyld() (appen får teksterne som JSON, så der er ingen
+// funktioner her).
+export const SAG_FLOW = {
+  titel: "Meld et problem",
+  tilbage: "Tilbage",
+  luk: "Luk",
+  annuller: "Annullér",
+  naeste: "Næste",
+  trin: "Trin {n} af {ialt}",
+  // Handelssiden: "Hvordan er varen?" øverst, når en sag kan oprettes.
+  handel: {
+    leveretTitel: "Pakken er leveret – tjek varen",
+    leveretTekst: "Sælgeren får først pengene, når du har godkendt varen.",
+    hvordan: "Hvordan er varen?",
+    altIOrden: "Alt er i orden",
+    altIOrdenUnder: "Godkend varen",
+    problem: "Der er et problem med varen",
+    problemUnder: "Meld det her",
+    gemPakken: "Gem pakken og labelen, til du har godkendt. Du skal tage billeder af dem, hvis der er et problem.",
+    fristTitel: "Du har {tid} til at melde et problem",
+    fristUnder: "Senest {dato}",
+    udloebetTitel: "Fristen for at melde et problem er udløbet",
+    udloebetTekst: "Fristen udløb {dato}. Du kan ikke længere melde et problem med varen.",
+    ikkeKommetTitel: "Er pakken ikke kommet?",
+    ikkeKommet: "Jeg har ikke fået pakken",
+    ikkeKommetVenter: "Pakker kan være nogle dage undervejs. Er den ikke kommet {dato}, kan du melde det her. Knappen kommer frem af sig selv.",
+    ikkeKommetNu: "Pakken burde være kommet frem nu. Har du ikke fået den, kan du melde det senest {dato}.",
+    kraeverBeskyttelseErhverv:
+      "Køb fra et firma er ikke dækket af BidHamr Beskyttelse. Er varen gået i stykker eller ikke som beskrevet, så kontakt firmaet – du har reklamationsret efter loven.",
+    kraeverBeskyttelse: "Uden BidHamr Beskyttelse kan du ikke oprette en sag om {typer}. Skriv i stedet til sælgeren i chatten.",
+    laesMere: "Læs mere",
+  },
+  // Trin 1-4.
+  trin1: {
+    titel: "Hvad er der galt?",
+    hjaelp: "Vælg det, der passer bedst. Du kan forklare mere bagefter.",
+    note: "Sælgeren får ikke pengene, mens vi ser på det.",
+  },
+  trin2: {
+    titelEn: "Tag 1 billede",
+    titelFlere: "Tag {antal} billeder",
+    eksempel: "Sådan",
+    ditBillede: "Dit billede",
+    mangler: "Mangler",
+    valgfrit: "Valgfrit",
+    taget: "Taget",
+    tagBillede: "Tag billede",
+    tagFlere: "Tag et billede mere",
+    vaelgFil: "Vælg fra dine billeder",
+    fjern: "Fjern billedet",
+    status: "{taget} af {ialt} billeder",
+    alleTaget: "Alle billeder er taget",
+    manglerFejl: "Tag de billeder, der mangler, før du går videre.",
+    smidtUdFortryd: "Jeg har pakken alligevel",
+    smidtUdValgt: "Du har ikke pakken længere. Forklar hvorfor i næste trin.",
+  },
+  trin3: {
+    label: "Hvad er der sket?",
+    pladsholder: "Fx: Det ene ben var knækket, da jeg åbnede pakken i går aftes.",
+    smidtUdPladsholder: "Fx: Jeg smed papkassen ud, før jeg opdagede skaden.",
+    smidtUdForKort: "Skriv mindst {min} tegn om, hvorfor du ikke har pakken",
+  },
+  hvisDuFaarRet: "Hvis du får ret",
+  trin4: {
+    titel: "Tjek og send",
+    varen: "Varen",
+    problem: "Problem",
+    billeder: "Billeder",
+    tekst: "Det har du skrevet",
+    smidtUd: "Hvorfor du ikke har pakken",
+    ingenBilleder: "Ingen billeder",
+    ret: "Ret",
+    detSker: "Det sker, når du sender",
+    send: "Send til BidHamr",
+    uploader: "Sender billeder: {n} af {ialt}",
+    opretter: "Sender sagen …",
+  },
+  // Kvitteringen efter oprettelsen.
+  kvittering: {
+    goerNu: "Det skal du gøre nu",
+    videre: "Sådan går det videre",
+    trin: [
+      "Sælgeren får besked nu og kan give sin forklaring inden for {timer} timer – senest {dato}.",
+      "BidHamr ser på sagen og giver jer begge besked om afgørelsen.",
+      "Efter afgørelsen har I {dage} dage til at anke, hvis en af jer er uenig.",
+    ],
+    seSag: "Se din sag",
+  },
+  // Desktop: boksen til højre.
+  side: {
+    koebtFor: "Købt for {beloeb}",
+    fristTid: "{tid} tilbage",
+    fristUnder: "til at melde et problem (senest {dato})",
+  },
+  // /mine-handler/[id]/sag, når der ikke kan oprettes en sag.
+  ikkeMulig: {
+    titel: "Du kan ikke melde et problem lige nu",
+    udloebet: "Fristen for at melde et problem udløb {dato}.",
+    forTidligt: "Er pakken ikke kommet frem, kan du melde det fra {dato}.",
+    generelt: "Der kan ikke oprettes en sag på handlen lige nu.",
+    tilbage: "Tilbage til handlen",
+  },
+  // Sagssiden (handelssiden #sag) for køber og sælger.
+  sag: {
+    titelKoeber: "Din sag",
+    titelSaelger: "Sag fra køberen",
+    meldt: "Sendt {dato}",
+    meldtSaelger: "Køberen har meldt: {problem}",
+    goerNu: "Det skal du gøre nu",
+    endte: "Sådan endte sagen",
+    videre: "Sådan går det videre",
+    tidslinje: {
+      oprettetKoeber: "Du har meldt problemet",
+      oprettetSaelger: "Køberen har meldt et problem",
+      behandler: "BidHamr ser på sagen",
+      behandlerNoteKoeber: "Vi ser på dine billeder og på sælgerens billeder af indpakningen.",
+      behandlerNoteSaelger: "Vi ser på køberens billeder og på dine billeder af indpakningen.",
+      afgjort: "Afgørelse",
+      afgjortNote: "I får besked med det samme.",
+      anke: "Anke",
+      ankefrist: "4 dage til at anke",
+      retur: "Send varen retur",
+      slutPenge: "Pengene er på vej",
+      slutSendt: "Pengene er sendt",
+      slutLukket: "Sagen er lukket",
+    },
+    duHarSendt: "Det har du sendt",
+    koeberSkriver: "Det skriver køberen",
+    koeberBilleder: "Køberens billeder",
+    dineBilleder: "Dine billeder",
+    pakkebillederSaelger: "Dine billeder af indpakningen – lagt ved sagen automatisk",
+    pakkebillederKoeber: "Sælgerens billeder af indpakningen",
+    pakkebillederHjaelp: "Taget, da pakken blev sendt. BidHamr bruger dem til at vurdere, om varen var pakket ordentligt.",
+    smidtUd: "Køberen har ikke pakken længere",
+    svarKoeber: "Sælgerens forklaring",
+    svarSaelger: "Din forklaring",
+    svarVenter: "Sælgeren kan give sin forklaring indtil {dato}.",
+    svarIngen: "Sælgeren har ikke givet en forklaring.",
+    afgoerelse: "BidHamrs afgørelse",
+    returfragt: "Returfragt",
+    returfragtDaekket: "Dækket – du betaler ikke returfragten",
+    returfragtDaekketSaelger: "Du betaler returfragten, fordi varen ikke var pakket forsvarligt",
+    returfragtBidhamr: "BidHamr betaler returfragten",
+    returfragtKoeber: "Køberen betaler returfragten",
+    returfragtSelv: "Du betaler selv returfragten",
+    detaljer: "Se detaljer om sagen",
+  },
+} as const;
+
+// Sælgerens svar på sagssiden (ud over SAG_SAELGER_SVAR).
+export const SAG_SAELGER_SVAR_FORM = {
+  knap: "Giv din forklaring",
+  label: "Din forklaring",
+  pladsholder: "Fx: Varen var hel, da jeg sendte den. Jeg pakkede den i bobleplast og en solid kasse.",
+  frist: "Du kan give din forklaring én gang, indtil {dato}.",
+  send: "Send til BidHamr",
+  sender: "Sender …",
+  tak: "Tak – din forklaring er sendt. BidHamr læser den, før sagen afgøres.",
+} as const;
+
+// Udfyld {pladsholdere} i en tekst fra SAG_FLOW.
+export function sagUdfyld(tekst: string, vaerdier: Record<string, string | number>): string {
+  return tekst.replace(/\{(\w+)\}/g, (hel, navn: string) => (navn in vaerdier ? String(vaerdier[navn]) : hel));
+}
+
+// Tid tilbage til en frist i hverdagsord: "1 dag og 4 timer", "5 timer og
+// 12 minutter", "12 minutter". Under ét minut: "under 1 minut". Udløbet: null.
+export function sagTidTilbage(fristIso: string | null | undefined, nuMs: number): string | null {
+  const frist = fristIso ? Date.parse(fristIso) : NaN;
+  if (Number.isNaN(frist)) return null;
+  const ms = frist - nuMs;
+  if (ms <= 0) return null;
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return "under 1 minut";
+  const dage = Math.floor(min / 1440);
+  const timer = Math.floor((min % 1440) / 60);
+  const minutter = min % 60;
+  const ord = (n: number, en: string, flere: string) => `${n} ${n === 1 ? en : flere}`;
+  if (dage > 0) return timer > 0 ? `${ord(dage, "dag", "dage")} og ${ord(timer, "time", "timer")}` : ord(dage, "dag", "dage");
+  if (timer > 0) return minutter > 0 ? `${ord(timer, "time", "timer")} og ${ord(minutter, "minut", "minutter")}` : ord(timer, "time", "timer");
+  return ord(minutter, "minut", "minutter");
+}
+
 // Alle faste tekster og grænser samlet - appen får dem fra
 // POST /api/sag/app/muligheder ("tekster"), så de er ens med hjemmesiden.
 export const SAG_FAELLES_TEKSTER = {
@@ -311,4 +497,7 @@ export const SAG_FAELLES_TEKSTER = {
     fristTimer: SAG_SVAR_FRIST_TIMER,
   },
   maksBilleder: SAG_MAKS_BILLEDER,
+  // Skærmenes faste tekster (pladsholdere udfyldes som sagUdfyld()).
+  flow: SAG_FLOW,
+  saelgerSvarForm: SAG_SAELGER_SVAR_FORM,
 } as const;

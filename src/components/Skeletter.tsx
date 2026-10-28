@@ -142,6 +142,32 @@ export function HandelSkelet() {
   );
 }
 
+// "Meld et problem" (/mine-handler/[id]/sag) og kvitteringen: titel,
+// statuslinje, store valg og boksen til højre.
+export function SagFlowSkelet() {
+  return (
+    <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-4 pb-10 sm:px-6 lg:px-8" aria-busy="true">
+      <Indlaeser tekst="Indlæser…" />
+      <div className={`h-4 w-20 ${blok}`} />
+      <div className={`mt-3 h-8 w-56 ${blok}`} />
+      <div className="mt-4 grid max-w-[640px] grid-cols-4 gap-1">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="h-1 bg-skelet" />
+        ))}
+      </div>
+      <div className="mt-5 lg:grid lg:grid-cols-[minmax(0,640px)_340px] lg:gap-10">
+        <div className="space-y-2.5 border border-kant p-5">
+          <div className={`h-6 w-48 ${blok}`} />
+          {Array.from({ length: 5 }, (_, i) => (
+            <div key={i} className={`h-[72px] ${flade}`} />
+          ))}
+        </div>
+        <div className={`mt-5 h-40 lg:mt-0 ${flade}`} />
+      </div>
+    </main>
+  );
+}
+
 // Almindelig side med overskrift og tekst (fx FAQ, Om, Opret auktion). Bruges
 // af den fælles loading.tsx for alle sider uden deres eget skelet, så et klik
 // altid giver et svar med det samme.

@@ -201,3 +201,8 @@ Svar til Claude Code, når du har besluttet dig, fx:
 ## Sagsregler – småting fra review (28. okt. 2026)
 - `sag_indpakning_ved_afgoerelse`: giv `billeder_mangler`, når staff vælger "sælgeren betaler returfragt", og sagen ikke har et pakke-/labelbillede. Ellers kan sælgeren få en regning uden bevis.
 - Genåbning efter retur: markér hos staff, at BidHamr kan stå med returfragten, når sælgerens regning er frafaldet.
+
+## Firma-faktura – småting fra review (28. okt. 2026)
+- Mulig deadlock mellem `firma_faktura_send` og ændring af standard-momsordning. Lås indstillingerne først i `send`, eller vis "Prøv igen" ved 40P01.
+- Backfill i 390000 slår triggeren fra. Brug flaget pr. række i stedet, hvis den skal køres igen manuelt.
+- "Send mailen igen": lås rækken, så to samtidige tryk ikke giver to mails.
