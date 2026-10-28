@@ -66,6 +66,8 @@ export type Reklamationspakke = {
   kravbeloebOere: number;
   maksErstatningOere: number | null;
   skadebeskrivelse: string | null;
+  // Sagens type: bortkommet pakke eller skade (20261102350000).
+  bortkommet: boolean;
   sporingshistorik: PakkeHaendelse[];
   billeder: PakkeBillede[];
   // Færdig tekst til at indsætte i fragtfirmaets formular/mail.
@@ -128,6 +130,32 @@ function filnavn(kilde: PakkeBillede["kilde"], kategoriNavn: string, sti: string
 // Teksten er skrevet fra BidHamr (fragten er booket på BidHamrs aftale).
 function byggTekst(p: Omit<Reklamationspakke, "tekst">): string {
   const antal = (k: PakkeBillede["kilde"]) => p.billeder.filter((b) => b.kilde === k).length;
+  if (p.bortkommet) {
+    // Bortkommet pakke: efterlysning (erstatningen udbetales til sælgeren).
+    return [
+      `Efterlysning – pakke sendt med ${p.transportoerNavn} via BidHamr`,
+      "",
+      `BidHamr (bidhamr.dk) efterlyser en pakke, der er sendt med ${p.transportoerNavn} på BidHamrs aftale. Modtageren har ikke fået pakken.`,
+      "",
+      `Trackingnummer: ${p.trackingnummer ?? "–"}`,
+      p.forsendelsesId ? `Forsendelses-id: ${p.forsendelsesId}` : null,
+      `Afsender: ${partTekst(p.afsender)}`,
+      `Modtager: ${partTekst(p.modtager)}`,
+      `Afsendt: ${datoTid(p.afsendtKl)}`,
+      `Meldt leveret: ${datoTid(p.leveretKl)}`,
+      "",
+      `Indhold: ${p.varetitel ?? "–"}`,
+      `Varens værdi: ${kroner(p.varensVaerdiOere)}`,
+      `Krav om erstatning: ${kroner(p.kravbeloebOere)}`,
+      "",
+      "Modtagerens beskrivelse:",
+      p.skadebeskrivelse ?? "–",
+      "",
+      `Vedlagt: ${antal("saelger_pakke")} billeder af indpakningen, som afsenderen tog, før pakken blev sendt.`,
+    ]
+      .filter((l) => l !== null)
+      .join("\n");
+  }
   const linjer = [
     `Skadeanmeldelse – pakke sendt med ${p.transportoerNavn} via BidHamr`,
     "",
@@ -166,7 +194,7 @@ export async function hentReklamationspakke(
   if (!r) return null;
 
   const [sagR, handelR, fR, levR, pakkeR, sagBR] = await Promise.all([
-    admin.from("sager").select("beskrivelse").eq("id", r.sag_id).maybeSingle<{ beskrivelse: string }>(),
+    admin.from("sager").select("beskrivelse, type").eq("id", r.sag_id).maybeSingle<{ beskrivelse: string; type: string }>(),
     admin
       .from("trades")
       .select("auction_id, sendt_kl, received_at")
@@ -312,6 +340,7 @@ export async function hentReklamationspakke(
     kravbeloebOere: r.kravbeloeb_oere,
     maksErstatningOere: r.maks_erstatning_oere,
     skadebeskrivelse: sagR.data?.beskrivelse ?? null,
+    bortkommet: sagR.data?.type === "bortkommet",
     sporingshistorik: ((haendR.data ?? []) as PakkeHaendelse[]).map((h) => ({
       tidspunkt: h.tidspunkt,
       type: h.type,

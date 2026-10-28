@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import MomsordningValg, { type MomsValg } from "@/components/opret/MomsordningValg";
+import { saetAuktionMomsordning } from "@/app/actions/firmaFaktura";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -57,8 +59,11 @@ export default function RedigerAuktionForm({
   brugerId,
   start,
   erFirma = false,
+  momsordning = null,
 }: {
   auktionId: string;
+  // Erhverv: auktionens momsordning (null = firmaets standard).
+  momsordning?: "moms" | "brugtmoms" | null;
   brugerId: string;
   // Firmakonto: GPSR-felter ved "Ny med mærke" (private ser dem ikke).
   erFirma?: boolean;
@@ -90,6 +95,7 @@ export default function RedigerAuktionForm({
   const [kategori, setKategori] = useState(kategorier.includes(start.kategori) ? start.kategori : "");
   const [beskrivelse, setBeskrivelse] = useState(start.beskrivelse);
   const [startprisTekst, setStartprisTekst] = useState(String(start.startpris));
+  const [momsValg, setMomsValg] = useState<MomsValg>(momsordning ?? "standard");
   const [forsendelseMulig, setForsendelseMulig] = useState(start.forsendelseMulig);
   const [afhentningOgsaa, setAfhentningOgsaa] = useState(Boolean(start.afhentningMulig));
   // Pakkestørrelse og vægt: gemmes med saet_auktion_fragt (kun før første bud).
@@ -269,6 +275,16 @@ export default function RedigerAuktionForm({
         }
       }
 
+      if (erFirma && momsValg !== (momsordning ?? "standard")) {
+        const m = await saetAuktionMomsordning(auktionId, momsValg);
+        if ("fejl" in m) {
+          setError(`Dine andre ændringer er gemt, men momsordningen blev ikke gemt: ${m.fejl}`);
+          setStatus(null);
+          setLoading(false);
+          return;
+        }
+      }
+
       // Firmaet redigerer i firma-dashboardet og bliver dér.
       router.push(erFirma ? "/firma/auktioner?gemt=1" : `/auktion/${auktionId}`);
       router.refresh();
@@ -406,6 +422,7 @@ export default function RedigerAuktionForm({
             {STARTPRIS_ANBEFALING} Startprisen er også den laveste pris, du sælger til.
           </Hjaelp>
         </div>
+        {erFirma && <MomsordningValg vaerdi={momsValg} onChange={setMomsValg} />}
         <PakkestoerrelseVaelger
           stoerrelser={stoerrelser}
           hentFejl={fragtHentFejl}

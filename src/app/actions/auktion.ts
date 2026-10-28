@@ -2,7 +2,7 @@
 
 import { erMitIdFejl } from "@/lib/mitid/fejl";
 import { erDac7Fejl, DAC7_FEJL_TEKST } from "@/lib/dac7/fejl";
-import { erEkstraFragtFejl, EKSTRA_FRAGT_SPAERRET_TEKST } from "@/lib/ekstraFragt/tekster";
+import { erEkstraFragtFejl, ekstraFragtSpaerretTekstFraFejl } from "@/lib/ekstraFragt/tekster";
 import { MITID } from "@/lib/tekster/mitid";
 import { erVilkaarFejl } from "@/lib/vilkaar";
 import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
@@ -298,7 +298,7 @@ export async function saetVarenOpIgen(auktionId: string): Promise<{ ok: true; au
       if (erVilkaarFejl(error.code, error.message)) return { fejl: VILKAAR_TEKST.fejlMangler };
       if (erDac7Fejl(error.code, error.message)) return { fejl: DAC7_FEJL_TEKST };
       // Ubetalt ekstra fragt efter fristen (BHX01, auctions_a1_ekstra_fragt).
-      if (erEkstraFragtFejl(error.code, error.message)) return { fejl: EKSTRA_FRAGT_SPAERRET_TEKST };
+      if (erEkstraFragtFejl(error.code, error.message)) return { fejl: ekstraFragtSpaerretTekstFraFejl(error.message) };
       if (error.code === "23505") return { fejl: SAET_OP_IGEN_FEJL.allerede_genopsat };
       // Kontaktoplysninger i titel/beskrivelse (BHA08, auktion_kontaktinfo_afvis).
       const kontakt = auktionKontaktFejl(error);

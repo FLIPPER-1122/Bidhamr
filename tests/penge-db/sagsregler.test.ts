@@ -13,11 +13,23 @@
 //      ingen faktura til køberen),
 //   8. 72 timer (trades.problem_frist_kl, gamle handler beholder 48 t,
 //      handel_auto_frigiv).
-// Og md5-drift-tjekket.
+// Og md5-drift-tjekket. Derefter rettelserne 20261102350000 (review B1-B3,
+// S1-S8 og Filips afklaringer: tom pakke, bortkommet -> reklamation til
+// sælgeren, svindel = kun buddet) - se describe("20261102350000 ...").
 import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 import { sagRefusionOere } from "@/lib/betaling/beregn";
-import { ADMIN, FREMMED, KOEBER, MEDARBEJDER, SAELGER, SAGSREGLER, opsaet } from "./sagsreglerStub";
+import {
+  ADMIN,
+  FREMMED,
+  KOEBER,
+  MEDARBEJDER,
+  RETTELSER,
+  SAELGER,
+  SAGSREGLER,
+  opsaet,
+  opsaetRettelser,
+} from "./sagsreglerStub";
 
 let db: PGlite;
 
@@ -102,6 +114,11 @@ beforeAll(async () => {
   await db.exec(SAGSREGLER);
   // Kan køres igen.
   await db.exec(SAGSREGLER);
+  // Rettelserne (20261102350000) oven på - også to gange. Alle tests nedenfor
+  // kører mod den endelige udgave.
+  await opsaetRettelser(db);
+  await db.exec(RETTELSER);
+  await db.exec(RETTELSER);
 }, 60_000);
 
 describe("regel 8: 72 timer", () => {
@@ -642,6 +659,352 @@ describe("regel 7: hvem betaler returfragten", () => {
     expect(r.kode).toBe("ok");
     expect((await en<{ b: string }>(`select returfragt_betaler as b from public.sager where id = $1`, [h.sagId])).b).toBe("bidhamr");
   });
+});
+
+// ------------------------------------------------------------------ 20261102350000
+
+async function udenomTrigger(sql: string, p: unknown[]) {
+  await db.exec(`alter table public.sager disable trigger sager_beskyt`);
+  try {
+    await db.query(sql, p);
+  } finally {
+    await db.exec(`alter table public.sager enable trigger sager_beskyt`);
+  }
+}
+
+async function opretValg(trade: string, type: string, valg: string, billeder: { sti: string; kategori: string }[], smidt?: string) {
+  await som(KOEBER);
+  return j(`select public.sag_opret($1, $2, $3, $4::jsonb, $5, $6, $7) as v`, [
+    trade,
+    type,
+    "Pakken var helt tom, da jeg åbnede den.",
+    JSON.stringify(billeder),
+    !!smidt,
+    smidt ?? null,
+    valg,
+  ]);
+}
+
+const sagFelt = async <T>(sag: string, felt: string) =>
+  (await en<{ v: T }>(`select ${felt} as v from public.sager where id = $1`, [sag])).v;
+
+// Transportskade, sælgeren betaler; ankefristen udløbet, returen startet
+// (dækket). label: returkoden er lavet.
+async function saelgerRetur(o: { label: boolean }) {
+  const h = await handel();
+  const s = await opret(h.tradeId, "skadet", await toBilleder(h.tradeId));
+  const sagId = s.sag_id as string;
+  expect((await j(`select public.sag_afgoer($1, $2, 'koeber', 'Medhold', null, false, 'saelger') as v`, [MEDARBEJDER, sagId])).kode).toBe(
+    "ok",
+  );
+  await udenomTrigger(
+    `update public.sager set penge_flyttes_efter_kl = now() - interval '1 minute', afgjort_kl = now() - interval '5 days' where id = $1`,
+    [sagId],
+  );
+  const r = await j(`select public.returfragt_start($1, $2) as v`, [h.tradeId, KOEBER]);
+  expect(r).toMatchObject({ kode: "daekket", betaler: "saelger" });
+  if (o.label) {
+    const retur = await en<{ id: string }>(
+      `insert into public.forsendelser (trade_id, type, status, pakkestoerrelse) values ($1, 'retur', 'oprettet', 'lille') returning id`,
+      [h.tradeId],
+    );
+    await db.query(`update public.returfragt_betalinger set forsendelse_id = $2, label_klar_kl = now() where id = $1`, [r.id, retur.id]);
+  }
+  // Ankefristen løber stadig for pengene (så refusionen ikke afvikles, og
+  // sagen kan genåbnes i testen).
+  await udenomTrigger(`update public.sager set penge_flyttes_efter_kl = now() + interval '1 day' where id = $1`, [sagId]);
+  const a = await j(`select public.sag_retur_afleveret($1, $2, 'Afleveret') as v`, [MEDARBEJDER, sagId]);
+  expect(a.kode).toBe("ok");
+  return { ...h, sagId, afleveret: a };
+}
+
+describe("20261102350000: B1 regningen for returfragt", () => {
+  it("uden lavet returkode: ingen regning, 'ingen_daekning', staff markeret og drift-alarm - returen er stadig registreret", async () => {
+    const før = (await en<{ n: number }>(`select count(*)::int as n from public.drift_fejl_stub`)).n;
+    const h = await saelgerRetur({ label: false });
+    expect((h.afleveret.returfragt_regning as R).kode).toBe("ingen_daekning");
+    expect(await sagFelt<string>(h.sagId, "status")).toBe("afgjort_koeber");
+    expect(await sagFelt<boolean>(h.sagId, "kraever_opmaerksomhed")).toBe(true);
+    expect(await sagFelt<string>(h.sagId, "opmaerksomhed_tekst")).toContain("returkode");
+    const n = await en<{ n: number }>(`select count(*)::int as n from public.ekstra_fragt_regninger where sag_id = $1`, [h.sagId]);
+    expect(n.n).toBe(0);
+    const d = await en<{ n: number; digest: string }>(
+      `select count(*)::int as n, max(digest) as digest from public.drift_fejl_stub where id > $1`,
+      [før],
+    );
+    expect(d.n).toBe(1);
+    expect(d.digest).toBe(`sag_returfragt_regning:${h.sagId}`);
+  });
+
+  it("med lavet returkode: regning på den dækkede rækkes beløb", async () => {
+    const h = await saelgerRetur({ label: true });
+    expect((h.afleveret.returfragt_regning as R).kode).toBe("ok");
+    expect(await sagFelt<boolean>(h.sagId, "kraever_opmaerksomhed")).toBe(false);
+  });
+
+  it("staff lukker markeringen (kun staff, ikke inhabil)", async () => {
+    const h = await saelgerRetur({ label: false });
+    expect((await j(`select public.sag_opmaerksomhed_luk($1, $2, null) as v`, [KOEBER, h.sagId])).kode).toBe("ingen_adgang");
+    expect((await j(`select public.sag_opmaerksomhed_luk($1, $2, 'Opkræves manuelt') as v`, [MEDARBEJDER, h.sagId])).kode).toBe("ok");
+    expect(await sagFelt<boolean>(h.sagId, "kraever_opmaerksomhed")).toBe(false);
+    expect((await j(`select public.sag_opmaerksomhed_luk($1, $2, null) as v`, [MEDARBEJDER, h.sagId])).kode).toBe("ikke_markeret");
+  });
+});
+
+describe("20261102350000: B2 staff retter sagstypen", () => {
+  it("ikke mens en anke venter - kun ved status 'aaben'", async () => {
+    const h = await handel();
+    const s = await opret(h.tradeId, "skadet", await toBilleder(h.tradeId));
+    await j(`select public.sag_afgoer($1, $2, 'saelger', 'Ingen skade', null) as v`, [MEDARBEJDER, s.sag_id]);
+    await db.query(
+      `insert into public.sag_anker (sag_id, trade_id, status, part, indgivet_af, ankede_afgjort_af) values ($1, $2, 'afventer', 'koeber', $3, $4)`,
+      [s.sag_id, h.tradeId, KOEBER, MEDARBEJDER],
+    );
+    expect((await j(`select public.sag_ret_type($1, $2, 'svindel', 'Tom pakke') as v`, [ADMIN, s.sag_id])).kode).toBe("forkert_status");
+  });
+
+  it("samme trinregler som sag_opret", async () => {
+    // Modtaget, køberen kvitterede selv: ikke 'bortkommet'.
+    const a = await handel();
+    const s = await opret(a.tradeId, "skadet", await toBilleder(a.tradeId));
+    expect((await j(`select public.sag_ret_type($1, $2, 'bortkommet', 'Væk') as v`, [MEDARBEJDER, s.sag_id])).kode).toBe("forkert_trin");
+    // Fragtfirmaet meldte den leveret: 'bortkommet' er tilladt.
+    const b = await handel({ kilde: "fragt" });
+    const s2 = await opret(b.tradeId, "skadet", await toBilleder(b.tradeId));
+    expect((await j(`select public.sag_ret_type($1, $2, 'bortkommet', 'Væk') as v`, [MEDARBEJDER, s2.sag_id])).kode).toBe("ok");
+    // Pakken på vej: kun bortkommet/svindel.
+    const c = await handel({ status: "pakke_sendt" });
+    const s3 = await opret(c.tradeId, "bortkommet", []);
+    expect(s3.kode).toBe("ok");
+    expect((await j(`select public.sag_ret_type($1, $2, 'skadet', 'Skade') as v`, [MEDARBEJDER, s3.sag_id])).kode).toBe("forkert_trin");
+    expect((await j(`select public.sag_ret_type($1, $2, 'svindel', 'Aldrig sendt') as v`, [MEDARBEJDER, s3.sag_id])).kode).toBe("ok");
+  });
+
+  it("fra 'skadet' til noget andet nulstiller returfragt_betaler", async () => {
+    const h = await handel();
+    const s = await opret(h.tradeId, "skadet", await toBilleder(h.tradeId));
+    await udenomTrigger(`update public.sager set returfragt_betaler = 'saelger' where id = $1`, [s.sag_id]);
+    expect((await j(`select public.sag_ret_type($1, $2, 'ikke_som_beskrevet', 'Fejl') as v`, [MEDARBEJDER, s.sag_id])).kode).toBe("ok");
+    expect(await sagFelt<string | null>(s.sag_id as string, "returfragt_betaler")).toBeNull();
+  });
+});
+
+describe("20261102350000: B3 og S1", () => {
+  it("B3: den dækkede returfragt kun ved transportskade", async () => {
+    const h = await handel();
+    const s = await opret(h.tradeId, "ikke_som_beskrevet", await toBilleder(h.tradeId));
+    await j(`select public.sag_afgoer($1, $2, 'koeber', 'Medhold', null) as v`, [MEDARBEJDER, s.sag_id]);
+    // Forkert data: 'bidhamr' på en ikke-skade-sag.
+    await udenomTrigger(
+      `update public.sager set returfragt_betaler = 'bidhamr', penge_flyttes_efter_kl = now() - interval '1 minute' where id = $1`,
+      [s.sag_id],
+    );
+    const r = await j(`select public.returfragt_start($1, $2) as v`, [h.tradeId, KOEBER]);
+    expect(r.kode).toBe("ok");
+    expect((await en<{ b: string }>(`select betaler as b from public.returfragt_betalinger where id = $1`, [r.id])).b).toBe("koeber");
+  });
+
+  it("S1: skade, hvor returen allerede er afleveret -> køberen står som betaler", async () => {
+    const h = await handel();
+    const s = await opret(h.tradeId, "skadet", await toBilleder(h.tradeId));
+    await udenomTrigger(`update public.sager set retur_afleveret_kl = now() where id = $1`, [s.sag_id]);
+    expect((await j(`select public.sag_afgoer($1, $2, 'koeber', 'Medhold', null, false, 'saelger') as v`, [MEDARBEJDER, s.sag_id])).kode).toBe(
+      "ok",
+    );
+    expect(await sagFelt<string>(s.sag_id as string, "returfragt_betaler")).toBe("koeber");
+  });
+});
+
+describe("20261102350000: S3 kontaktinfo og tom pakke", () => {
+  it("kontaktinfo i beskrivelsen eller forklaringen afvises", async () => {
+    const h = await handel();
+    await som(KOEBER);
+    const r = await j(`select public.sag_opret($1, 'skadet', 'Ring til mig på 12345678 om skaden', $2::jsonb) as v`, [
+      h.tradeId,
+      JSON.stringify(await toBilleder(h.tradeId)),
+    ]);
+    expect(r.kode).toBe("kontaktinfo");
+    const indhold = [{ sti: await billede(KOEBER, h.tradeId), kategori: "indhold" }];
+    expect((await opret(h.tradeId, "skadet", indhold, { smidt: true, grund: "Skriv til mig på a@b.dk om pakken" })).kode).toBe(
+      "kontaktinfo",
+    );
+  });
+
+  it("tom pakke: kun pakken med labelen; 'anden vare' kræver stadig indholdet", async () => {
+    const h = await handel();
+    const pakke = [{ sti: await billede(KOEBER, h.tradeId), kategori: "pakke_label" }];
+    expect((await opretValg(h.tradeId, "svindel", "anden_vare", pakke)).kode).toBe("billeder_kraeves");
+    const r = await opretValg(h.tradeId, "svindel", "tom", pakke);
+    expect(r.kode).toBe("ok");
+    expect(await sagFelt<string>(r.sag_id as string, "koeber_valg")).toBe("tom");
+    const note = await en<{ n: string }>(`select sag_note as n from public.trades where id = $1`, [h.tradeId]);
+    expect(note.n).toContain("tom");
+    // Valget er fast.
+    await expect(db.query(`update public.sager set koeber_valg = 'stykker' where id = $1`, [r.sag_id])).rejects.toThrow(/faste oplysninger/);
+  });
+
+  it("tom pakke uden pakkebillede, med 'smidt ud' eller med forkert type afvises", async () => {
+    const h = await handel();
+    expect((await opretValg(h.tradeId, "svindel", "tom", [])).kode).toBe("billeder_kraeves");
+    const indhold = [{ sti: await billede(KOEBER, h.tradeId), kategori: "indhold" }];
+    expect((await opretValg(h.tradeId, "svindel", "tom", indhold, "Jeg smed papkassen ud samme dag.")).kode).toBe("smidt_ud_ikke_mulig");
+    expect((await opretValg(h.tradeId, "skadet", "tom", indhold)).kode).toBe("ugyldigt_valg");
+    expect((await opretValg(h.tradeId, "svindel", "noget", indhold)).kode).toBe("ugyldigt_valg");
+  });
+
+  it("smidt ud kræver stadig billede af varen og forklaringen", async () => {
+    const h = await handel();
+    expect((await opretValg(h.tradeId, "skadet", "stykker", [], "Jeg smed papkassen ud samme dag.")).kode).toBe("billeder_kraeves");
+    const indhold = [{ sti: await billede(KOEBER, h.tradeId), kategori: "indhold" }];
+    expect((await opretValg(h.tradeId, "skadet", "stykker", indhold, "Jeg smed papkassen ud samme dag.")).kode).toBe("ok");
+  });
+
+  it("svindel (tom pakke) med medhold: kun buddet", async () => {
+    const h = await handel();
+    const r = await opretValg(h.tradeId, "svindel", "tom", [{ sti: await billede(KOEBER, h.tradeId), kategori: "pakke_label" }]);
+    expect((await j(`select public.sag_afgoer($1, $2, 'koeber', 'Tom pakke', null) as v`, [MEDARBEJDER, r.sag_id])).kode).toBe("ok");
+    const b = await en<{ beloeb: string }>(`select * from public.sag_claim_refusion($1)`, [h.betalingId]);
+    expect(Number(b.beloeb)).toBe(100000);
+  });
+});
+
+describe("20261102350000: S4 påmindelser", () => {
+  it("allerede sendte udelukkes, og nøglen følger med", async () => {
+    const h = await handel({ timerSiden: 1 });
+    await db.query(`update public.trades set received_at = now() - interval '68 hours' where id = $1`, [h.tradeId]);
+    const k = await en<{ noegle: string; frist_kl: string }>(
+      `select noegle, frist_kl::text from public.handel_problem_frist_paamind_kandidater(6) where trade_id = $1`,
+      [h.tradeId],
+    );
+    const frist = await en<{ ms: string }>(
+      `select floor(extract(epoch from problem_frist_kl) * 1000)::bigint::text as ms from public.trades where id = $1`,
+      [h.tradeId],
+    );
+    expect(k.noegle).toBe(`problem_frist_paamind:${h.tradeId}:${frist.ms}`);
+    await db.query(`insert into public.notifikation_afsendelser (noegle) values ($1)`, [k.noegle]);
+    const efter = await db.query(`select 1 from public.handel_problem_frist_paamind_kandidater(6) where trade_id = $1`, [h.tradeId]);
+    expect(efter.rows.length).toBe(0);
+
+    const a = await handel();
+    const s = await opret(a.tradeId, "skadet", await toBilleder(a.tradeId));
+    await udenomTrigger(`update public.sager set oprettet_kl = now() - interval '40 hours' where id = $1`, [s.sag_id]);
+    const sv = await en<{ noegle: string }>(`select noegle from public.sag_svar_paamind_kandidater(12) where sag_id = $1`, [s.sag_id]);
+    expect(sv.noegle).toBe(`sag_svar_paamind:${s.sag_id}`);
+    await db.query(`insert into public.notifikation_afsendelser (noegle) values ($1)`, [sv.noegle]);
+    expect((await db.query(`select 1 from public.sag_svar_paamind_kandidater(12) where sag_id = $1`, [s.sag_id])).rows.length).toBe(0);
+  });
+});
+
+describe("20261102350000: S5 BHX01 og S7 mine_data", () => {
+  it("spærringen siger 'returfragt', når det er en regning for returfragt", async () => {
+    const h = await saelgerRetur({ label: true });
+    await db.query(`update public.ekstra_fragt_regninger set frist = now() - interval '1 day' where sag_id = $1`, [h.sagId]);
+    await expect(db.query(`select public.ekstra_fragt_kraev($1)`, [SAELGER])).rejects.toThrow(/ekstra_fragt_ubetalt_(returfragt|begge)/);
+    await db.query(`update public.ekstra_fragt_regninger set frist = now() + interval '14 days' where sag_id = $1`, [h.sagId]);
+  });
+
+  it("mine_data har sælgerens egne svar med billeder", async () => {
+    const h = await handel();
+    const s = await opret(h.tradeId, "skadet", await toBilleder(h.tradeId));
+    const sti = await billede(SAELGER, h.tradeId);
+    await som(SAELGER);
+    await j(`select public.sag_svar_send($1, $2, $3::jsonb) as v`, [
+      s.sag_id,
+      "Stolen var hel, da jeg sendte den af sted.",
+      JSON.stringify([{ sti, kategori: "indhold" }]),
+    ]);
+    const d = (await j(`select public.mine_data() as v`)) as { grund: boolean; sag_svar: { tekst: string; billeder: { sti: string }[] }[] };
+    expect(d.grund).toBe(true);
+    const mit = d.sag_svar.find((x) => x.tekst.startsWith("Stolen var hel, da jeg sendte den af sted."));
+    expect(mit?.billeder.map((b) => b.sti)).toEqual([sti]);
+    await som(KOEBER);
+    const k = (await j(`select public.mine_data() as v`)) as { sag_svar: unknown[] };
+    expect(k.sag_svar).toEqual([]);
+  });
+});
+
+describe("20261102350000: S8 genåbning efter regningen for returfragt", () => {
+  it("ubetalt regning frafaldes (åben PaymentIntent kasseres)", async () => {
+    const h = await saelgerRetur({ label: true });
+    await db.query(`update public.ekstra_fragt_regninger set stripe_payment_intent_id = 'pi_test_1' where sag_id = $1`, [h.sagId]);
+    const g = await j(`select public.sag_genaabn($1, $2, 'Ny dokumentation') as v`, [ADMIN, h.sagId]);
+    expect(g.kode).toBe("ok");
+    expect(g.returfragt_regning).toMatchObject({ frafaldet: 1, alarm: 0 });
+    const x = await en<{ status: string; annuller_pi: string; frafald_grund: string }>(
+      `select status, annuller_pi, frafald_grund from public.ekstra_fragt_regninger where sag_id = $1`,
+      [h.sagId],
+    );
+    expect(x).toMatchObject({ status: "frafaldet", annuller_pi: "pi_test_1" });
+    expect(x.frafald_grund).toContain("genåbnet");
+  });
+
+  it("betalt regning: alarm til staff, intet frafald", async () => {
+    const h = await saelgerRetur({ label: true });
+    await db.query(
+      `update public.ekstra_fragt_regninger set status = 'betalt', betalt_kl = now(), modtaget_oere = beloeb_oere where sag_id = $1`,
+      [h.sagId],
+    );
+    const g = await j(`select public.sag_genaabn($1, $2, 'Ny dokumentation') as v`, [ADMIN, h.sagId]);
+    expect(g.returfragt_regning).toMatchObject({ frafaldet: 0, alarm: 1 });
+    const x = await en<{ status: string; kraever_opmaerksomhed: boolean }>(
+      `select status, kraever_opmaerksomhed from public.ekstra_fragt_regninger where sag_id = $1`,
+      [h.sagId],
+    );
+    expect(x).toMatchObject({ status: "betalt", kraever_opmaerksomhed: true });
+    expect(await sagFelt<boolean>(h.sagId, "kraever_opmaerksomhed")).toBe(true);
+    const d = await en<{ n: number }>(`select count(*)::int as n from public.drift_fejl_stub where digest like 'sag_returfragt_betalt:%'`);
+    expect(d.n).toBeGreaterThan(0);
+  });
+});
+
+describe("20261102350000: bortkommet pakke -> reklamation (erstatningen til sælgeren)", () => {
+  it("triggeren og cron'en tager bortkomne pakker med; skade uden vurderet indpakning ikke", async () => {
+    await db.exec(`
+      create table if not exists public.synk_log (sag_id uuid);
+      create or replace function public.fragt_reklamation_synkroniser_sikker(p_sag uuid) returns text language sql as
+        $$ insert into public.synk_log values (p_sag) returning 'stub' $$;
+      drop trigger if exists sager_fragt_reklamation on public.sager;
+      create trigger sager_fragt_reklamation after update of status, afviklet_kl, penge_handling on public.sager
+        for each row when (new.status is distinct from old.status or new.afviklet_kl is distinct from old.afviklet_kl
+                           or new.penge_handling is distinct from old.penge_handling)
+        execute function public.sager_fragt_reklamation();`);
+    const b = await handel({ kilde: "fragt" });
+    const sb = await opret(b.tradeId, "bortkommet", []);
+    const k = await handel();
+    const sk = await opret(k.tradeId, "skadet", await toBilleder(k.tradeId));
+    for (const s of [sb.sag_id, sk.sag_id]) {
+      await udenomTrigger(
+        `update public.sager set status = 'afgjort_koeber', penge_handling = 'refunder', afviklet_kl = now(), afgjort_kl = now() - interval '5 days' where id = $1`,
+        [s],
+      );
+    }
+    // Triggeren (udenomTrigger slår kun sager_beskyt fra) synkroniserer
+    // begge typer - betingelserne afgør resten.
+    const t = await db.query<{ sag_id: string }>(`select sag_id from public.synk_log`);
+    expect(t.rows.map((x) => x.sag_id)).toContain(sb.sag_id);
+    expect(t.rows.map((x) => x.sag_id)).toContain(sk.sag_id);
+    await db.exec(`delete from public.synk_log`);
+    await db.query(`select public.fragt_reklamationer_synkroniser_alle(1000)`);
+    const c = await db.query<{ sag_id: string }>(`select sag_id from public.synk_log`);
+    expect(c.rows.map((x) => x.sag_id)).toContain(sb.sag_id);
+    expect(c.rows.map((x) => x.sag_id)).not.toContain(sk.sag_id);
+    await db.exec(`drop trigger sager_fragt_reklamation on public.sager`);
+  });
+});
+
+describe("20261102350000: md5-drift-tjek", () => {
+  it("afbryder før ændringerne, hvis en funktion er ændret af andre", async () => {
+    const d = new PGlite();
+    await opsaet(d);
+    await d.exec(SAGSREGLER);
+    await opsaetRettelser(d);
+    await d.exec(`create or replace function public.sag_genaabn(p_medarbejder uuid, p_sag uuid, p_begrundelse text)
+                  returns jsonb language plpgsql as $$ begin return '{}'::jsonb; end $$;`);
+    await expect(d.exec(RETTELSER)).rejects.toThrow(/sag_genaabn.*hverken gammel eller ny/);
+    const r = await d.query<{ f: string | null }>(`select to_regprocedure('public.sag_staff_marker(uuid,text)')::text as f`);
+    expect(r.rows[0].f).toBeNull();
+    await d.close();
+  }, 60_000);
 });
 
 describe("md5-drift-tjek", () => {

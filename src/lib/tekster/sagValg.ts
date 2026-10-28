@@ -105,8 +105,8 @@ export const SAG_VALG: Record<SagValgId, SagValg> = {
     undertekst: "Der lå ingenting i pakken",
     type: "svindel",
     retur: false,
-    indholdTitel: "Den åbne, tomme pakke",
-    indholdHjaelp: "Åbn pakken og vis, at den er tom.",
+    indholdTitel: "Den åbne, tomme pakke (valgfrit)",
+    indholdHjaelp: "Har du et billede af den åbne pakke, så tilføj det gerne.",
     tekstforslag: [
       "Pakken var tom, da jeg åbnede den.",
       "Pakken var meget let, da jeg hentede den.",
@@ -148,7 +148,8 @@ export type SagBilledKrav = {
   kategori: SagBilledeKategori;
   titel: string;
   hjaelp: string;
-  // Påkrævet (ved "pakken er smidt ud" er pakkebilledet ikke påkrævet).
+  // Påkrævet (ved "pakken er smidt ud" er pakkebilledet ikke påkrævet; ved
+  // en tom pakke er indholdsbilledet valgfrit).
   paakraevet: boolean;
 };
 
@@ -172,12 +173,28 @@ export const SAG_SMIDT_UD = {
 
 // billederKraeves: pakken er modtaget (hentSagMuligheder.billederKraeves) og
 // valget er ikke "ikke kommet frem" efter leveringsmelding.
+// Tom pakke (Filip, 27. okt. 2026): kun billedet af pakken med labelen er
+// påkrævet - billedet af den åbne, tomme pakke er valgfrit, og "pakken er
+// smidt ud" er ikke mulig (pakken er selve beviset). sag_opret håndhæver det,
+// når klienten sender valget (p_valg).
 export function sagBilledKrav(valg: SagValg, billederKraeves: boolean, pakkeSmidtUd = false): SagBilledKrav[] {
   if (!billederKraeves || valg.type === "bortkommet") return [];
+  if (valg.id === "tom") {
+    return [
+      { kategori: "pakke_label", titel: SAG_PAKKE_BILLEDE.titel, hjaelp: SAG_PAKKE_BILLEDE.hjaelp, paakraevet: true },
+      { kategori: "indhold", titel: valg.indholdTitel, hjaelp: valg.indholdHjaelp, paakraevet: false },
+    ];
+  }
   return [
     { kategori: "pakke_label", titel: SAG_PAKKE_BILLEDE.titel, hjaelp: SAG_PAKKE_BILLEDE.hjaelp, paakraevet: !pakkeSmidtUd },
     { kategori: "indhold", titel: valg.indholdTitel, hjaelp: valg.indholdHjaelp, paakraevet: true },
   ];
+}
+
+// Kan "Jeg har ikke pakken længere" vælges? Kun hvor pakkebilledet ellers
+// kræves, og ikke ved en tom pakke.
+export function sagSmidtUdMulig(valg: SagValg, billeder: readonly SagBilledKrav[]): boolean {
+  return valg.id !== "tom" && billeder.some((x) => x.kategori === "pakke_label");
 }
 
 // Trin 3.

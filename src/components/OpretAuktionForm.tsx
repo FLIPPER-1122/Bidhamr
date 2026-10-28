@@ -34,12 +34,14 @@ import { erStand, standNavn } from "@/lib/stand";
 import { erhvervFejlTekst } from "@/lib/erhverv/regler";
 import { erMitIdFejl } from "@/lib/mitid/fejl";
 import { erDac7Fejl, DAC7_FEJL_TEKST } from "@/lib/dac7/fejl";
-import { erEkstraFragtFejl, EKSTRA_FRAGT_SPAERRET_TEKST } from "@/lib/ekstraFragt/tekster";
+import { erEkstraFragtFejl, ekstraFragtSpaerretTekstFraFejl } from "@/lib/ekstraFragt/tekster";
 import { MITID } from "@/lib/tekster/mitid";
 import { erVilkaarFejl } from "@/lib/vilkaar";
 import { VILKAAR_TEKST } from "@/lib/tekster/vilkaar";
 import GpsrFelter, { gpsrFejl } from "@/components/opret/GpsrFelter";
 import { ERHVERV_GPSR, ERHVERV_MOMS } from "@/lib/tekster/erhverv";
+import MomsordningValg, { type MomsValg } from "@/components/opret/MomsordningValg";
+import { saetAuktionMomsordning } from "@/app/actions/firmaFaktura";
 import { SPOERGSMAAL_SLAAET_FRA } from "@/lib/spoergsmaal";
 import { kroner } from "@/lib/kroner";
 import PakkestoerrelseVaelger, {
@@ -191,6 +193,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
   const [producent, setProducent] = useState("");
   const [sikkerhed, setSikkerhed] = useState("");
   const kraeverGpsr = erFirma && stand === "ny_med_maerke";
+  // Momsordning på fakturaen (kun firmaer; sættes efter oprettelsen).
+  const [momsValg, setMomsValg] = useState<MomsValg>("standard");
   const [startprisTekst, setStartprisTekst] = useState("");
   const [varighed, setVarighed] = useState<VarighedDage>(STANDARD_VARIGHED);
   const [forsendelseMulig, setForsendelseMulig] = useState(false);
@@ -450,7 +454,7 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
         // DAC7-oplysninger mangler efter fristen (BHD01).
         else if (erDac7Fejl(insertError.code, insertError.message)) besked = DAC7_FEJL_TEKST;
         // Ubetalt ekstra fragt efter fristen (BHX01).
-        else if (erEkstraFragtFejl(insertError.code, insertError.message)) besked = EKSTRA_FRAGT_SPAERRET_TEKST;
+        else if (erEkstraFragtFejl(insertError.code, insertError.message)) besked = ekstraFragtSpaerretTekstFraFejl(insertError.message);
         else if (insertError.code === "BHU01") besked = "Du skal oprette en udbetalingskonto, før du kan sætte varer til salg.";
         // Beløbsloftet (BHB05): databasens tekst efter "beloeb_for_hoejt:".
         else if (beloebForHoejtTekst(insertError)) besked = beloebForHoejtTekst(insertError)!;
@@ -495,6 +499,17 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
 
       if (!data) throw new Error("Auktionen kunne ikke oprettes. Prøv igen om lidt – din kladde er gemt.");
       sletKladde(noegle);
+      if (erFirma && momsValg !== "standard") {
+        const m = await saetAuktionMomsordning(data.id, momsValg);
+        if ("fejl" in m) {
+          // Auktionen er oprettet - momsordningen kan rettes under Redigér.
+          setError(`Auktionen er oprettet, men momsordningen blev ikke gemt (${m.fejl}). Ret den under Redigér auktion.`);
+          setStatus(null);
+          setLoading(false);
+          opretterRef.current = false;
+          return;
+        }
+      }
       router.push(tilAuktion(data.id));
     } catch (err) {
       console.error("Fejl ved oprettelse af auktion:", err);
@@ -846,6 +861,8 @@ export default function OpretAuktionForm({ brugerId, erFirma = false }: { bruger
           </Hjaelp>
           {feltFejl.startpris && <FeltFejl id="startpris-fejl">{feltFejl.startpris}</FeltFejl>}
         </div>
+
+        {erFirma && <MomsordningValg vaerdi={momsValg} onChange={setMomsValg} />}
 
         <fieldset>
           <legend className="mb-1.5 text-sm font-medium text-tekst">Varighed</legend>

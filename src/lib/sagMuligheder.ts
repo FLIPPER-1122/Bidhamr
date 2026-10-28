@@ -19,6 +19,7 @@ import {
 import {
   sagBilledKrav,
   sagHvisDuFaarRet,
+  sagSmidtUdMulig,
   sagValgFor,
   type SagBilledKrav,
   type SagValgId,
@@ -36,7 +37,8 @@ export type SagValgMulighed = {
   retur: boolean;
   // Billederne i trin 2 (tom = trinnet springes over).
   billeder: SagBilledKrav[];
-  // "Pakken er smidt ud" kan vælges (pakkebilledet kræves).
+  // "Pakken er smidt ud" kan vælges (pakkebilledet kræves; ikke ved en tom
+  // pakke). Send valget (id) med ved oprettelsen (opret: valg).
   smidtUdMulig: boolean;
   tekstforslag: string[];
   hvisDuFaarRet: string;
@@ -205,7 +207,7 @@ export async function hentSagMulighederFor(
       type: v.type,
       retur: v.retur,
       billeder,
-      smidtUdMulig: billeder.some((x) => x.kategori === "pakke_label"),
+      smidtUdMulig: sagSmidtUdMulig(v, billeder),
       tekstforslag: v.tekstforslag,
       hvisDuFaarRet: sagHvisDuFaarRet(v, beloeb),
       goerNu: v.goerNu,
