@@ -158,8 +158,8 @@ export function ekstraFragtBeskeder(r: EkstraFragtBeskedRaekke, nu: number = Dat
   if (r.status === "frafaldet" && r.frafaldet_kl && r.afgoerelse !== "frafaldet") {
     op(
       `frafaldet:${new Date(r.frafaldet_kl).getTime()}`,
-      "Regningen for ekstra fragt er frafaldet",
-      `BidHamr har frafaldet regningen på ${beloeb} for ekstra fragt. Du skal ikke betale.${r.frafald_grund ? ` Begrundelse: ${punktum(r.frafald_grund)}` : ""}`,
+      returfragt ? "Regningen for returfragt er frafaldet" : "Regningen for ekstra fragt er frafaldet",
+      `BidHamr har frafaldet regningen på ${beloeb} for ${returfragt ? "returfragt" : "ekstra fragt"}. Du skal ikke betale.${r.frafald_grund ? ` Begrundelse: ${punktum(r.frafald_grund)}` : ""}`,
     );
   }
 

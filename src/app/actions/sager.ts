@@ -18,6 +18,7 @@
 //   supabase.storage.from("sag-billeder").upload(sti, fil, { upsert: false, contentType })
 //   supabase.rpc("sag_opret", { p_trade, p_type, p_beskrivelse, p_billeder: [{ sti, kategori }],
 //       p_pakke_smidt_ud?, p_smidt_ud_begrundelse? })   (20261102210000)
+//       p_valg? (køberens valg, fx 'tom')                 (20261102350000)
 //   ELLER (anbefalet - beskeden til sælgeren sendes straks):
 //   POST /api/sag/app/opret og /api/sag/app/svar (docs/APP-ENDPOINTS.md)
 //       -> { kode: "ok", sag_id } | { kode: <fejlkode> } (se SAG_OPRET_FEJL)
@@ -195,6 +196,9 @@ export async function opretSag(
   // Regel 2 (20261102210000): køberen har ikke pakken længere - forklaring
   // på mindst 20 tegn; sagen markeres til staffs vurdering.
   smidtUd: { pakkeSmidtUd: boolean; begrundelse: string } | null = null,
+  // Køberens valg i trin 1 (sagValg.ts). Ved "tom" kræves kun billedet af
+  // pakken med labelen (20261102350000).
+  valg: string | null = null,
 ): Promise<{ ok: true; sagId: string } | { fejl: string }> {
   try {
     const supabase = await createClient();
@@ -209,6 +213,7 @@ export async function opretSag(
       billeder,
       pakkeSmidtUd: !!smidtUd?.pakkeSmidtUd,
       smidtUdBegrundelse: smidtUd?.begrundelse ?? null,
+      valg,
     });
     if ("fejl" in r) return { fejl: r.fejl };
     revalidatePath(sagSti(tradeId));

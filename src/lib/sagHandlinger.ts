@@ -28,6 +28,7 @@ import {
   erSagBilledeKategori,
   erSagType,
 } from "@/lib/sager";
+import { erSagValgId } from "@/lib/tekster/sagValg";
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -68,6 +69,9 @@ export async function opretSagFor(
     billeder: unknown;
     pakkeSmidtUd?: unknown;
     smidtUdBegrundelse?: unknown;
+    // Køberens valg i trin 1 (sagValg.ts, fx "tom"). Valgfrit - uden valg
+    // gælder de almindelige billedkrav for typen (20261102350000).
+    valg?: unknown;
   },
 ): Promise<{ ok: true; sagId: string } | SagHandlingFejl> {
   const { tradeId, type, beskrivelse } = input;
@@ -84,6 +88,10 @@ export async function opretSagFor(
   }
   const rene = rensSagBilleder(input.billeder ?? []);
   if (!rene) return { fejl: SAG_OPRET_FEJL.ugyldige_billeder, kode: "ugyldige_billeder" };
+  if (input.valg !== undefined && input.valg !== null && !erSagValgId(input.valg)) {
+    return { fejl: SAG_OPRET_FEJL.ugyldigt_valg, kode: "ugyldigt_valg" };
+  }
+  const valg = erSagValgId(input.valg) ? input.valg : null;
 
   const { data, error } = await supabase.rpc("sag_opret", {
     p_trade: tradeId,
@@ -93,6 +101,8 @@ export async function opretSagFor(
     // Kun med, når køberen har valgt det (så en database uden 20261102210000
     // stadig kan kaldes med de 4 parametre).
     ...(smidt ? { p_pakke_smidt_ud: true, p_smidt_ud_begrundelse: grund } : {}),
+    // Kun med, når klienten sender valget (20261102350000).
+    ...(valg ? { p_valg: valg } : {}),
   });
   if (error) {
     console.error("sag_opret fejlede:", error);

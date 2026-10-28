@@ -42,7 +42,8 @@ export type MinEkstraFragt = {
   maalt_vaegt_gram: number | null;
   maalt_maal: string | null;
   beloeb_oere: number;
-  fragtfirma_fakturanummer: string;
+  // null ved en regning for returfragt i en sag (ingen faktura fra fragtfirmaet).
+  fragtfirma_fakturanummer: string | null;
   forklaring: string | null;
   har_dokumentation: boolean;
   status: EkstraFragtStatus;

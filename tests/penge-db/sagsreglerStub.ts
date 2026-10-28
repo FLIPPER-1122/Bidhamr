@@ -171,3 +171,47 @@ export async function opsaet(db: { exec: (sql: string) => Promise<unknown> }): P
   await db.exec(FOER);
   await db.exec(EFTER_FOER);
 }
+
+// ------------------------------------------------------------------ 20261102350000
+
+export const RETTELSER = readFileSync(path.join(MIG, "20261102350000_sagsregler_rettelser.sql"), "utf8");
+export const FOER_RETTELSER = readFileSync(
+  path.resolve(import.meta.dirname, "fixtures/sagsregler_rettelser_foer_20261102350000.sql"),
+  "utf8",
+);
+
+// Det, rettelserne bruger ud over stubben ovenfor (efter 20261102210000).
+export const STUB_RETTELSER = `
+create table public.notifikation_afsendelser (noegle text primary key, bruger_id uuid, type text, status text);
+create table public.drift_fejl_stub (id serial primary key, kilde text, sti text, besked text, digest text);
+create function public.drift_fejl_log(p_kilde text, p_sti text, p_besked text, p_digest text default null,
+  p_bruger_id uuid default null) returns text language sql as
+  $$ insert into public.drift_fejl_stub (kilde, sti, besked, digest) values (p_kilde, p_sti, p_besked, p_digest) returning 'ny' $$;
+create function public.mine_data_grund() returns jsonb language sql as $$ select '{"grund": true}'::jsonb $$;
+create function public.mine_data() returns jsonb language plpgsql security definer set search_path = '' as $fn$
+declare
+  v_uid uuid := auth.uid();
+  v     jsonb;
+begin
+  v := public.mine_data_grund();
+  return v;
+end $fn$;
+alter table public.ekstra_fragt_regninger
+  add column frafaldet_kl timestamptz, add column frafaldet_af uuid, add column afgoerelse text,
+  add column afgjort_kl timestamptz, add column afgjort_af uuid,
+  add column tidligere_payment_intents text[] not null default '{}', add column annuller_pi text,
+  add column pi_forsoeg integer not null default 0, add column kraever_opmaerksomhed boolean not null default false;
+alter table public.fragt_reklamationer add column status text, add column fremdrift_kl timestamptz,
+  add column annulleret_auto boolean default false, add column annulleret_kl timestamptz;
+alter table public.moderation_log drop constraint moderation_log_handling_check;
+alter table public.moderation_log add constraint moderation_log_handling_check check (handling = any (array['advarsel',
+  'sag_afgjort_koeber','sag_afgjort_saelger','sag_lukket','sag_afviklet','sag_retur_afleveret','indpakning_ordentlig',
+  'ekstra_fragt_oprettet','ekstra_fragt_frafaldet','returfragt_refunderet','sag_anke_omgjort','sag_anke_stadfaestet',
+  'sag_genaabnet','sag_type_rettet']));
+`;
+
+// Efter 20261102210000: stubs + de rigtige funktioner fra testdatabasen.
+export async function opsaetRettelser(db: { exec: (sql: string) => Promise<unknown> }): Promise<void> {
+  await db.exec(STUB_RETTELSER);
+  await db.exec(FOER_RETTELSER);
+}
