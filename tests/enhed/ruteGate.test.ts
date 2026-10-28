@@ -89,6 +89,7 @@ const OFFENTLIGE_RUTER: Record<string, Exclude<Klasse, "login" | "admin-vaert" |
   "/api/konto/glemt": "offentlig",
   "/api/konto/data": "offentlig",
   "/api/konto/henvisning": "offentlig",
+  "/api/konto/adresse": "offentlig",
   "/api/konto/email": "offentlig",
   "/api/konto/email/bekraeft": "offentlig",
   "/api/firma/skift-pakke": "offentlig",

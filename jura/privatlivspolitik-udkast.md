@@ -43,6 +43,7 @@ Dataansvarlig for behandlingen af dine personoplysninger på bidhamr.dk og i Bid
 
 - **Navn og e-mail**, når du opretter en konto. Din adgangskode gemmes kun krypteret (som en hash) hos vores leverandør Supabase – vi kan ikke se den.
 - **Accept af brugerbetingelserne**: når du opretter en konto, gemmer vi, hvilken version af brugerbetingelserne du har accepteret, og hvornår. Har du accepteret senere (fx via bjælken på Min konto), gemmer vi det tidspunkt.
+- **Adresse til kvitteringer og fakturaer** (vej og nr., postnummer og by), som du skriver, når du opretter en konto, eller før du byder eller betaler første gang. Den står på kvitteringer og fakturaer, når du køber noget, og kan rettes under Min konto → Min adresse. Andre brugere kan ikke se den, men køber du hos et firma, får firmaet den på fakturaen for købet (aftale – litra b, og firmaets bogføringspligt – litra c). Sletter du kontoen, slettes adressen, medmindre du har handler – så gemmes den, så længe bogføringsloven kræver det; en sendt faktura ændres aldrig. [ADVOKAT]
 - **Telefonnummer og adresse til afhentning**, hvis du selv skriver dem under Min konto (frivilligt).
 - **Profilbillede**, hvis du lægger et op.
 - **Sikkerhedskode ved oprettelse**: når du opretter en konto, sender vi en 6-cifret kode til din e-mail for at bekræfte, at e-mailen er din. Koden gemmes kun i kort tid (højst 1 time) hos Supabase.

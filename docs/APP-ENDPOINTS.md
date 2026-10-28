@@ -279,6 +279,12 @@ Migration `20261102230000_henvis_en_ven.sql`. Samme kald som hjemmesidens `/kont
 - Pointene gives af databasen, når vennen bliver MitID-verificeret (også via appens `/api/mitid/app/afslut`), og
   står i `mine_point().historik` med `type: "henvisning"` ("Henvist en ven").
 
+## GET og POST /api/konto/adresse (Min adresse)
+
+Migration `20261102340000_bruger_adresse.sql`. Adressen til kvitteringer og fakturaer: hent (GET) og gem (POST
+`{ adresse, postnummer }`). Kræves før første bud (`/api/bud/app` svarer 409 `BHY01`) og første betaling
+(`/api/betaling/app/betal` svarer 409 `adresse_mangler`). Hele kontrakten står i docs/APP-SIGNUP.md under "Adresse".
+
 ## POST /api/auktion/app/fjern-billeder
 
 `{ auktion_id, stier: string[] }` (højst 20; storage-stier `<bruger-id>/<fil>.jpg` eller de offentlige URL'er) →
