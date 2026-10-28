@@ -10,7 +10,7 @@
 //   2. Byggeren her læser kun DokumentationData.politi for udgaven 'politi'.
 import { FIRMA, FIRMA_ADRESSE } from "@/lib/firmaoplysninger";
 import { SAG_STATUS_NAVN, SAG_TYPE_NAVN, type SagStatus, type SagType } from "@/lib/sager";
-import { UDGAVE_NAVN, type SagDokumentationUdgave } from "@/lib/sagDokumentation/regler";
+import { UDGAVE_NAVN, loftTekst, type SagDokumentationUdgave } from "@/lib/sagDokumentation/regler";
 
 // ---------------------------------------------------------------------------
 // Data (hentet af data.ts)
@@ -74,7 +74,17 @@ export type DokLog = { tid: string; handling: string; medarbejder: string | null
 
 export type DokUdlevering = { tid: string; udgave: SagDokumentationUdgave; givetTil: string; journalnummer: string | null; af: string | null };
 
+// Et loft er ramt: vist af i alt (står tydeligt i PDF'en).
+export type DokLoft = { vist: number; iAlt: number };
+
 export type DokumentationData = {
+  // Lister, hvor ikke alt er medtaget (data.ts). Mangler = alt er med.
+  afkortet?: {
+    beskeder?: DokLoft;
+    haendelser?: DokLoft;
+    pakkebilleder?: DokLoft;
+    forsendelser?: DokLoft;
+  };
   sag: {
     id: string;
     type: SagType;
@@ -333,6 +343,16 @@ export function bygDokument(d: DokumentationData, udgave: SagDokumentationUdgave
       ["Modtaget (markeret i BidHamr)", tid(d.handel.modtagetKl)],
     ],
   });
+  const afk = d.afkortet ?? {};
+  if (afk.forsendelser) {
+    lev.push({ slags: "tekst", tekst: loftTekst(afk.forsendelser.vist, afk.forsendelser.iAlt, "første", "forsendelser") });
+  }
+  if (afk.haendelser) {
+    lev.push({
+      slags: "tekst",
+      tekst: `${loftTekst(afk.haendelser.vist, afk.haendelser.iAlt, "seneste", "sporingshændelser")} Ældre hændelser er ikke medtaget.`,
+    });
+  }
   for (const f of d.forsendelser) {
     lev.push({
       slags: "underoverskrift",
@@ -365,6 +385,9 @@ export function bygDokument(d: DokumentationData, udgave: SagDokumentationUdgave
   }
   if (d.pakkebilleder.length) {
     lev.push({ slags: "underoverskrift", tekst: `Sælgerens pakkebilleder ved afsendelsen (${d.pakkebilleder.length})` });
+    if (afk.pakkebilleder) {
+      lev.push({ slags: "tekst", tekst: loftTekst(afk.pakkebilleder.vist, afk.pakkebilleder.iAlt, "første", "pakkebilleder") });
+    }
     lev.push({ slags: "billeder", billeder: d.pakkebilleder });
   }
   afsnit.push({ titel: "Levering og sporing", blokke: lev });
@@ -436,10 +459,23 @@ export function bygDokument(d: DokumentationData, udgave: SagDokumentationUdgave
 
   // 6. Chatten
   const beskeder = politi ? d.chat : d.chat.filter((b) => !b.stoppet);
+  // Udgaven til sælger nævner ikke det samlede antal (det tæller også
+  // beskeder stoppet af filteret, som sælgeren ikke må se).
+  const chatLoft: DokBlok[] = afk.beskeder
+    ? [
+        {
+          slags: "tekst",
+          tekst: politi
+            ? `${loftTekst(afk.beskeder.vist, afk.beskeder.iAlt, "seneste", "beskeder")} Ældre beskeder er ikke medtaget.`
+            : "Chatten er længere, end der er plads til i dokumentet. Kun de seneste beskeder er medtaget.",
+        },
+      ]
+    : [];
   afsnit.push({
     titel: "Chat mellem køber og sælger om handlen",
     blokke: beskeder.length
       ? [
+          ...chatLoft,
           {
             slags: "tabel",
             hoved: ["Sendt", "Fra", "Besked"],
