@@ -199,7 +199,7 @@ export default function BetaFejlFormular({ brugerId, onLuk }: { brugerId: string
     "w-full rounded-xl border border-kant-staerk bg-white px-4 py-3 text-[15px] text-tekst placeholder:text-pladsholder hover:border-[#BFBFBF] focus:border-groen focus:outline-2 focus:outline-groen/25";
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-end sm:justify-end sm:p-6 print:hidden">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-end sm:justify-start sm:p-6 print:hidden">
       <div className="absolute inset-0 bg-black/30" aria-hidden="true" onClick={() => !sender && onLuk()} />
       <div
         ref={dialogRef}

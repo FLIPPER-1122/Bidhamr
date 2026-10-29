@@ -286,7 +286,7 @@ export default function BotChat({ brugerNoegle, maksTegn }: { brugerNoegle: stri
           type="button"
           onClick={() => setAaben(true)}
           aria-haspopup="dialog"
-          className="fixed left-3 z-30 inline-flex h-12 items-center gap-2 rounded-full bg-groen pl-4 pr-5 text-sm font-semibold text-white shadow-[var(--shadow-flyder)] transition-colors hover:bg-groen-mork focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen bottom-[calc(var(--samtykke-hoejde,0px)+env(safe-area-inset-bottom,0px)+88px)] lg:left-6 lg:bottom-[calc(var(--samtykke-hoejde,0px)+24px)] print:hidden"
+          className="fixed right-3 z-30 inline-flex h-12 items-center gap-2 rounded-full bg-groen pl-4 pr-5 text-sm font-semibold text-white shadow-[var(--shadow-flyder)] transition-colors hover:bg-groen-mork focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-groen bottom-[calc(var(--samtykke-hoejde,0px)+env(safe-area-inset-bottom,0px)+88px)] lg:right-6 lg:bottom-[calc(var(--samtykke-hoejde,0px)+24px)] print:hidden"
         >
           <BotIkon className="h-5 w-5" />
           Spørg BidHamr-bot
@@ -298,7 +298,7 @@ export default function BotChat({ brugerNoegle, maksTegn }: { brugerNoegle: stri
           role="dialog"
           aria-modal="false"
           aria-labelledby={titelId}
-          className="fixed inset-x-0 bottom-0 z-40 flex max-h-[85svh] flex-col border border-kant bg-white shadow-[var(--shadow-stor)] sm:inset-x-auto sm:left-6 sm:bottom-6 sm:h-[600px] sm:max-h-[calc(100svh-48px)] sm:w-[400px] print:hidden"
+          className="fixed inset-x-0 bottom-0 z-40 flex max-h-[85svh] flex-col border border-kant bg-white shadow-[var(--shadow-stor)] sm:inset-x-auto sm:right-6 sm:bottom-6 sm:h-[600px] sm:max-h-[calc(100svh-48px)] sm:w-[400px] print:hidden"
         >
           <header className="flex items-start justify-between gap-3 bg-groen px-4 py-3 text-white">
             <div className="min-w-0">

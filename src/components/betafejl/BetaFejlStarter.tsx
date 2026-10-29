@@ -6,6 +6,9 @@
 // Holdt så let som muligt: formularen (BetaFejlFormular) og Supabase-klienten
 // hentes først, når man trykker på knappen. Intet databasekald før det.
 //
+// Knappen ligger nederst til venstre (BidHamr-botten har højre hjørne, som i
+// appen).
+//
 // Mobil: knappen er 44 px høj og ligger over de faste bjælker nederst (fx
 // "Byd"-bjælken på en auktion), og den kan minimeres til en lille fane i
 // højre kant midt på skærmen. Valget huskes i localStorage.
@@ -90,7 +93,7 @@ export default function BetaFejlStarter({ brugerId }: { brugerId: string }) {
       ) : (
         !aaben && (
           <div
-            className="fixed right-3 z-30 flex items-center overflow-hidden rounded-none bg-groen text-white shadow-[var(--shadow-flyder)] bottom-[calc(var(--samtykke-hoejde,0px)+env(safe-area-inset-bottom,0px)+88px)] lg:right-6 lg:bottom-[calc(var(--samtykke-hoejde,0px)+24px)] print:hidden"
+            className="fixed left-3 z-30 flex items-center overflow-hidden rounded-none bg-groen text-white shadow-[var(--shadow-flyder)] bottom-[calc(var(--samtykke-hoejde,0px)+env(safe-area-inset-bottom,0px)+88px)] lg:left-6 lg:bottom-[calc(var(--samtykke-hoejde,0px)+24px)] print:hidden"
           >
             <button
               ref={knapRef}
