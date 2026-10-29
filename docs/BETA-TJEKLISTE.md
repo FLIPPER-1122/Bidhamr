@@ -4,7 +4,7 @@ Navn: ______________________  Telefon: ☐ iPhone ☐ Android ☐ Computer  Brow
 
 **Du skal både sælge og købe.** Sæt mindst 2 varer til salg, og byd på mindst 3 andre testpersoners auktioner, så du prøver handlen fra begge sider.
 
-Sæt kryds, når opgaven virker. Virker noget ikke, så tryk på **"Meld fejl"** nederst til højre på siden (eller skriv til beta@bidhamr.dk) og skriv nummeret på opgaven.
+Sæt kryds, når opgaven virker. Virker noget ikke, så tryk på **"Meld fejl"** nederst til venstre på siden (eller skriv til beta@bidhamr.dk) og skriv nummeret på opgaven.
 
 Alt er test: brug kun testkortet **4242 4242 4242 4242** (vilkårlig fremtidig dato og CVC) og den test-MitID, du har fået. Brug aldrig dit rigtige kort, MitID eller CPR-nummer.
 
