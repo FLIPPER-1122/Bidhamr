@@ -121,6 +121,10 @@ export const ADMIN_FIRMA = {
       behold: "Behold Starts gratis måned + introrabat",
       beholdHjaelp: (pct: number, mdr: number) =>
         `Særaftale: første måned gratis, derefter ${pct} % i ${mdr === 1 ? "1 måned (måned 2)" : `${mdr} måneder (måned 2-${mdr + 1})`} fra første betaling, og så fuld pris. Begrundelsen gemmes i loggen.`,
+      // Aftalen har "Behold Starts gratis måned + introrabat", og staff gemmer
+      // uden fluebenet.
+      beholdMistesAdvarsel:
+        "Aftalen giver i dag firmaet første måned gratis. Gemmer du uden fluebenet, forsvinder den gratis måned, og rabatten gælder fra første betaling.",
       ugyldig: "Skriv hele tal: 1-100 % og 1-24 måneder.",
       begrundelsePladsholder: "Fx Filip har ringet til firmaet",
       bekraeft: "Gem introrabat",

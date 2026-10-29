@@ -12,15 +12,35 @@
 // introrabat" FØR Checkout. Checkout: 0 kr. i dag, 1 gratis måned og
 // introkuponen. Fakturaerne: 0 kr., 6 x 249,50 kr. + moms og derefter 499 kr.
 // + moms. Uden valget (kontrol): ingen gratis måned - 6 x 249,50 kr. fra måned 1.
+//
+// Skift op i den gratis måned (Filip, 29. okt. 2026): med valget skifter
+// firmaet til Butik på dag 10. Den gratis måned slutter, og introrabatten
+// sættes på igen fra skiftet: præcis 6 fakturaer med 50 % (499,50 kr. + moms,
+// den første ved skiftet), derefter 999 kr. + moms - ikke 7. Kontrol uden
+// valget: den kørende introrabat bliver liggende uændret (samme rabat og
+// slutdato i Stripe).
 import Stripe from "stripe";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { firmaPris, sikrMomssats, startBetaling, synkAbonnement, synkFaktura } from "@/lib/erhverv/betaling";
-import { plusMaaneder } from "@/lib/erhverv/abonnementRegler";
+import {
+  firmaPris,
+  introTilStripe,
+  sikrMomssats,
+  startBetaling,
+  synkAbonnement,
+  synkFaktura,
+  velkomstSkiftForPakke,
+} from "@/lib/erhverv/betaling";
+import { skiftPakkeForBruger } from "@/lib/erhverv/pakkeskift";
+import { introResterende, plusMaaneder } from "@/lib/erhverv/abonnementRegler";
 
 const FIRMA = "26849ab7-6678-47b7-a8bd-4d618dfdf9f3";
 const SAELGERROLLE = "11111111-1111-4111-8111-000000000008";
 const START = "7e57a000-0000-4000-8000-000000000001";
+const BUTIK = "7e57a000-0000-4000-8000-000000000002";
+// Butiks pris ekskl. moms i øre (999 kr.) og halv pris (499,50 kr.).
+const BUTIK_OERE = 99_900;
+const BUTIK_HALV = 49_950;
 // Starts pris ekskl. moms i øre (499 kr.) og halv pris (249,50 kr.).
 const START_OERE = 49_900;
 const HALV = 24_950;
@@ -185,6 +205,29 @@ async function abonnementSomCheckout(s: Stripe.Checkout.Session): Promise<void> 
   subId = sub.id;
 }
 
+// BidHamrs introrabat på abonnementet (id, kupon, start og slut).
+async function introRabat(): Promise<{ id: string; kupon: string; start: number; end: number | null } | null> {
+  const sub = await stripe.subscriptions.retrieve(subId, { expand: ["discounts", "discounts.source.coupon"] });
+  const d = sub.discounts.find(
+    (x): x is Stripe.Discount => typeof x !== "string" && (x.source.coupon as Stripe.Coupon | null)?.metadata?.bidhamr === "intro",
+  );
+  return d ? { id: d.id, kupon: (d.source.coupon as Stripe.Coupon).id, start: d.start, end: d.end ?? null } : null;
+}
+
+async function nulstilSkiftGraense(): Promise<void> {
+  await db.from("rate_limits").delete().eq("noegle", `firma_skift_pakke:${brugerId}`);
+}
+
+// Fakturaerne til rapporten: dato (UTC), beløb ekskl. moms og rabat.
+async function udskrivFakturaer(navn: string): Promise<void> {
+  const linjer = (await fakturaer()).map((x) => {
+    const rabat = (x.total_discount_amounts ?? []).reduce((a, r) => a + r.amount, 0);
+    const dato = new Date(x.created * 1000).toISOString().slice(0, 10);
+    return `${dato}  ${x.billing_reason}  ekskl. moms ${x.total_excluding_tax}  rabat ${rabat}  i alt ${x.total}`;
+  });
+  console.log(`${navn}:\n${linjer.join("\n")}`);
+}
+
 async function saetIntro(behold: boolean): Promise<void> {
   const args: Record<string, unknown> = {
     p_staff: SAELGERROLLE,
@@ -244,6 +287,95 @@ describe("Behold Starts gratis måned + introrabat mod Stripes testmiljø (20261
     expect(betalte.slice(0, 6).map((x) => x.total)).toEqual(Array(6).fill(HALV + Math.round(HALV / 4)));
     expect(betalte[6].total).toBe(START_OERE + START_OERE / 4);
   }, 900_000);
+
+  it("skift op til Butik på dag 10 med valget: 6 x 499,50 kr. fra skiftet (ikke 7), derefter 999 kr.", async () => {
+    await nulstilFirma();
+    await saetIntro(true);
+    await nytUr("BidHamr behold gratis + skift op");
+    const s = await nySession();
+    expect(s.metadata).toMatchObject({ maaned1: "gratis", gratis_maaneder: "1" });
+    await abonnementSomCheckout(s);
+    await spol(t0 + 3600);
+    await spejlAlt();
+    expect(await firma()).toMatchObject({ intro_status: "aktiv", intro_behold_gratis: true, stripe_abonnement_status: "trialing" });
+    const foer = await introRabat();
+    expect(foer).not.toBeNull();
+
+    // Dag 10 i den gratis måned: siden (og appen) viser 50 % "i 6 måneder" -
+    // ikke den gamle slutdato, for rabatten sættes på igen fra skiftet.
+    const dag10 = t0 + 10 * 86_400;
+    await spol(dag10);
+    const vist = await velkomstSkiftForPakke(brugerId, BUTIK);
+    expect(vist).toMatchObject({
+      status: "ok",
+      tilbud: {
+        udfald: "skift",
+        visning: "intro:50",
+        rabat: { slags: "intro", procent: 50, til: null, maaneder: 6 },
+        beloeb: { eksklOere: BUTIK_HALV },
+        kanSkifte: true,
+      },
+    });
+    if (vist.status === "ok") expect(vist.tilbud?.tekst).toContain("50 % rabat i 6 måneder");
+
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, BUTIK, "intro:50")).toMatchObject({ ok: true, kode: "opgraderet" });
+    const sub = await stripe.subscriptions.retrieve(subId);
+    expect(sub.status).toBe("active");
+    expect(sub.items.data[0].price.metadata.pakke_id).toBe(BUTIK);
+    // En ny introrabat med start ved skiftet: præcis 6 betalte fakturaer fra
+    // skiftet (den første er skiftets egen faktura).
+    const efter = await introRabat();
+    expect(efter).not.toBeNull();
+    expect(efter!.id).not.toBe(foer!.id);
+    expect(efter!.kupon).toBe("bidhamr_intro_50_6_skift");
+    expect(Math.abs(efter!.start - dag10)).toBeLessThan(3600);
+    const periodeStart = sub.items.data[0].current_period_start;
+    expect(introResterende({ naesteFakturaSek: periodeStart, rabatSlutSek: efter!.end })).toBe(6);
+    // Databasen spejler Stripes nye slutdato.
+    const f = await firma();
+    expect(f).toMatchObject({ pakke_id: BUTIK, intro_status: "aktiv", intro_coupon_id: "bidhamr_intro_50_6_skift" });
+    expect(new Date(String(f.intro_til)).getTime() / 1000).toBe(efter!.end);
+
+    // Én måned ad gangen (Stripe: højst to intervaller pr. spoling).
+    for (let m = 1; m <= 7; m++) await spol(plusMaaneder(periodeStart, m) + 1800);
+    await spejlAlt();
+    await udskrivFakturaer("Behold + skift op til Butik dag 10");
+    expect(await alleBeloeb()).toEqual([0, ...Array(6).fill(BUTIK_HALV), BUTIK_OERE, BUTIK_OERE]);
+    const betalte = (await fakturaer()).filter((x) => x.total > 0);
+    expect(betalte.slice(0, 6).map((x) => x.total)).toEqual(Array(6).fill(BUTIK_HALV + Math.round(BUTIK_HALV / 4)));
+    expect(betalte[6].total).toBe(BUTIK_OERE + BUTIK_OERE / 4);
+  }, 900_000);
+
+  it("kontrol: skift op uden valget - den kørende introrabat bliver liggende uændret", async () => {
+    await nulstilFirma();
+    await nytUr("BidHamr intro uden valget + skift op");
+    const s = await nySession();
+    expect(s.metadata).toMatchObject({ maaned1: "gratis", gratis_maaneder: "1" });
+    expect(kuponer(s)).toEqual([]);
+    await abonnementSomCheckout(s);
+    await spol(t0 + 3600);
+    await spejlAlt();
+    // Introrabat sat i den gratis måned, uden valget.
+    await saetIntro(false);
+    expect(await introTilStripe(FIRMA)).toMatchObject({ status: "ok" });
+    expect(await firma()).toMatchObject({ intro_status: "aktiv", intro_behold_gratis: false });
+    const foer = await introRabat();
+    expect(foer).not.toBeNull();
+
+    const dag10 = t0 + 10 * 86_400;
+    await spol(dag10);
+    const vist = await velkomstSkiftForPakke(brugerId, BUTIK);
+    expect(vist).toMatchObject({ status: "ok", tilbud: { udfald: "skift", visning: "intro:50" } });
+    // Uden valget: rabattens slutdato fra Stripe (som før).
+    if (vist.status === "ok") expect(vist.tilbud?.rabat).toMatchObject({ til: expect.stringMatching(/^\d{1,2}\. \S+ \d{4}$/) });
+    await nulstilSkiftGraense();
+    expect(await skiftPakkeForBruger(brugerId, BUTIK, "intro:50")).toMatchObject({ ok: true, kode: "opgraderet" });
+    expect(await introRabat()).toEqual(foer);
+    await spejlAlt();
+    await udskrivFakturaer("Uden valget + skift op til Butik dag 10");
+    expect(await alleBeloeb()).toEqual([0, BUTIK_HALV]);
+  }, 600_000);
 
   it("kontrol uden valget: introrabatten erstatter den gratis måned (6 x 249,50 kr. fra måned 1)", async () => {
     await nulstilFirma();

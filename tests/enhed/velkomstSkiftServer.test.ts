@@ -70,6 +70,12 @@ vi.mock("@/lib/supabase/admin", () => ({
         if (q.tabel === "firmaer") {
           // pakkeskift.ts slår kun id op (låsen frigives).
           if (q.kolonner === "id") return { data: { id: FIRMA }, error: null };
+          // introBeholdGratis (20261102450000): det seneste hentede firma -
+          // tæller ikke som et opslag af firmaet.
+          if (q.kolonner === "intro_behold_gratis") {
+            const sidste = t.firmaer[Math.max(0, Math.min(t.firmaKald - 1, t.firmaer.length - 1))];
+            return { data: { intro_behold_gratis: sidste?.intro_behold_gratis === true }, error: null };
+          }
           const f = t.firmaer[Math.min(t.firmaKald, t.firmaer.length - 1)];
           t.firmaKald++;
           return { data: f, error: null };
@@ -311,6 +317,51 @@ describe("skift op fra den gratis måned uden visning (blokerende fund)", () => 
     const kald = prisOpdateringer();
     expect(kald).toHaveLength(1);
     expect(kald[0]).toMatchObject({ trial_end: "now", items: [{ id: "si_1", price: "price_pro", quantity: 1 }] });
+  });
+});
+
+// Skift op i den gratis måned med "Behold Starts gratis måned + introrabat"
+// (Filip, 29. okt. 2026): introkuponen sættes på igen fra skiftet (K = N) i
+// SAMME kald som trial_end 'now'. Uden valget: ingen discounts i kaldet.
+describe("skift op med valget: introrabatten fra skiftet", () => {
+  const aktivIntro = {
+    intro_status: "aktiv",
+    intro_procent: 50,
+    intro_maaneder: 6,
+    intro_fra: "efter_gratis",
+    intro_coupon_id: "bidhamr_intro_50_6",
+    intro_noegle: NOEGLE,
+  };
+  const medKupon = () =>
+    abonnement({
+      discounts: [
+        {
+          id: "di_1",
+          end: NU + 170 * 86_400,
+          source: { coupon: { id: "bidhamr_intro_50_6", percent_off: 50, metadata: { bidhamr: "intro" } } },
+        },
+      ],
+    });
+
+  it("med valget: discounts med bidhamr_intro_50_6_skift i samme kald som trial_end 'now' (idempotency key)", async () => {
+    t.firmaer = [firma({ ...aktivIntro, intro_behold_gratis: true })];
+    t.sub = medKupon();
+    await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50");
+    const kald = prisOpdateringer();
+    expect(kald).toHaveLength(1);
+    expect(kald[0]).toMatchObject({ trial_end: "now", discounts: [{ coupon: "bidhamr_intro_50_6_skift" }], payment_behavior: "pending_if_incomplete" });
+    const noegler = stripeFalsk.subscriptions.update.mock.calls.map((c) => (c as unknown[])[2] as { idempotencyKey?: string } | undefined);
+    expect(noegler.every((n) => typeof n?.idempotencyKey === "string" && n.idempotencyKey.length > 0)).toBe(true);
+  });
+
+  it("uden valget: ingen discounts i kaldet (rabatten bliver liggende)", async () => {
+    t.firmaer = [firma({ ...aktivIntro, intro_behold_gratis: false })];
+    t.sub = medKupon();
+    await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50");
+    const kald = prisOpdateringer();
+    expect(kald).toHaveLength(1);
+    expect(kald[0]).toMatchObject({ trial_end: "now" });
+    expect("discounts" in kald[0]).toBe(false);
   });
 });
 

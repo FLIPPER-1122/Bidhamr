@@ -541,6 +541,13 @@ export function IntrorabatKort({
                 </Valg>
               </fieldset>
             )}
+            {/* Aftalen har i dag "Behold Starts gratis måned + introrabat", og
+                staff gemmer uden fluebenet: så forsvinder den gratis måned. */}
+            {beholdGratisMulig && intro?.behold_gratis === true && !behold && (
+              <p role="alert" className="border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
+                {I.beholdMistesAdvarsel}
+              </p>
+            )}
             {!beholdAktiv && fra === "straks" && iGratisPeriode && (
               <p role="alert" className="border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
                 {I.straksAdvarsel}
