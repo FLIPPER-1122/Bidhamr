@@ -38,6 +38,14 @@
 // - de vises og kontrolleres med de gamle formler. Erhvervshandler fra før
 // 20261101010000 (prismodel 'erhverv') havde 5 %/5 % og beholder det; nye
 // erhvervshandler er 'erhverv2' (5 % købergebyr, 0 kr. sælgergebyr).
+//
+// Seller founder (Filip, 29. okt. 2026 - 20261102420000_seller_founder.sql):
+// på en founders salg er købergebyr OG sælgergebyr 0 kr. i måned 1-6 fra
+// aftalens startdato (dansk tid) og derefter 50 %. Rabatten låses på
+// betalingen (betalinger.founder_rabat_pct = 0 / 50 / 100), præcis som
+// prismodellen, og gebyret er round(gebyr * (100 - rabat) / 100) i hele øre
+// (halv op). Kun nye private handler ('ny2'); firmaer kan ikke være founder.
+// BidHamr Beskyttelse og fragten er uændrede.
 
 // Grænsen mellem de to satser: 7.500,00 kr. (til og med = lav sats).
 export const GEBYR_GRAENSE_OERE = 750_000;
@@ -100,6 +108,69 @@ export function erNyPrivatPrismodel(m: Prismodel | string | null | undefined): b
   return m === "ny" || m === "ny2";
 }
 
+// Seller founder-rabatten i procent (betalinger.founder_rabat_pct).
+export type FounderRabatPct = 0 | 50 | 100;
+export const FOUNDER_GRATIS_MAANEDER = 6;
+
+export function erFounderRabatPct(x: unknown): x is FounderRabatPct {
+  return x === 0 || x === 50 || x === 100;
+}
+
+// Gebyret efter founder-rabatten (public.founder_gebyr_oere): round(gebyr *
+// (100 - rabat) / 100), halv op. null = ugyldig rabat.
+export function founderGebyrOere(gebyrOere: number, rabatPct: number): number | null {
+  if (!erFounderRabatPct(rabatPct)) return null;
+  return Math.round((gebyrOere * (100 - rabatPct)) / 100);
+}
+
+// Datoen (ÅÅÅÅ-MM-DD) i dansk tid.
+export function danskDato(tid: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Copenhagen",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(tid);
+}
+
+// ÅÅÅÅ-MM-DD + n måneder som Postgres' date + interval 'n months' (findes
+// dagen ikke i måneden, bliver det månedens sidste dag).
+function plusMaaneder(dato: string, n: number): string {
+  const [a, m, d] = dato.split("-").map(Number);
+  const tot = a * 12 + (m - 1) + n;
+  const aar = Math.floor(tot / 12);
+  const md = (tot % 12) + 1;
+  const sidste = new Date(Date.UTC(aar, md, 0)).getUTCDate();
+  return `${aar}-${String(md).padStart(2, "0")}-${String(Math.min(d, sidste)).padStart(2, "0")}`;
+}
+
+function minusEnDag(dato: string): string {
+  const [a, m, d] = dato.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+
+// Første dag med 50 % (startdato + 6 måneder) og sidste dag med 0 kr.
+export function founderHalvFra(startDato: string): string {
+  return plusMaaneder(startDato, FOUNDER_GRATIS_MAANEDER);
+}
+export function founderFriTil(startDato: string): string {
+  return minusEnDag(founderHalvFra(startDato));
+}
+
+// Rabatten for en aftale på et tidspunkt (public.founder_rabat_pct - uden
+// firma-tjekket, som databasen laver): 100 i måned 1-6, derefter 50; 0 uden
+// aftale, når den er stoppet, eller før startdatoen.
+export function founderRabatPct(
+  aftale: { start_dato: string; stoppet_kl: string | null } | null | undefined,
+  tid: Date = new Date(),
+): FounderRabatPct {
+  if (!aftale) return 0;
+  if (aftale.stoppet_kl && new Date(aftale.stoppet_kl).getTime() <= tid.getTime()) return 0;
+  const dag = danskDato(tid);
+  if (dag < aftale.start_dato) return 0;
+  return dag < founderHalvFra(aftale.start_dato) ? 100 : 50;
+}
+
 // Halv op til nærmeste øre, som Postgres' round() på positive tal.
 function procentAf(oere: number, procent: number): number {
   return Math.round((oere * procent) / 100);
@@ -120,9 +191,22 @@ function glidende(
   return Math.min(lav.maksOere + procentAf(budOere - GEBYR_GRAENSE_OERE, over.procent), over.maksOere);
 }
 
-// Købergebyret for en prismodel (public.prismodel_koebergebyr_oere).
-// null = ukendt prismodel.
-export function koebergebyrForPrismodel(model: Prismodel | string, budOere: number): number | null {
+// Founder-rabat på et gebyr for en prismodel: kun 'ny2' kan have rabat
+// (betalinger_founder_rabat_check). null = ugyldig kombination.
+function medRabat(model: Prismodel | string, gebyr: number | null, rabatPct: number): number | null {
+  if (gebyr === null) return null;
+  if (rabatPct !== 0 && model !== "ny2") return null;
+  return founderGebyrOere(gebyr, rabatPct);
+}
+
+// Købergebyret for en prismodel (public.prismodel_koebergebyr_oere), evt.
+// med founder-rabat (betalinger.founder_rabat_pct). null = ukendt
+// prismodel eller ugyldig rabat.
+export function koebergebyrForPrismodel(model: Prismodel | string, budOere: number, rabatPct = 0): number | null {
+  return medRabat(model, koebergebyrUdenRabat(model, budOere), rabatPct);
+}
+
+function koebergebyrUdenRabat(model: Prismodel | string, budOere: number): number | null {
   switch (model) {
     case "ny2":
       return glidende(budOere, KOEBERGEBYR_LAV, KOEBERGEBYR_OVER);
@@ -137,10 +221,14 @@ export function koebergebyrForPrismodel(model: Prismodel | string, budOere: numb
   }
 }
 
-// Sælgergebyret for en prismodel (public.prismodel_saelgergebyr_oere).
-// Firmaer betaler intet sælgergebyr ('erhverv2', 20261101010000).
-// null = ukendt prismodel.
-export function saelgergebyrForPrismodel(model: Prismodel | string, budOere: number): number | null {
+// Sælgergebyret for en prismodel (public.prismodel_saelgergebyr_oere), evt.
+// med founder-rabat. Firmaer betaler intet sælgergebyr ('erhverv2',
+// 20261101010000). null = ukendt prismodel eller ugyldig rabat.
+export function saelgergebyrForPrismodel(model: Prismodel | string, budOere: number, rabatPct = 0): number | null {
+  return medRabat(model, saelgergebyrUdenRabat(model, budOere), rabatPct);
+}
+
+function saelgergebyrUdenRabat(model: Prismodel | string, budOere: number): number | null {
   switch (model) {
     case "ny2":
       return glidende(budOere, SAELGERGEBYR_LAV, SAELGERGEBYR_OVER);
@@ -159,17 +247,23 @@ export function saelgergebyrForPrismodel(model: Prismodel | string, budOere: num
 // Gebyret for en NY handel (public.koebergebyr_oere / saelgergebyr_oere):
 // privat glidende ('ny2'), erhverv 5 % / 0 kr. ('erhverv2'). Bruges til
 // totalprisen før buddet, tilbud til næste byder og opret auktion.
-export function koebergebyrOere(budOere: number, erhverv: boolean): number {
-  return koebergebyrForPrismodel(aktuelPrismodel(erhverv), budOere) as number;
+// founderRabatPct: sælgerens seller founder-rabat (public.auktion_founder_rabat)
+// - ignoreres for erhverv (firmaer kan ikke være founder). Ugyldig rabat = 0.
+function rabatFor(erhverv: boolean, founderRabatPct: number): FounderRabatPct {
+  return !erhverv && erFounderRabatPct(founderRabatPct) ? founderRabatPct : 0;
 }
 
-export function saelgergebyrOere(budOere: number, erhverv: boolean): number {
-  return saelgergebyrForPrismodel(aktuelPrismodel(erhverv), budOere) as number;
+export function koebergebyrOere(budOere: number, erhverv: boolean, founderRabatPct = 0): number {
+  return koebergebyrForPrismodel(aktuelPrismodel(erhverv), budOere, rabatFor(erhverv, founderRabatPct)) as number;
+}
+
+export function saelgergebyrOere(budOere: number, erhverv: boolean, founderRabatPct = 0): number {
+  return saelgergebyrForPrismodel(aktuelPrismodel(erhverv), budOere, rabatFor(erhverv, founderRabatPct)) as number;
 }
 
 // Det, sælgeren får udbetalt (bud - sælgergebyr).
-export function udbetalingOere(budOere: number, erhverv: boolean): number {
-  return budOere - saelgergebyrOere(budOere, erhverv);
+export function udbetalingOere(budOere: number, erhverv: boolean, founderRabatPct = 0): number {
+  return budOere - saelgergebyrOere(budOere, erhverv, founderRabatPct);
 }
 
 // Er handlen dækket af BidHamr Beskyttelse? Kun private handler, der sendes.
@@ -186,8 +280,8 @@ export function fragtOere(forsendelseMulig: boolean, pakkeshopOere?: number | nu
 
 // Hvad køberen betaler i alt i den nye model: bud + gebyr + fragt
 // (BidHamr Beskyttelse er i gebyret).
-export function koeberTotalOere(budOere: number, erhverv: boolean, fragt: number): number {
-  return budOere + koebergebyrOere(budOere, erhverv) + fragt;
+export function koeberTotalOere(budOere: number, erhverv: boolean, fragt: number, founderRabatPct = 0): number {
+  return budOere + koebergebyrOere(budOere, erhverv, founderRabatPct) + fragt;
 }
 
 // Den gamle BidHamr Beskyttelse (tilkøb før 26. okt. 2026): 5 % af buddet,
@@ -206,6 +300,9 @@ export type BetalingsBeloeb = {
   // Mangler kolonnen (migrationen 20261031010000 er ikke kørt): den gamle
   // model - det er den, databasen så stadig regner med.
   prismodel?: Prismodel | null;
+  // Seller founder-rabat låst på betalingen (20261102420000). Mangler den
+  // (migrationen er ikke kørt), er der ingen rabat.
+  founder_rabat_pct?: number | null;
 };
 
 // Kontrol af en gemt betaling: totalen, som formlerne giver for rækkens
@@ -220,10 +317,11 @@ export function forventetTotalOere(b: BetalingsBeloeb): number | null {
   const fragt = Number(b.fragt_oere);
   const besk = Number(b.beskyttelse_oere);
   const model = b.prismodel ?? "gammel";
-  // Gebyrerne efter betalingens egen (låste) prismodel. Ukendt prismodel:
-  // der må ikke betales.
-  const forventetKoeb = koebergebyrForPrismodel(model, bud);
-  const forventetSaelg = saelgergebyrForPrismodel(model, bud);
+  const rabat = Number(b.founder_rabat_pct ?? 0);
+  // Gebyrerne efter betalingens egen (låste) prismodel og founder-rabat.
+  // Ukendt prismodel eller ugyldig rabat: der må ikke betales.
+  const forventetKoeb = koebergebyrForPrismodel(model, bud, rabat);
+  const forventetSaelg = saelgergebyrForPrismodel(model, bud, rabat);
   if (forventetKoeb === null || forventetSaelg === null) return null;
   if (koeb !== forventetKoeb || saelg !== forventetSaelg) return null;
   if (model === "gammel") {

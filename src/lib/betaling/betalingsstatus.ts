@@ -31,6 +31,10 @@ export type FaellesBetalingsstatus = {
   betaltKl: string | null;
   frigivetKl: string | null;
   overfoertKl: string | null;
+  // Seller founder-rabat (0/50/100) på købergebyr og sælgergebyr, låst på
+  // betalingen (20261102420000). Gebyrbeløbene ovenfor er allerede efter
+  // rabatten - feltet er kun til teksten "Founding seller".
+  founderRabatPct: number;
 };
 
 // Køberens visning: hele beløbet inkl. BidHamr Beskyttelse.
@@ -106,6 +110,7 @@ export async function hentBetalingsstatusFor(
       betaltKl: b.betalt_kl,
       frigivetKl: b.frigivet_kl,
       overfoertKl: b.overfoert_kl,
+      founderRabatPct: Number(b.founder_rabat_pct ?? 0),
     };
     if (b.buyer_id !== user.id) {
       return {

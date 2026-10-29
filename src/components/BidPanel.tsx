@@ -15,6 +15,7 @@ import { AUTOBUD } from "@/lib/tekster/autobud";
 import { formatNedtælling, pauseTekst } from "@/lib/auctionTid";
 import { kroner } from "@/lib/kroner";
 import { MAKS_BELOEB_KR, erBeskyttet, fragtOere, koebergebyrOere, koebergebyrTekst, koeberTotalOere } from "@/lib/betaling/beregn";
+import { FOUNDING_SELLER } from "@/lib/tekster/foundingSeller";
 import { BIDPANEL } from "@/lib/tekster/beskyttelse";
 import { ERHVERV_BIDPANEL, ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 import { BINDENDE_BUD_TEKST, mindsteNaesteBud } from "@/lib/auktionRegler";
@@ -62,6 +63,7 @@ export default function BidPanel({
   pauset = false,
   pauseResterende = null,
   erhvervAuktion = false,
+  founderRabatPct = 0,
   erFirmakonto = false,
   saelgerFrosset = false,
   mitidMangler: initialMitidMangler = false,
@@ -106,6 +108,10 @@ export default function BidPanel({
   // auctions.erhverv: sælgeren er et firma. Ingen BidHamr Beskyttelse
   // (køberen har fortrydelses- og reklamationsret efter loven).
   erhvervAuktion?: boolean;
+  // Sælgeren er seller founder: rabat i procent (0/50/100) på købergebyret,
+  // hvis auktionen slutter som planlagt (public.auktion_founder_rabat). Kun
+  // visning - databasen låser gebyret på betalingen.
+  founderRabatPct?: number;
   // Den indloggede er en firmakonto: firmakonti kan kun sælge, ikke byde
   // (databasen afviser det også, BHE01).
   erFirmakonto?: boolean;
@@ -328,7 +334,7 @@ export default function BidPanel({
       ? (() => {
           const budOere = Math.round(budTal * 100);
           // Ny prismodel (20261031010000): BidHamr Beskyttelse er i gebyret.
-          return koeberTotalOere(budOere, erhvervAuktion, fragtOere(forsendelseMulig, fragtPakkeshopOere));
+          return koeberTotalOere(budOere, erhvervAuktion, fragtOere(forsendelseMulig, fragtPakkeshopOere), founderRabatPct);
         })()
       : null;
 
@@ -573,12 +579,13 @@ export default function BidPanel({
   // sin linje og totalen nederst. Kun visning - serveren beregner beløbet.
   const gyldigtBud = estimatOere !== null;
   const budOereVist = gyldigtBud ? Math.round(budTal * 100) : null;
-  const gebyrOereVist = budOereVist !== null ? koebergebyrOere(budOereVist, erhvervAuktion) : null;
+  const gebyrOereVist = budOereVist !== null ? koebergebyrOere(budOereVist, erhvervAuktion, founderRabatPct) : null;
+  const founderRabatVist = !erhvervAuktion && founderRabatPct > 0;
 
   // Hvad det mindste bud koster i alt - vises i budbjælken på mobil.
   const mindsteTotalOere = (() => {
     const budOere = Math.round(minimumBud * 100);
-    return koeberTotalOere(budOere, erhvervAuktion, fragtOere(forsendelseMulig, fragtPakkeshopOere));
+    return koeberTotalOere(budOere, erhvervAuktion, fragtOere(forsendelseMulig, fragtPakkeshopOere), founderRabatPct);
   })();
 
   function gaaTilBud() {
@@ -895,7 +902,14 @@ export default function BidPanel({
                 <dd className="shrink-0 whitespace-nowrap tabular-nums">{budOereVist !== null ? kroner(budOereVist) : "–"}</dd>
               </div>
               <div className={linje}>
-                <dt>{koebergebyrTekst(erhvervAuktion ? "erhverv" : "ny", beskyttelseMulig)}</dt>
+                <dt>
+                  {koebergebyrTekst(erhvervAuktion ? "erhverv" : "ny", beskyttelseMulig)}
+                  {founderRabatVist && (
+                    <span className="block text-[12px] font-normal text-tekst-svag">
+                      {FOUNDING_SELLER.gebyrNote(founderRabatPct)}
+                    </span>
+                  )}
+                </dt>
                 <dd className="shrink-0 whitespace-nowrap tabular-nums">{gebyrOereVist !== null ? kroner(gebyrOereVist) : "–"}</dd>
               </div>
               <div className={linje}>

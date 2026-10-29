@@ -12,6 +12,7 @@ import { dato, kroner } from "@/components/andenchance/format";
 import Ikon from "@/components/Ikon";
 import { BIDPANEL } from "@/lib/tekster/beskyttelse";
 import { koebergebyrTekst } from "@/lib/betaling/beregn";
+import { FOUNDING_SELLER } from "@/lib/tekster/foundingSeller";
 
 export const dynamic = "force-dynamic";
 
@@ -165,6 +166,9 @@ function TilbudVisning({ t }: { t: Extract<Awaited<ReturnType<typeof hentMitTilb
             <dd className="tabular-nums">{kroner(t.totalOere)}</dd>
           </div>
         </dl>
+        {t.founderRabatPct > 0 && (
+          <p className="mt-2 text-[13px] text-tekst-svag">{FOUNDING_SELLER.gebyrNote(t.founderRabatPct)}</p>
+        )}
         {t.beskyttelse && (
           <p className="mt-3 flex items-center gap-2 text-[13px] font-medium text-groen-mork">
             <Ikon navn="skjold" className="h-4 w-4 shrink-0 text-groen" />

@@ -545,3 +545,30 @@ Kun køberen. Appen kan **ikke** sende fakturaer – det gør firmaet selv på h
 - `GET /api/firma-faktura?trade=<trade_id>` (Bearer) -> `{ ok, kanOplyseFirma, firma, fakturaer: [{ id, type, fakturanummer, udstedt_dato, sendt_kl, firmanavn, total_oere, pdf }] }`. Vis listen under handlen, når `fakturaer` ikke er tom.
 - `GET /api/firma-faktura/<id>` (Bearer) -> PDF (`?download=1` = vedhæftet). Kun sendte, kun køberen/firmaet.
 - `POST /api/firma-faktura` (Bearer, JSON `{ trade_id, firmanavn, cvr }`) -> køberen oplyser firmanavn + CVR, før fakturaen sendes (vis kun, når `kanOplyseFirma` er true). 409 `allerede_sendt` | `ingen_faktura`.
+
+## Founding seller (seller founder, 29. okt. 2026 - migration `20261102420000_seller_founder.sql`)
+Regel: ROADMAP-BESLUTNINGER "Seller founder". En privat sælger med founder-aftale betaler **0 kr.** i købergebyr og
+sælgergebyr i måned 1-6 fra startdatoen (dansk tid) og derefter **50 %**. Rabatten gælder også køberens gebyr på
+founderens auktioner. BidHamr Beskyttelse og fragt er uændret. Firmaer kan aldrig være founder. Aftalen styres kun af
+chefen i admin - appen skal kun vise mærket og det rigtige gebyr.
+
+RPC'er direkte fra appen (`anon` og `authenticated`, samme mønster som `populaere_saelgere`):
+
+| RPC | Svar | Brug |
+|---|---|---|
+| `founding_seller({ p_bruger })` | `boolean` | Profilen: vis mærket "Founding seller" (tooltip/forklaring "Founding seller hos BidHamr") |
+| `founding_sellere({ p_brugere: uuid[] })` | `uuid[]` (højst 200 ind) | Auktionskort: de sælgere i listen, der er aktive founders |
+| `auktion_founder_rabat({ p_auktion })` | `0 \| 50 \| 100` | Auktionssiden og "tilbud til næste byder": rabatten på gebyret, hvis auktionen slutter som planlagt. 0 for erhverv og ukendte auktioner |
+
+- **Mærket**: lille og diskret ved siden af "Populær sælger" (hjemmesiden: lys orange flade, almindelig tekstfarve,
+  lille orange flag, tekst "Founding seller"). Vis det aldrig på erhvervsauktioner.
+- **"Det betaler du, hvis du vinder"**: gebyret er `round(gebyr * (100 - rabat) / 100)` i hele øre (halv op) af
+  det normale `ny2`-gebyr - samme funktioner som hjemmesiden (`src/lib/betaling/beregn.ts`:
+  `koebergebyrOere(bud, erhverv, rabat)`, `koeberTotalOere(bud, erhverv, fragt, rabat)`, `founderGebyrOere`).
+  Vis teksten "Sælgeren er Founding seller hos BidHamr: 0 kr. i gebyr." (100) eller "... halvt gebyr." (50) under
+  gebyrlinjen. Det er kun en visning - det endelige gebyr låses af databasen, når betalingen oprettes.
+- **Betalingen**: `betalinger.founder_rabat_pct` (0/50/100) kan nu læses af køber og sælger som `prismodel` og
+  `koebergebyr_oere`. Beløbene i `betalinger` er allerede efter rabatten - appen må aldrig regne dem om. Hjemmesidens
+  `hentBetalingsstatusFor` (`/api/handel/app/status` og checkout) har feltet `founderRabatPct`.
+- `POST /api/betaling/app/betal` er uændret: PaymentIntentens beløb og `application_fee_amount` kommer fra
+  databasen. Ved 100 % rabat og afhentning er BidHamrs gebyr 0 kr. (`application_fee_amount = 0`).

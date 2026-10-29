@@ -36,6 +36,7 @@ import { transportoerNavn } from "@/lib/fragt/types";
 import { kroner } from "@/lib/kroner";
 import { erBeskyttet, erErhvervPrismodel, koebergebyrTekst } from "@/lib/betaling/beregn";
 import { BIDPANEL } from "@/lib/tekster/beskyttelse";
+import { FOUNDING_SELLER } from "@/lib/tekster/foundingSeller";
 import { kanOptimeres } from "@/lib/billedUrl";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import { BETINGELSER_STI } from "@/lib/vilkaar";
@@ -948,6 +949,9 @@ export default function CheckoutSide({
                   <dd className="text-lg font-bold text-tekst tabular-nums">{kroner(totalVist)}</dd>
                 </div>
               </dl>
+              {status.founderRabatPct > 0 && (
+                <p className="mt-2 text-[13px] text-tekst-svag">{FOUNDING_SELLER.gebyrNote(status.founderRabatPct)}</p>
+              )}
 
               <div ref={knapRef} className="mt-5">
                 {knap()}
