@@ -465,7 +465,10 @@ describe("spejlIntroEfterVelkomstSkift: kontrol af slutdato og ingen stille fejl
         {
           id: "di_2",
           end: slut,
-          source: { coupon: { id: "bidhamr_intro_50_6_skift", percent_off: procent, metadata: { bidhamr: "intro" } } },
+          // Som sikrIntroKupon: metadata procent og maaneder.
+          source: {
+            coupon: { id: "bidhamr_intro_50_6_skift", percent_off: procent, metadata: { bidhamr: "intro", procent: String(procent), maaneder: "6" } },
+          },
         },
       ],
       ...over,
@@ -556,6 +559,154 @@ describe("spejlIntroEfterVelkomstSkift: kontrol af slutdato og ingen stille fejl
     await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1");
     expect(alarmer()).toEqual([]);
     expect(spejlinger()).toEqual([]);
+  });
+
+  // Runde 4: kuponen skal beviseligt høre til den nuværende aftale.
+  const NY_NOEGLE = "1f1e1d1c-1b1a-4918-8716-151413121110";
+  const nyPlanlagt = {
+    intro_status: "planlagt",
+    intro_procent: 50,
+    intro_maaneder: 3,
+    intro_fra: "efter_gratis",
+    intro_coupon_id: null,
+    intro_noegle: NY_NOEGLE,
+  };
+
+  it("staff har gemt en ny aftale (planlagt, ny nøgle, samme procent, 3 mdr.): gentaget invoice.paid skriver intet og giver ingen alarm", async () => {
+    t.firmaer = [firma(nyPlanlagt)];
+    t.sub = efterSkift({ metadata: { maaned1: "gratis", firma_id: FIRMA, intro_noegle: NOEGLE } });
+    const r = await betaltVelkomstOpgradering(firma(nyPlanlagt) as never, skiftFaktura(NU - 3600), betaltSkift);
+    expect(r).toBe("velkomst_opgradering:allerede_registreret");
+    expect(spejlinger()).toEqual([]);
+    expect(alarmer()).toEqual([]);
+  });
+
+  it("ny aftale uden nøgle på abonnementet: heller intet direkte kald", async () => {
+    t.firmaer = [firma(nyPlanlagt)];
+    t.sub = efterSkift();
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1", ANKER);
+    expect(spejlinger()).toEqual([]);
+    expect(alarmer()).toEqual([]);
+  });
+
+  it("planlagt med SAMME nøgle (fra Checkout) og skiftets kupon: spejles", async () => {
+    const planlagt = { ...aktiv, intro_status: "planlagt", intro_coupon_id: null };
+    t.firmaer = [firma(planlagt)];
+    t.sub = efterSkift({ metadata: { maaned1: "gratis", firma_id: FIRMA, intro_noegle: NOEGLE, intro_kupon: "bidhamr_intro_50_7" } });
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1", ANKER);
+    expect(spejlinger()).toHaveLength(1);
+    expect(spejlinger()[0].args).toMatchObject({ p_coupon: "bidhamr_intro_50_6_skift", p_status: "aktiv", p_noegle: NOEGLE });
+    expect(alarmer()).toEqual([]);
+  });
+
+  it("planlagt med samme nøgle og Checkouts kupon (bliver liggende ved skiftet): spejles", async () => {
+    const planlagt = { ...aktiv, intro_status: "planlagt", intro_coupon_id: null };
+    t.firmaer = [firma(planlagt)];
+    t.sub = efterSkift({
+      metadata: { maaned1: "gratis", firma_id: FIRMA, intro_noegle: NOEGLE, intro_kupon: "bidhamr_intro_50_6" },
+      discounts: [
+        {
+          id: "di_1",
+          end: ANKER + 170 * 86_400,
+          source: { coupon: { id: "bidhamr_intro_50_6", percent_off: 50, metadata: { bidhamr: "intro", procent: "50", maaneder: "6" } } },
+        },
+      ],
+    });
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1", ANKER);
+    expect(spejlinger()[0].args).toMatchObject({ p_coupon: "bidhamr_intro_50_6", p_noegle: NOEGLE });
+    expect(alarmer()).toEqual([]);
+  });
+
+  it("planlagt med samme nøgle, men en fremmed kupon (ikke Checkouts, ikke skiftets): intet skrives, ingen alarm", async () => {
+    const planlagt = { ...aktiv, intro_status: "planlagt", intro_coupon_id: null };
+    t.firmaer = [firma(planlagt)];
+    t.sub = efterSkift({
+      metadata: { maaned1: "gratis", firma_id: FIRMA, intro_noegle: NOEGLE, intro_kupon: "bidhamr_intro_50_7" },
+      discounts: [
+        {
+          id: "di_1",
+          end: ANKER + 80 * 86_400,
+          source: { coupon: { id: "bidhamr_intro_50_3_skift", percent_off: 50, metadata: { bidhamr: "intro", procent: "50", maaneder: "3" } } },
+        },
+      ],
+    });
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1", ANKER);
+    expect(spejlinger()).toEqual([]);
+    expect(alarmer()).toEqual([]);
+  });
+
+  it("aktiv, men kuponen er en anden aftales skift-kupon (3 mdr.): alarm, intet skrives", async () => {
+    t.firmaer = [firma(aktiv)];
+    t.sub = efterSkift({
+      discounts: [
+        {
+          id: "di_1",
+          end: ANKER + 80 * 86_400,
+          source: { coupon: { id: "bidhamr_intro_50_3_skift", percent_off: 50, metadata: { bidhamr: "intro", procent: "50", maaneder: "3" } } },
+        },
+      ],
+    });
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1", ANKER);
+    expect(spejlinger()).toEqual([]);
+    expect(alarmer().map((a) => a.hvor)).toEqual(["erhverv/velkomst-intro-spejl"]);
+    expect(String(alarmer()[0].fejl)).toMatch(/bidhamr_intro_50_3_skift er hverken aftalens/);
+  });
+
+  it("skift-kupon-id'et passer, men metadata siger et andet antal måneder: ikke aftalens (alarm, intet skrives)", async () => {
+    t.firmaer = [firma({ ...aktiv, intro_coupon_id: "bidhamr_intro_50_6" })];
+    t.sub = efterSkift({
+      discounts: [
+        {
+          id: "di_2",
+          end: ANKER + 170 * 86_400,
+          source: { coupon: { id: "bidhamr_intro_50_6_skift", percent_off: 50, metadata: { bidhamr: "intro", maaneder: "7" } } },
+        },
+      ],
+    });
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1", ANKER);
+    expect(spejlinger()).toEqual([]);
+    expect(alarmer().map((a) => a.hvor)).toEqual(["erhverv/velkomst-intro-spejl"]);
+  });
+
+  it("ankeret er flyttet siden skiftet (senere ændring): spejles, men ingen falsk antal-alarm", async () => {
+    t.firmaer = [firma(aktiv)];
+    // Rabatten giver 7 fra det NYE anker - men skiftet var 30 dage før.
+    t.sub = efterSkift({ billing_cycle_anchor: ANKER + 30 * 86_400 }, ANKER + 230 * 86_400);
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1", ANKER);
+    expect(spejlinger()).toHaveLength(1);
+    expect(alarmer()).toEqual([]);
+  });
+
+  it("rabatten er sat på efter skiftet (anvendIntro med en ny aftale): ingen falsk antal-alarm", async () => {
+    t.firmaer = [firma({ ...aktiv, intro_coupon_id: "bidhamr_intro_50_6" })];
+    t.sub = efterSkift({
+      discounts: [
+        {
+          id: "di_3",
+          start: ANKER + 10 * 86_400,
+          end: ANKER + 200 * 86_400,
+          source: { coupon: { id: "bidhamr_intro_50_6", percent_off: 50, metadata: { bidhamr: "intro", procent: "50", maaneder: "6" } } },
+        },
+      ],
+    });
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1", ANKER);
+    expect(spejlinger()).toHaveLength(1);
+    expect(alarmer()).toEqual([]);
+  });
+
+  it("samme anker og rabat fra skiftet, men 7 fakturaer: alarmen kommer stadig (med skiftSek)", async () => {
+    t.firmaer = [firma(aktiv)];
+    t.sub = efterSkift({}, ANKER + 200 * 86_400);
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1", ANKER + 2);
+    expect(alarmer().map((a) => a.hvor)).toEqual(["erhverv/velkomst-intro-antal"]);
+  });
+
+  it("3D Secure: ankeret og rabatten slår igennem 2 timer efter fakturaen - 7 fakturaer giver stadig alarm", async () => {
+    t.firmaer = [firma(aktiv)];
+    t.sub = efterSkift({}, ANKER + 200 * 86_400);
+    (t.sub.discounts as Raekke[])[0].start = ANKER;
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1", ANKER - 2 * 3600);
+    expect(alarmer().map((a) => a.hvor)).toEqual(["erhverv/velkomst-intro-antal"]);
   });
 
   it("Stripe fejler: alarm, kaster ikke", async () => {

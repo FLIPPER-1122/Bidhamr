@@ -2896,7 +2896,7 @@ export async function betaltVelkomstOpgradering(f: FirmaRaekke, faktura: Stripe.
     if (subId) {
       try {
         const nu = await stripeNu(await stripe().subscriptions.retrieve(subId));
-        if (nu - faktura.created < SPEJL_IGEN_SEK) await spejlIntroEfterVelkomstSkift(f.id, subId);
+        if (nu - faktura.created < SPEJL_IGEN_SEK) await spejlIntroEfterVelkomstSkift(f.id, subId, faktura.created);
       } catch (err) {
         await logDriftFejl({
           kilde: "webhook",
@@ -2940,7 +2940,7 @@ export async function betaltVelkomstOpgradering(f: FirmaRaekke, faktura: Stripe.
     throw new Error(`firma_pakkeskift_uden_betaling svarede ${String(svar.kode)}`);
   }
   await rydSkiftMetadata(sub.id, skift.id);
-  await spejlIntroEfterVelkomstSkift(f.id, sub.id);
+  await spejlIntroEfterVelkomstSkift(f.id, sub.id, faktura.created);
   return `velkomst_opgradering:${svar.kode}`;
 }
 
@@ -2953,8 +2953,21 @@ export async function betaltVelkomstOpgradering(f: FirmaRaekke, faktura: Stripe.
 // trial_end 'now' nulstiller den til skiftet), og rabatten skal ramme præcis
 // N fakturaer derfra (introPasser). Kaster ikke (skiftet er gennemført);
 // alt, der ikke passer, giver staff en drift-alarm - ingen stille fejl.
+//
+// Kun når kuponen beviseligt hører til firmaets NUVÆRENDE aftale: en gentaget
+// invoice.paid kan komme, efter staff har gemt en ny aftale (ny nøgle, status
+// 'planlagt') med samme procent, men et andet antal måneder. Den gamle kupon
+// må så ikke spejles som den nye aftales - anvendIntro/cron'en sætter den nye
+// på. Aftalen ejer kuponen, når den er 'aktiv' (spejlet før), eller når
+// abonnementet blev oprettet med netop denne aftale (metadata.intro_noegle
+// fra Checkout); kuponen skal desuden være aftalens spejlede kupon, skiftets
+// kupon for præcis N måneder, eller den kupon, Checkout satte på for aftalen.
+// skiftSek: skiftets tidspunkt (fakturaens created). Er abonnementets anker
+// flyttet siden (fx en senere gratis periode), eller er rabatten sat på efter
+// skiftet (anvendIntro med en ny aftale), måler introPasser ikke skiftet -
+// så ingen antal-alarm (den senere ændring har sit eget værn).
 // Eksporteret til enhedstesten (filen er server-only, ikke en server action).
-export async function spejlIntroEfterVelkomstSkift(firmaId: string, subId: string): Promise<void> {
+export async function spejlIntroEfterVelkomstSkift(firmaId: string, subId: string, skiftSek?: number): Promise<void> {
   const alarm = (hvor: string, tekst: string) =>
     logDriftFejl({
       kilde: "webhook",
@@ -2966,6 +2979,10 @@ export async function spejlIntroEfterVelkomstSkift(firmaId: string, subId: strin
     // Ingen kørende introrabat (skiftet brugte velkomstrabatten eller ingen).
     if (!f?.intro_noegle || !f.intro_procent || !f.intro_maaneder || f.intro_status == null || !introGaelder(f)) return;
     const sub = await hentAbonnement(subId);
+    const fraCheckout = sub.metadata?.intro_noegle === f.intro_noegle;
+    // En ny aftale, der endnu ikke er sat på (planlagt, anden nøgle): intet at
+    // spejle - anvendIntro/cron'en sætter den på. Ingen alarm.
+    if (f.intro_status !== "aktiv" && !fraCheckout) return;
     if (sub.pending_update) {
       await alarm("erhverv/velkomst-intro-spejl", "abonnementet har stadig en ventende ændring, så rabatten kunne ikke spejles.");
       return;
@@ -2983,6 +3000,24 @@ export async function spejlIntroEfterVelkomstSkift(firmaId: string, subId: strin
       );
       return;
     }
+    const aftalensKupon =
+      (!!f.intro_coupon_id && kupon.id === f.intro_coupon_id) ||
+      // Skiftets kupon (opgraderFraVelkomst -> sikrIntroKupon(procent, N, true)).
+      (kupon.id === `bidhamr_intro_${f.intro_procent}_${f.intro_maaneder}_skift` &&
+        kupon.metadata?.maaneder === String(f.intro_maaneder)) ||
+      // Checkout satte kuponen på for netop denne aftale (startBetaling).
+      (fraCheckout && sub.metadata?.intro_kupon === kupon.id);
+    if (!aftalensKupon) {
+      // Planlagt: kuponen er ikke aftalens - anvendIntro/cron'en sætter den
+      // rigtige på. Aktiv: databasen og Stripe er uenige - staff skal se det.
+      if (f.intro_status === "aktiv") {
+        await alarm(
+          "erhverv/velkomst-intro-spejl",
+          `kuponen ${kupon.id} er hverken aftalens (${f.intro_coupon_id ?? "ingen"}) eller skiftets kupon, så den er ikke spejlet.`,
+        );
+      }
+      return;
+    }
     await rpc("firma_intro_spejl", {
       p_firma: f.id,
       p_noegle: f.intro_noegle,
@@ -2990,17 +3025,27 @@ export async function spejlIntroEfterVelkomstSkift(firmaId: string, subId: strin
       p_coupon: kupon.id,
       p_til: tid(rabat.end ?? null),
     });
-    if (!introPasser({ naesteFakturaSek: sub.billing_cycle_anchor, rabatSlutSek: rabat.end ?? null, maaneder: f.intro_maaneder })) {
-      const antal = rabat.end == null ? "uendeligt mange" : String(introResterende({ naesteFakturaSek: sub.billing_cycle_anchor, rabatSlutSek: rabat.end }));
+    const anker = sub.billing_cycle_anchor;
+    const ankerFlyttet = skiftSek != null && Math.abs(anker - skiftSek) > SKIFT_ANKER_MARGIN_SEK;
+    const satPaaEfterSkiftet = rabat.start != null && rabat.start > anker + SKIFT_ANKER_MARGIN_SEK;
+    if (ankerFlyttet || satPaaEfterSkiftet) return;
+    if (!introPasser({ naesteFakturaSek: anker, rabatSlutSek: rabat.end ?? null, maaneder: f.intro_maaneder })) {
+      const antal = rabat.end == null ? "uendeligt mange" : String(introResterende({ naesteFakturaSek: anker, rabatSlutSek: rabat.end }));
       await alarm(
         "erhverv/velkomst-intro-antal",
-        `kuponen ${kupon.id} (slut ${tid(rabat.end ?? null) ?? "ingen"}) giver ${antal} fakturaer med rabat fra skiftet ${tid(sub.billing_cycle_anchor)}, ikke præcis ${f.intro_maaneder}.`,
+        `kuponen ${kupon.id} (slut ${tid(rabat.end ?? null) ?? "ingen"}) giver ${antal} fakturaer med rabat fra skiftet ${tid(anker)}, ikke præcis ${f.intro_maaneder}.`,
       );
     }
   } catch (err) {
     await alarm("erhverv/velkomst-intro-spejl", `kunne ikke spejles: ${fejltekst(err)}.`);
   }
 }
+
+// Skiftets faktura og ankeret (trial_end 'now') laves i samme Stripe-kald;
+// med 3D Secure (pending_if_incomplete) kan ændringen først slå igennem ved
+// betalingen, højst ca. 23 timer senere (pending_update.expires_at). En senere
+// gratis periode flytter ankeret mindst en måned - så et døgn + margen.
+const SKIFT_ANKER_MARGIN_SEK = 25 * 3600;
 
 async function betaltOpgradering(f: FirmaRaekke, faktura: Stripe.Invoice): Promise<string> {
   const skift = await findOpgradering(f, faktura);

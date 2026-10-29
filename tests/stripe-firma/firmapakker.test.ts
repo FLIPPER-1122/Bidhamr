@@ -351,9 +351,8 @@ describe("firmapakker mod Stripes testmiljø", () => {
   });
 
   it("6. fakturaerne: 2 gratis måneder, 6 med 50 % rabat på 999 kr. + moms, så fuld pris", async () => {
-    // Højst 2 måneder pr. spol (Stripes grænse for månedlige abonnementer).
-    for (const m of [2, 4, 6, 8]) await spol(plusMaaneder(t0, m) + 1800);
-    await spol(plusMaaneder(t0, 9) + 1800);
+    // Én måned ad gangen: Stripe tillader højst to intervaller pr. spoling.
+    for (let m = 1; m <= 9; m++) await spol(plusMaaneder(t0, m) + 1800);
     const alle = (await fakturaer()).filter((f) => f.billing_reason === "subscription_cycle" || f.billing_reason === "subscription_create");
     const beloeb = alle.map((f) => f.total);
     // Fakturaen ved oprettelsen (gratis), 2. måned gratis ligger i samme trial,
@@ -613,7 +612,8 @@ describe("firmapakker-rettelser mod Stripes testmiljø", () => {
 
   it("11b. fakturaerne efter nedgraderingen: Start med 50 % til introrabattens slutdato, derefter fuld pris", async () => {
     const forsteBetalt = t0 + 86_400;
-    for (const m of [2, 4]) await spol(plusMaaneder(forsteBetalt, m) + 3600);
+    // Én måned ad gangen: Stripe tillader højst to intervaller pr. spoling.
+    for (let m = 1; m <= 4; m++) await spol(plusMaaneder(forsteBetalt, m) + 3600);
     await spejlAlt();
     const cyklus = (await fakturaer()).filter((x) => x.billing_reason === "subscription_cycle");
     // Første cyklus-faktura er Butik (ved trial_end); resten er Start.
@@ -633,6 +633,12 @@ describe("firmapakker-rettelser mod Stripes testmiljø", () => {
   }, 600_000);
 
   it("12. firmaoplysninger til Stripe-kunden: adresse og CVR (momsnummeret byttes ud)", async () => {
+    // Ens udgangspunkt: M1 i en tidligere kørsel sætter en tilfældig version
+    // (op til ~1 mio.) som synket - ellers kan synket være større end den
+    // version, triggeren tæller op fra. Tilfældig basis over M1's interval, så
+    // idempotency key'en (firma + version) er ny for testens nye kunde.
+    const basis = 2_000_000 + Math.floor(Math.random() * 1_000_000);
+    await db.from("firmaer").update({ stripe_kunde_version: basis, stripe_kunde_synket_version: basis }).eq("id", FIRMA);
     await db.from("firmaer").update({ cvr: SAERCVR, adresse: "Testvej 12" }).eq("id", FIRMA);
     const f = await firma();
     expect(Number(f.stripe_kunde_version)).toBeGreaterThan(Number(f.stripe_kunde_synket_version));
@@ -835,7 +841,8 @@ describe("gratis måneder under en åben Checkout og introrabat mod en planlagt 
   }, 180_000);
 
   it("13c. fakturaerne: 3 gratis måneder, 3 med 50 %, så fuld pris", async () => {
-    for (const m of [2, 4, 6, 8]) await spol(plusMaaneder(t0, m) + 1800);
+    // Én måned ad gangen: Stripe tillader højst to intervaller pr. spoling.
+    for (let m = 1; m <= 8; m++) await spol(plusMaaneder(t0, m) + 1800);
     const betalte = (await fakturaer()).filter((x) => x.billing_reason === "subscription_cycle");
     const halv = Math.round(99_900 * 0.5 * 1.25);
     const fuld = Math.round(99_900 * 1.25);
@@ -964,7 +971,8 @@ describe("introrabat fra Checkout, der ikke rammer præcis N betalte måneder (2
     expect(introPasser({ naesteFakturaSek: sub.trial_end!, rabatSlutSek: efter!.end, maaneder: 6 })).toBe(true);
     expect((await firma()).intro_status).toBe("aktiv");
     // Fakturaerne: 6 med 50 %, så fuld pris.
-    for (const m of [2, 4, 6, 8]) await spol(plusMaaneder(t0, m) + 1800);
+    // Én måned ad gangen: Stripe tillader højst to intervaller pr. spoling.
+    for (let m = 1; m <= 8; m++) await spol(plusMaaneder(t0, m) + 1800);
     const betalte = (await fakturaer()).filter((x) => x.billing_reason === "subscription_cycle");
     const halv = Math.round(49_900 * 0.5 * 1.25);
     const fuld = Math.round(49_900 * 1.25);
