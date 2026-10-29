@@ -21,7 +21,7 @@ import { velkomstSkiftForPakke } from "@/lib/erhverv/betaling";
 //         gælder, og POST'en kræver ingen visning.
 //   200 { ok: true, pakke: { id, navn }, velkomstSkift: true,
 //         udfald: "skift" | "venter" | "ret_rabat",
-//         visning: "velkomst:50" | "intro:30" | "saerpris:0" | "venter" | "ret_rabat",
+//         visning: "velkomst:50" | "intro:30" | "intro:30:skift" | "saerpris:0" | "venter" | "ret_rabat",
 //         rabat: { slags: "velkomst", procent }
 //              | { slags: "intro", procent, til: "31. marts 2027" | null, maaneder }
 //              | { slags: "saerpris", procent: 0 } | null,
@@ -39,7 +39,7 @@ import { velkomstSkiftForPakke } from "@/lib/erhverv/betaling";
 // POST /api/firma/skift-pakke
 //   Authorization: Bearer <Supabase access token>
 //   Content-Type: application/json
-//   { "pakkeId": "<uuid>", "visning"?: "velkomst:50" | "intro:30" | "saerpris:0" | "venter" | "ret_rabat" }
+//   { "pakkeId": "<uuid>", "visning"?: "velkomst:50" | "intro:30" | "intro:30:skift" | "saerpris:0" | "venter" | "ret_rabat" }
 //   visning: feltet "visning" fra GET'en. KRÆVET ved et skift op fra Starts
 //   gratis måned (velkomstSkift: true) - mangler den, afvises skiftet (409
 //   visning_mangler), før noget ændres. Er rabatten ændret siden GET'en,

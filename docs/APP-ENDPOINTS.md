@@ -340,7 +340,9 @@ Det viste beløb er det trukne (måned 1-reglen, rettelser 4, 27. okt. 2026):
 2. Ved tryk: `POST { pakkeId, visning }` med `visning` fra GET'en. Ved et skift op fra Starts gratis måned er
    `visning` krævet: uden den `409 visning_mangler`, før noget ændres. Send kun `visning`, når GET'en gav
    `velkomstSkift: true`: feltet tjekkes ved ALLE skift (også når det ikke bruges), så en ugyldig værdi altid
-   giver `400 ugyldig_visning`, før noget ændres. Hjemmesiden gør det samme.
+   giver `400 ugyldig_visning`, før noget ændres. Hjemmesiden gør det samme. Send `visning` uændret - appen
+   skal ikke selv bygge den. Ved en introrabat, der sættes på igen fra skiftet (teksten siger "i N måneder" og
+   `rabat.til` er `null`), er den fx `"intro:50:skift"`; ellers `"intro:50"`.
 3. Afvist før noget er trukket (`409`): `pris_aendret` (hent GET igen og vis den nye pris), `rabat_venter`
    (introrabatten er sat op eller sættes op - hent GET igen), `ret_rabat` (BidHamr skal rette rabatten - vis
    `fejl`), `visning_mangler`. En sendt, men ugyldig `visning`: `400 ugyldig_visning`.

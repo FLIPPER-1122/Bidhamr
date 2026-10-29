@@ -19,6 +19,7 @@ import {
   plusMaaneder,
   velkomstSkiftUdfald,
   velkomstVisning,
+  erVelkomstVisning,
 } from "@/lib/erhverv/abonnementRegler";
 import { ADMIN_ERHVERV, FIRMA_ABONNEMENT, FIRMA_ABONNEMENT_MAIL } from "@/lib/tekster/erhverv";
 import { ADMIN_FIRMA } from "@/lib/tekster/adminFirma";
@@ -260,10 +261,11 @@ describe("skift op i den gratis måned: visningen", () => {
     fraSkiftet,
   });
 
-  it("sættes på igen fra skiftet: til er null, samme visning (intro:50)", () => {
+  it("sættes på igen fra skiftet: til er null, og visningen siger det (intro:50:skift)", () => {
     const u = velkomstSkiftUdfald(input(true));
-    expect(u).toEqual({ udfald: "skift", rabat: { slags: "intro", procent: 50, til: null, maaneder: 6 }, velkomstKupon: false });
-    expect(velkomstVisning(u)).toBe("intro:50");
+    expect(u).toEqual({ udfald: "skift", rabat: { slags: "intro", procent: 50, til: null, maaneder: 6 }, velkomstKupon: false, fraSkiftet: true });
+    expect(velkomstVisning(u)).toBe("intro:50:skift");
+    expect(erVelkomstVisning(velkomstVisning(u))).toBe(true);
     if (u.udfald === "skift") {
       expect(FIRMA_ABONNEMENT.bekraeftOpgraderFraGratisMaaned("Butik", "499,50 kr. + moms (624,38 kr.)", u.rabat)).toContain(
         "(50 % rabat i 6 måneder). Derefter betaler du pakkens almindelige pris.",
@@ -271,8 +273,22 @@ describe("skift op i den gratis måned: visningen", () => {
     }
   });
 
-  it("bliver liggende: rabattens slutdato fra Stripe", () => {
-    expect(velkomstSkiftUdfald(input(false))).toMatchObject({ udfald: "skift", rabat: { slags: "intro", til: "29. april 2027" } });
+  it("bliver liggende: rabattens slutdato fra Stripe, visningen uden :skift (intro:50)", () => {
+    const u = velkomstSkiftUdfald(input(false));
+    expect(u).toMatchObject({ udfald: "skift", rabat: { slags: "intro", til: "29. april 2027" } });
+    expect(u).not.toHaveProperty("fraSkiftet");
+    expect(velkomstVisning(u)).toBe("intro:50");
+  });
+
+  it("visningen: kun introrabatten kan have :skift", () => {
+    expect(erVelkomstVisning("intro:30:skift")).toBe(true);
+    for (const v of ["velkomst:50:skift", "saerpris:0:skift", "venter:skift", "intro:30:", "intro:30:skift:skift", "intro::skift"]) {
+      expect(erVelkomstVisning(v)).toBe(false);
+    }
+    // fraSkiftet uden en introrabat (fx velkomstrabatten) ændrer ikke visningen.
+    expect(
+      velkomstVisning({ udfald: "skift", rabat: { slags: "velkomst", procent: 50 }, velkomstKupon: true, fraSkiftet: true }),
+    ).toBe("velkomst:50");
   });
 
   it("K = N, når første faktura er nu (trial_end 'now')", () => {
