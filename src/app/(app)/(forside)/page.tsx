@@ -9,6 +9,7 @@ import AuthHashRedirect from "@/components/landing/AuthHashRedirect";
 import { createClient } from "@/lib/supabase/server";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import { markerPopulaereSaelgere } from "@/lib/populaerSaelger";
+import { markerFoundingSellers } from "@/lib/foundingSeller";
 import { sideUrl } from "@/lib/seo";
 import { FORSIDE } from "@/lib/tekster/forside";
 import { hentBoostTop, markerBoostede } from "@/lib/boost/visning";
@@ -142,8 +143,9 @@ const hentForsideAuktioner = cache(async () => {
   // Mærket "Boostet" også på boostede auktioner i de andre lister (fx når
   // rotationen ikke har dem øverst lige nu), og "Populær sælger" på alle
   // kort: ét samlet opslag hver.
-  const alle = await markerPopulaereSaelgere(
-    await markerBoostede(supabase, [...boostede, ...slutterSnartRaa, ...nyesteRaa]),
+  // "Founding seller" også (seller founder, 20261102420000).
+  const alle = await markerFoundingSellers(
+    await markerPopulaereSaelgere(await markerBoostede(supabase, [...boostede, ...slutterSnartRaa, ...nyesteRaa])),
   );
   const a = boostede.length;
   const b = a + slutterSnartRaa.length;

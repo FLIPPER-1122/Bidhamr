@@ -8,6 +8,7 @@ import { useFavoritter } from "@/components/FavoritterProvider";
 import ErhvervssaelgerMaerke from "@/components/erhverv/ErhvervssaelgerMaerke";
 import BoostetMaerke from "@/components/boost/BoostetMaerke";
 import PopulaerSaelgerMaerke from "@/components/PopulaerSaelgerMaerke";
+import FoundingSellerMaerke from "@/components/FoundingSellerMaerke";
 import { ERHVERV_MOMS } from "@/lib/tekster/erhverv";
 
 export interface DummyAuction {
@@ -32,6 +33,8 @@ export interface DummyAuction {
   saelgerId?: string;
   // Sælgeren har mærket "Populær sælger" (src/lib/populaerSaelger.ts).
   populaerSaelger?: boolean;
+  // Sælgeren er aktiv seller founder (src/lib/foundingSeller.ts).
+  foundingSeller?: boolean;
 }
 
 // Passer til gitteret 2 / 3 / 4 spalter, som alle kortlister bruger
@@ -115,10 +118,11 @@ export default function AuctionCard({
             {meta}
             {auktion.lokation && auktion.lokation !== "Ukendt" && <> · {auktion.lokation}</>}
           </p>
-          {(auktion.erhverv || auktion.populaerSaelger) && (
+          {(auktion.erhverv || auktion.populaerSaelger || (auktion.foundingSeller && !auktion.erhverv)) && (
             <p className="mt-2 flex flex-wrap gap-1">
               {auktion.erhverv && <ErhvervssaelgerMaerke lille />}
               {auktion.populaerSaelger && <PopulaerSaelgerMaerke lille />}
+              {auktion.foundingSeller && !auktion.erhverv && <FoundingSellerMaerke lille />}
             </p>
           )}
         </div>

@@ -45,6 +45,9 @@ type Props = {
   vaelgFelter?: VaelgFelt[];
   // Et afkrydsningsfelt nederst (sendes som value, når det er krydset af).
   afkrydsning?: { name: string; label: string; value?: string };
+  // Et påkrævet datofelt (ÅÅÅÅ-MM-DD), fx startdatoen for en seller founder.
+  // Vises før aarsagField.
+  datoFelt?: { name: string; label: string; standard?: string; min?: string; max?: string; hjaelp?: string };
   // Kort kvittering, der vises nederst på skærmen (<Kvittering /> i
   // admin/layout.tsx), når handlingen er lykkedes - fx "Anmeldelsen er afsluttet".
   kvittering?: string;
@@ -101,6 +104,7 @@ export default function ConfirmDialog({
   valgKraeverTekst,
   vaelgFelter,
   afkrydsning,
+  datoFelt,
   kvittering,
   fakta,
   fare = false,
@@ -326,6 +330,30 @@ export default function ConfirmDialog({
                   </div>
                 );
               })}
+
+              {datoFelt && (
+                <div>
+                  <label htmlFor={`${id}-${datoFelt.name}`} className="block text-sm font-medium text-tekst">
+                    {datoFelt.label}
+                  </label>
+                  <input
+                    id={`${id}-${datoFelt.name}`}
+                    type="date"
+                    name={datoFelt.name}
+                    required
+                    defaultValue={datoFelt.standard}
+                    min={datoFelt.min}
+                    max={datoFelt.max}
+                    aria-describedby={datoFelt.hjaelp ? `${id}-${datoFelt.name}-hjaelp` : undefined}
+                    className="mt-1.5 w-full rounded-lg border border-kant-staerk px-3 py-2.5 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-groen"
+                  />
+                  {datoFelt.hjaelp && (
+                    <p id={`${id}-${datoFelt.name}-hjaelp`} className="mt-1 text-xs text-tekst-svag">
+                      {datoFelt.hjaelp}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {aarsagField && (
                 <div>

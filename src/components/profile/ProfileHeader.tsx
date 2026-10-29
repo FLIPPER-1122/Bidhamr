@@ -4,6 +4,7 @@ import Link from "next/link";
 import { kanOptimeres } from "@/lib/billedUrl";
 import MitIDMaerke from "@/components/mitid/MitIDMaerke";
 import PopulaerSaelgerMaerke from "@/components/PopulaerSaelgerMaerke";
+import FoundingSellerMaerke from "@/components/FoundingSellerMaerke";
 import Ikon from "@/components/Ikon";
 import { mitIdStartHref } from "@/components/mitid/MitIDKraeves";
 import { MITID } from "@/lib/tekster/mitid";
@@ -32,6 +33,8 @@ interface ProfileHeaderProps {
   mitidManglerEjer?: boolean;
   // Mindst 50 gennemførte salg: mærket "Populær sælger" (offentligt).
   populaerSaelger?: boolean;
+  // Aktiv seller founder: mærket "Founding seller" (offentligt).
+  foundingSeller?: boolean;
 }
 
 export default function ProfileHeader({
@@ -49,6 +52,7 @@ export default function ProfileHeader({
   mitidVerificeret = false,
   mitidManglerEjer = false,
   populaerSaelger = false,
+  foundingSeller = false,
 }: ProfileHeaderProps) {
   return (
     <div className="overflow-hidden rounded-none border border-kant bg-white">
@@ -92,10 +96,11 @@ export default function ProfileHeader({
             {email && (
               <p className="mt-0.5 text-sm break-all text-tekst-svag">{email}</p>
             )}
-            {(mitidVerificeret || populaerSaelger) && (
+            {(mitidVerificeret || populaerSaelger || foundingSeller) && (
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {mitidVerificeret && <MitIDMaerke />}
                 {populaerSaelger && <PopulaerSaelgerMaerke />}
+                {foundingSeller && <FoundingSellerMaerke />}
               </div>
             )}
             {erEgenProfil && mitidManglerEjer && (

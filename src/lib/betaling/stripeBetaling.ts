@@ -84,6 +84,9 @@ export type BetalingRaekke = {
   // 20261031010000: gebyrmodel (gammel = før 26. okt. 2026). Mangler, før
   // migrationen er kørt.
   prismodel?: Prismodel;
+  // 20261102420000: seller founder-rabat (0/50/100) låst ved oprettelsen.
+  // Mangler, før migrationen er kørt (= ingen rabat).
+  founder_rabat_pct?: number;
   valuta: string;
   status: "afventer" | "behandles" | "betalt" | "annulleret" | "refunderet";
   betal_senest: string;

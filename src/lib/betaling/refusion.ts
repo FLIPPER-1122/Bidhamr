@@ -152,6 +152,12 @@ export async function forberedDestinationRefusion(
   const transfer = charge.transfer && typeof charge.transfer !== "string" ? charge.transfer : null;
   const fee =
     charge.application_fee && typeof charge.application_fee !== "string" ? charge.application_fee : null;
+  // Seller founder med 100 % rabat og afhentning (20261102420000): BidHamrs
+  // gebyr er 0 kr. Stripe laver så intet ApplicationFee-objekt
+  // (charge.application_fee = null, application_fee_amount = 0) - der er
+  // intet gebyr at refundere (G = 0), kun tilbageførslen og refusionen.
+  const udenGebyr =
+    Number(plan.application_fee_oere) === 0 && !fee && Number(charge.application_fee_amount ?? 0) === 0;
   if (
     charge.currency !== "dkk" ||
     Number(charge.amount) !== Number(b.total_oere) ||
@@ -159,8 +165,8 @@ export async function forberedDestinationRefusion(
     !transfer ||
     stripeId(transfer.destination) !== konto ||
     Number(transfer.amount) !== Number(charge.amount) ||
-    !fee ||
-    Number(fee.amount) !== Number(plan.application_fee_oere)
+    (!fee && !udenGebyr) ||
+    (fee !== null && Number(fee.amount) !== Number(plan.application_fee_oere))
   ) {
     return {
       kode: "konflikt",
@@ -171,7 +177,7 @@ export async function forberedDestinationRefusion(
     return { kode: "konflikt", besked: "Betalingen er allerede delvist refunderet hos Stripe - kontrollér, før der refunderes" };
   }
 
-  const gebyrRefunderet = Number(fee.amount_refunded);
+  const gebyrRefunderet = fee ? Number(fee.amount_refunded) : 0;
   const tilbagefoert = Number(transfer.amount_reversed);
 
   // (a) Gebyret tilbage til sælgerens konto.
@@ -186,6 +192,10 @@ export async function forberedDestinationRefusion(
       await saldoAlarm(b, konto);
       return { kode: "konflikt", besked: "Sælgerens Stripe-konto har for lidt på saldoen til refusionen - refusion stoppet" };
     }
+    if (!fee) {
+      // G > 0 uden et gebyr hos Stripe kan ikke ske (planen: G <= gebyret = 0).
+      return { kode: "konflikt", besked: "BidHamrs gebyr findes ikke hos Stripe - refusion stoppet" };
+    }
     const fr = await stripe.applicationFees.createRefund(
       fee.id,
       { amount: G, metadata: { betaling_id: b.id, handel_id: b.trade_id, trin: "gebyr" } },
@@ -198,7 +208,7 @@ export async function forberedDestinationRefusion(
   } else if (!plan.gebyr_refunderet) {
     // Gennemført hos Stripe, men ikke registreret (afbrudt forsøg).
     let id: string | null = null;
-    if (G > 0) {
+    if (G > 0 && fee) {
       const liste = await stripe.applicationFees.listRefunds(fee.id, { limit: 10 }, opts);
       id = liste.data.find((r) => r.metadata?.betaling_id === b.id)?.id ?? liste.data[0]?.id ?? null;
     }
@@ -273,9 +283,11 @@ export async function kontrollerDestinationRefusion(paymentIntentId: string): Pr
     const transfer = charge.transfer && typeof charge.transfer !== "string" ? charge.transfer : null;
     const fee =
       charge.application_fee && typeof charge.application_fee !== "string" ? charge.application_fee : null;
-    if (!transfer || !fee) return;
-    const tilbage =
-      Number(transfer.amount) - Number(transfer.amount_reversed) - (Number(fee.amount) - Number(fee.amount_refunded));
+    // Intet gebyr-objekt og 0 kr. i gebyr = seller founder med 100 % rabat
+    // og afhentning (20261102420000).
+    if (!transfer || (!fee && Number(charge.application_fee_amount ?? 0) !== 0)) return;
+    const gebyrTilbage = fee ? Number(fee.amount) - Number(fee.amount_refunded) : 0;
+    const tilbage = Number(transfer.amount) - Number(transfer.amount_reversed) - gebyrTilbage;
     if (tilbage === 0) return;
     const tekst =
       tilbage > 0

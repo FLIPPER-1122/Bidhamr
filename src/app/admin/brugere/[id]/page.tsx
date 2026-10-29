@@ -23,6 +23,7 @@ import StaffSamtaleListe from "@/components/admin/staffchat/StaffSamtaleListe";
 import { handlingNavn } from "@/lib/moderationLog";
 import MitIdAdminKort, { MitIdBadge } from "@/components/admin/MitIdAdminKort";
 import BoostAdminKort from "@/components/admin/BoostAdminKort";
+import SellerFounderKort from "@/components/admin/SellerFounderKort";
 import KontoLukningKort, {
   type KontoLukningAdvarsel,
   type KontoLukningForslag,
@@ -278,6 +279,10 @@ export default async function AdminBrugerDetalje({
         kanNulstille={kanLukke}
         erLukket={!!kontoLukketKl}
       />
+
+      {erChef && staffId && (
+        <SellerFounderKort admin={supabase} chefId={staffId} brugerId={user.id} brugerNavn={user.navn ?? "brugeren"} />
+      )}
 
       {erChef && staffId && (
         <BoostAdminKort admin={supabase} chefId={staffId} brugerId={user.id} brugerNavn={user.navn ?? "brugeren"} />
