@@ -41,6 +41,11 @@ export default function OpretFirmakonto({
   const [medIntro, setMedIntro] = useState(false);
   const [introProcent, setIntroProcent] = useState(String(INTRO_STANDARD.procent));
   const [introMaaneder, setIntroMaaneder] = useState(String(INTRO_STANDARD.maaneder));
+  // "Behold Starts gratis måned + introrabat" (20261102450000): særaftale, som
+  // staff aktivt vælger - aldrig standard. Kun Start (pakken er gratis i måned
+  // 1) og kun med introrabat. Begrundelse 5-500 tegn (logges).
+  const [behold, setBehold] = useState(false);
+  const [beholdGrund, setBeholdGrund] = useState("");
   const [cvrBesked, setCvrBesked] = useState<{ tekst: string; ok: boolean } | null>(null);
   const [slaarOp, startOpslag] = useTransition();
   const [feltFejl, setFeltFejl] = useState<Partial<Record<keyof FirmaVaerdier, string>>>({});
@@ -151,8 +156,15 @@ export default function OpretFirmakonto({
       im >= INTRO_GRAENSER.maanederMin &&
       im <= INTRO_GRAENSER.maanederMaks);
   const saeraftaleGyldig = !tidligere || !saeraftale || !!gyldigSaeraftaleBegrundelse(saeraftaleGrund);
-  const klar = !!pakkeId && EMAIL.test(loginEmail.trim()) && introGyldig && saeraftaleGyldig;
   const valgtPakke = pakker.find((p) => p.id === pakkeId) ?? null;
+  // Valget vises kun for en pakke, der er gratis i måned 1 (Start).
+  const beholdMulig = medIntro && valgtPakke?.maaned1 === "gratis";
+  const beholdAktiv = beholdMulig && behold;
+  const beholdGrundOk = !!gyldigSaeraftaleBegrundelse(beholdGrund);
+  // Et tidligere CVR uden særaftale har ingen gratis måned at beholde.
+  const beholdIngenGratis = beholdAktiv && tidligere !== null && !saeraftale;
+  const klar =
+    !!pakkeId && EMAIL.test(loginEmail.trim()) && introGyldig && saeraftaleGyldig && (!beholdAktiv || beholdGrundOk) && !beholdIngenGratis;
   // Velkomstrabat i måned 1: nyt CVR = ja (Start gratis, Butik/Pro halv pris);
   // et CVR, der har haft abonnement før = ingen, medmindre særaftalen er sat.
   const gratis: "ny" | "ingen" | "saeraftale" = !tidligere ? "ny" : saeraftale ? "saeraftale" : "ingen";
@@ -165,6 +177,7 @@ export default function OpretFirmakonto({
               procent: ip,
               maaneder: im,
               pris: valgtPakke.maanedspris != null ? krTekst((valgtPakke.maanedspris * (100 - ip)) / 100) : null,
+              beholdGratis: beholdAktiv,
             }
           : null,
         gratis,
@@ -290,6 +303,45 @@ export default function OpretFirmakonto({
             </div>
           </div>
         )}
+        {beholdMulig && (
+          <div className="mt-3 border border-kant p-3">
+            <label className="flex min-h-11 cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={behold}
+                onChange={(e) => setBehold(e.target.checked)}
+                className="mt-0.5 h-5 w-5 shrink-0 accent-groen"
+              />
+              <span>
+                <span className="block text-[15px] font-medium text-tekst">{A.opret.beholdSlaa}</span>
+                <span className="block text-[13px] text-tekst-daempet">{A.opret.beholdHjaelp}</span>
+              </span>
+            </label>
+            {behold && (
+              <div className="mt-3">
+                <label htmlFor="opret-behold-grund" className={ADMIN_LABEL}>
+                  {A.opret.beholdBegrundelse}
+                </label>
+                <textarea
+                  id="opret-behold-grund"
+                  value={beholdGrund}
+                  rows={2}
+                  required
+                  maxLength={SAERAFTALE_BEGRUNDELSE.maks}
+                  aria-invalid={(beholdGrund.trim() !== "" && !beholdGrundOk) || undefined}
+                  placeholder={A.opret.beholdPladsholder}
+                  onChange={(e) => setBeholdGrund(e.target.value)}
+                  className={ADMIN_FELT}
+                />
+                {beholdGrund.trim() !== "" && !beholdGrundOk && (
+                  <p role="alert" className="mt-1 text-xs font-medium text-fejl-tekst">
+                    {A.opret.beholdUgyldig}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <p className={`mt-3 text-[13px] ${introGyldig ? "text-tekst-daempet" : "font-medium text-fejl-tekst"}`} role={introGyldig ? undefined : "alert"}>
           {!introGyldig ? A.opret.introUgyldig : opsummering}
         </p>
@@ -321,6 +373,7 @@ export default function OpretFirmakonto({
             cvrBekraeftet: tidligere !== null,
             saeraftaleGratis: tidligere !== null && saeraftale,
             saeraftaleBegrundelse: tidligere !== null && saeraftale ? saeraftaleGrund : null,
+            ...(beholdAktiv ? { introBeholdGratis: true, introBeholdBegrundelse: beholdGrund } : {}),
           });
           if ("fejl" in svar) return { fejl: svar.fejl };
           if ("cvrTidligere" in svar) {
@@ -344,6 +397,11 @@ export default function OpretFirmakonto({
           });
         }}
       >
+        {beholdIngenGratis && (
+          <p role="alert" className="mb-3 border border-advarsel-kant bg-advarsel-bg p-3 text-sm text-advarsel-tekst">
+            {A.opret.beholdTidligereCvr}
+          </p>
+        )}
         {tidligere && (
           <CvrTidligere
             firmaer={tidligere}

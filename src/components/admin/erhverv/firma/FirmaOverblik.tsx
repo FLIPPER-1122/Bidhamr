@@ -120,6 +120,9 @@ export function FirmaHurtighandlinger({
     gratisTil: string | null;
     gratisVedStart: number;
     intro: IntroTilstand;
+    // "Behold Starts gratis måned + introrabat" kan vælges (Start, intet
+    // abonnement endnu, gratis måned til gode, ingen særpris).
+    beholdGratisMulig: boolean;
     // Introrabatten er planlagt eller kører (intro_til tom eller i fremtiden).
     introAktiv: boolean;
     ekstraAuktioner: number;
@@ -152,7 +155,7 @@ export function FirmaHurtighandlinger({
         ) : a.saerpris != null && !a.introAktiv ? (
           <LaastKort titel={T.hurtig.intro.titel} under={T.hurtig.intro.laastSaerpris} />
         ) : (
-          <IntrorabatKort firmaId={firmaId} intro={a.intro} />
+          <IntrorabatKort firmaId={firmaId} intro={a.intro} iGratisPeriode={a.gratisTil != null} beholdGratisMulig={a.beholdGratisMulig} />
         )}
         {lukket ? (
           <LaastKort titel={T.hurtig.saerpris.titel} under={T.hurtig.uge.underIkkeAktiv} />

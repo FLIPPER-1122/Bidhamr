@@ -195,7 +195,13 @@ export type FirmaAbonnement = {
     fra: "efter_gratis" | "straks";
     status: "planlagt" | "aktiv";
     til: string | null;
+    // "Behold Starts gratis måned + introrabat" (20261102450000): måned 1
+    // gratis, rabatten fra første betaling. Mangler før migrationen.
+    behold_gratis?: boolean;
   } | null;
+  // Kan staff vælge "Behold Starts gratis måned + introrabat"? (Start, intet
+  // abonnement endnu, gratis måned til gode, ingen særpris - 20261102450000.)
+  behold_gratis_mulig?: boolean;
   kort: { maerke: string | null; sidste4: string; udloeb: string; udloeber_snart: boolean } | null;
   kvote: {
     brugt: number;

@@ -125,6 +125,10 @@ export interface ErhvervFirmaOpretArgs {
   // abonnement før (begrundelse 5-500 tegn, logges med staffs navn).
   p_saeraftale_gratis?: boolean;
   p_saeraftale_begrundelse?: string | null;
+  // "Behold Starts gratis måned + introrabat" (20261102450000): kun Start og
+  // kun med introrabat; begrundelse 5-500 tegn (logges med staffs navn).
+  p_intro_behold_gratis?: boolean;
+  p_intro_behold_begrundelse?: string | null;
 }
 
 export interface ErhvervFirmaOpretSvar {
@@ -137,6 +141,8 @@ export interface ErhvervFirmaOpretSvar {
   // Velkomstfordelen i måned 1 (20261102070000).
   maaned1?: ErhvervMaaned1;
   saeraftale?: boolean;
+  // "Behold Starts gratis måned + introrabat" (20261102450000).
+  behold_gratis?: boolean;
 }
 
 // --- RPC: erhverv_firma_opdater (20261102070000) -------------------------------

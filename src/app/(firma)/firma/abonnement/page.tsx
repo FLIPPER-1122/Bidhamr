@@ -155,7 +155,15 @@ export default async function FirmaAbonnement({
             </p>
           )}
           {intro && introPlanlagt && (
-            <p className={`mt-2 ${E_TEKST}`}>{FA.introPlanlagt(intro.procent, intro.maaneder, intro.fra === "efter_gratis")}</p>
+            <p className={`mt-2 ${E_TEKST}`}>
+              {FA.introPlanlagt(
+                intro.procent,
+                intro.maaneder,
+                intro.fra === "efter_gratis",
+                // "Behold Starts gratis måned + introrabat": præcis 1 gratis måned (Starts).
+                intro.behold_gratis === true && ab?.maaned1 === "gratis" && gratisVedStart === 1,
+              )}
+            </p>
           )}
           <p className={`mt-2 ${E_TEKST_DAEMPET}`}>{B.ingenGebyr}</p>
           <div className="mt-5">

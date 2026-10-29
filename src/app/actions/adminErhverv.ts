@@ -116,6 +116,13 @@ const KODE_FEJL: Record<string, string> = {
     "Særaftalen kan ikke gemmes lige nu, så firmakontoen er ikke oprettet. Prøv igen senere, eller opret kontoen uden særaftale.",
   ugyldig_pakke: "Vælg en pakke (arkiverede pakker kan ikke vælges).",
   ugyldig_rabat_intro: "Introrabatten skal være 1-100 % i 1-24 måneder - udfyld begge eller ingen af dem.",
+  // "Behold Starts gratis måned + introrabat" (20261102450000).
+  behold_begrundelse: ADMIN_ERHVERV.opret.beholdUgyldig,
+  behold_uden_intro: "Slå introrabatten til, hvis firmaet skal beholde Starts gratis måned + introrabat.",
+  behold_kun_start: "Den gratis måned kan kun beholdes på Start. Vælg Start, eller slå valget fra.",
+  behold_ingen_gratis: ADMIN_ERHVERV.opret.beholdTidligereCvr,
+  behold_mangler:
+    "Valget \"Behold Starts gratis måned + introrabat\" kan ikke gemmes lige nu, så firmakontoen er ikke oprettet. Prøv igen senere, eller opret kontoen uden valget.",
   henvendelse_findes_ikke: "Henvendelsen findes ikke længere.",
   henvendelse_brugt: "Der er allerede oprettet en firmakonto ud fra denne henvendelse.",
   ugyldige_felter: "Tjek felterne og prøv igen.",
@@ -567,6 +574,12 @@ export async function opretFirmakonto(
     // (5-500 tegn, logges med staffs navn). Filip, 27. okt. 2026.
     saeraftaleGratis?: boolean;
     saeraftaleBegrundelse?: string | null;
+    // "Behold Starts gratis måned + introrabat" (20261102450000): særaftale,
+    // som staff aktivt vælger (aldrig standard). Kun Start og kun med en
+    // introrabat: måned 1 gratis, introrabatten fra første betaling (måned
+    // 2-7 ved 6 måneder). Begrundelse 5-500 tegn (logges med staffs navn).
+    introBeholdGratis?: boolean;
+    introBeholdBegrundelse?: string | null;
   },
 ) {
   return koer("opretFirmakonto", async () => {
@@ -592,6 +605,10 @@ export async function opretFirmakonto(
     const saeraftale = input.saeraftaleGratis === true;
     const saeraftaleBegrundelse = saeraftale ? gyldigSaeraftaleBegrundelse(input.saeraftaleBegrundelse) : null;
     if (saeraftale && !saeraftaleBegrundelse) kodeFejl("saeraftale_begrundelse");
+    const behold = input.introBeholdGratis === true;
+    if (behold && introProcent === null) kodeFejl("behold_uden_intro");
+    const beholdBegrundelse = behold ? gyldigSaeraftaleBegrundelse(input.introBeholdBegrundelse) : null;
+    if (behold && !beholdBegrundelse) kodeFejl("behold_begrundelse");
 
     // CVR-registret (samme opslag som knappen "Slå CVR op"): kun et aktivt
     // dansk CVR kan få en firmakonto. Afvises kun, når opslaget med sikkerhed
@@ -704,14 +721,26 @@ export async function opretFirmakonto(
     // før). PGRST202 med en særaftale: databasen kender ikke særaftalen
     // (20261102050000 er ikke kørt) - så afvises oprettelsen med en dansk fejl
     // i stedet for at oprette firmaet uden den (review 27. okt. 2026).
-    const { data, error } = await admin.rpc(
-      "erhverv_firma_opret",
-      saeraftale
-        ? ({ ...opretArgs, p_saeraftale_gratis: true, p_saeraftale_begrundelse: saeraftaleBegrundelse } satisfies ErhvervFirmaOpretArgs)
-        : opretArgs,
-    );
+    // "Behold Starts gratis måned + introrabat" sendes også kun, når det er
+    // valgt (PGRST202 med valget: 20261102450000 er ikke kørt - afvis som
+    // særaftalen, så firmaet ikke oprettes uden den gratis måned).
+    const { data, error } = await admin.rpc("erhverv_firma_opret", {
+      ...opretArgs,
+      ...(saeraftale ? { p_saeraftale_gratis: true, p_saeraftale_begrundelse: saeraftaleBegrundelse } : {}),
+      ...(behold ? { p_intro_behold_gratis: true, p_intro_behold_begrundelse: beholdBegrundelse } : {}),
+    } satisfies ErhvervFirmaOpretArgs);
     const svar = data as ErhvervFirmaOpretSvar | null;
     if (error || svar?.kode !== "ok" || !svar.firma_id) {
+      if (behold && error?.code === "PGRST202") {
+        const ryddet = await rydTomKonto(admin, userId, link.user.id);
+        await logDriftFejl({
+          kilde: "action",
+          hvor: "opretFirmakonto/behold-gratis",
+          fejl: `"Behold Starts gratis måned + introrabat" kunne ikke gemmes (erhverv_firma_opret uden p_intro_behold_*: migrationen 20261102450000 mangler). Tom konto ${ryddet ? "slettet igen" : "IKKE slettet - ryd op manuelt"}.`,
+          brugerId: userId,
+        });
+        throw new BrugerFejl(KODE_FEJL.behold_mangler);
+      }
       if (saeraftale && error?.code === "PGRST202") {
         const ryddet = await rydTomKonto(admin, userId, link.user.id);
         await logDriftFejl({

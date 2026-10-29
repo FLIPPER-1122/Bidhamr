@@ -417,16 +417,36 @@ export type IntroTilstand = {
   fra: "efter_gratis" | "straks";
   status: "planlagt" | "aktiv";
   til: string | null;
+  // "Behold Starts gratis måned + introrabat" (20261102450000).
+  behold_gratis?: boolean;
 } | null;
 
-export function IntrorabatKort({ firmaId, intro }: { firmaId: string; intro: IntroTilstand }) {
+export function IntrorabatKort({
+  firmaId,
+  intro,
+  iGratisPeriode = false,
+  beholdGratisMulig = false,
+}: {
+  firmaId: string;
+  intro: IntroTilstand;
+  // Firmaet er i en gratis periode i Stripe (trialing): "Fra nu" bruger af
+  // rabatmånederne i den gratis måned - advarsel.
+  iGratisPeriode?: boolean;
+  // "Behold Starts gratis måned + introrabat" kan vælges (Start, intet
+  // abonnement endnu, gratis måned til gode, ingen særpris).
+  beholdGratisMulig?: boolean;
+}) {
   const router = useRouter();
   const I = T.hurtig.intro;
   const [valg, setValg] = useState<"saet" | "fjern">("saet");
   const [procent, setProcent] = useState(String(intro?.procent ?? INTRO_STANDARD.procent));
   const [maaneder, setMaaneder] = useState(String(intro?.maaneder ?? INTRO_STANDARD.maaneder));
   const [fra, setFra] = useState<"efter_gratis" | "straks">(intro?.fra ?? "efter_gratis");
+  // Aldrig slået til som standard - staff vælger det aktivt (også når
+  // aftalen rettes, skal det vælges igen).
+  const [behold, setBehold] = useState(false);
   const [grund, setGrund] = useState("");
+  const beholdAktiv = beholdGratisMulig && behold;
   const klik = useKlikId();
   const p = Number(procent);
   const m = Number(maaneder);
@@ -450,17 +470,28 @@ export function IntrorabatKort({ firmaId, intro }: { firmaId: string; intro: Int
         return klikSvar(
           valg === "fjern"
             ? await fjernFirmaIntrorabat({ firmaId, begrundelse: grund, klikId })
-            : await saetFirmaIntrorabat({ firmaId, procent: p, maaneder: m, fra, begrundelse: grund, klikId }),
+            : await saetFirmaIntrorabat({
+                firmaId,
+                procent: p,
+                maaneder: m,
+                fra: beholdAktiv ? "efter_gratis" : fra,
+                begrundelse: grund,
+                klikId,
+                ...(beholdAktiv ? { beholdGratis: true } : {}),
+              }),
         );
       }}
       onSuccess={() => {
         setGrund("");
         setValg("saet");
+        setBehold(false);
         router.refresh();
       }}
     >
       <div className="space-y-3">
-        {intro && <Info>{I.nu(intro.procent, intro.maaneder, intro.fra, intro.til ? langDato(intro.til) : null)}</Info>}
+        {intro && (
+          <Info>{I.nu(intro.procent, intro.maaneder, intro.fra, intro.til ? langDato(intro.til) : null, intro.behold_gratis === true)}</Info>
+        )}
         {intro && (
           <fieldset className="space-y-2">
             <legend className="sr-only">{I.titel}</legend>
@@ -481,15 +512,40 @@ export function IntrorabatKort({ firmaId, intro }: { firmaId: string; intro: Int
               <TalFelt label={I.maaneder} value={maaneder} onChange={setMaaneder} ugyldig={!gyldig} />
             </div>
             {!gyldig && <FeltFejl>{I.ugyldig}</FeltFejl>}
-            <fieldset className="space-y-2">
-              <legend className="sr-only">{I.titel}</legend>
-              <Valg name="intro-fra" value="efter_gratis" valgt={fra} onVaelg={(v) => setFra(v as "efter_gratis" | "straks")}>
-                {I.fraEfterGratis}
-              </Valg>
-              <Valg name="intro-fra" value="straks" valgt={fra} onVaelg={(v) => setFra(v as "efter_gratis" | "straks")}>
-                {I.fraStraks}
-              </Valg>
-            </fieldset>
+            {beholdGratisMulig && (
+              <label className="flex items-start gap-3 border border-kant px-3 py-2.5 text-sm text-tekst">
+                <input
+                  type="checkbox"
+                  checked={behold}
+                  onChange={(e) => setBehold(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-groen"
+                />
+                <span className="min-w-0">
+                  <span className="font-semibold">{I.behold}</span>
+                  <span className="block text-tekst-daempet">
+                    {I.beholdHjaelp(gyldig ? p : INTRO_STANDARD.procent, gyldig ? m : INTRO_STANDARD.maaneder)}
+                  </span>
+                </span>
+              </label>
+            )}
+            {/* Med "Behold Starts gratis måned" gælder rabatten altid fra første
+                betaling - valget af "Fra nu" skjules. */}
+            {!beholdAktiv && (
+              <fieldset className="space-y-2">
+                <legend className="sr-only">{I.titel}</legend>
+                <Valg name="intro-fra" value="efter_gratis" valgt={fra} onVaelg={(v) => setFra(v as "efter_gratis" | "straks")}>
+                  {I.fraEfterGratis}
+                </Valg>
+                <Valg name="intro-fra" value="straks" valgt={fra} onVaelg={(v) => setFra(v as "efter_gratis" | "straks")}>
+                  {I.fraStraks}
+                </Valg>
+              </fieldset>
+            )}
+            {!beholdAktiv && fra === "straks" && iGratisPeriode && (
+              <p role="alert" className="border border-advarsel-kant bg-advarsel-bg px-3 py-2 text-sm text-advarsel-tekst">
+                {I.straksAdvarsel}
+              </p>
+            )}
           </>
         )}
         <Begrundelse value={grund} onChange={setGrund} label={T.hurtig.status.begrundelse} pladsholder={I.begrundelsePladsholder} />

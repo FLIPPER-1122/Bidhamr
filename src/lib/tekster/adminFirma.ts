@@ -105,8 +105,8 @@ export const ADMIN_FIRMA = {
         pct == null || mdr == null
           ? "Ingen"
           : `${pct} % i ${mdr} mdr. (${tilstand === "koerer" ? "kører" : tilstand === "slut" ? "slut" : "planlagt"})`,
-      nu: (pct: number, mdr: number, fra: string, til: string | null) =>
-        `Nu: ${pct} % i ${mdr} måneder ${fra === "straks" ? "fra nu" : "fra første betaling"}${til ? ` – til ${til}` : ""}`,
+      nu: (pct: number, mdr: number, fra: string, til: string | null, beholdGratis = false) =>
+        `Nu: ${beholdGratis ? "første måned gratis, derefter " : ""}${pct} % i ${mdr} måneder ${fra === "straks" ? "fra nu" : "fra første betaling"}${til ? ` – til ${til}` : ""}`,
       saet: "Sæt eller ret introrabat",
       fjern: "Fjern introrabatten",
       fjernInfo: "Fra næste regning betaler firmaet den almindelige pris.",
@@ -114,6 +114,13 @@ export const ADMIN_FIRMA = {
       maaneder: "Antal måneder (1-24)",
       fraEfterGratis: "Fra første betaling (standard – efter en evt. gratis periode)",
       fraStraks: "Fra nu – måneder i en gratis periode tæller med",
+      // Firmaet er i en gratis periode, og staff vælger "Fra nu".
+      straksAdvarsel: "Firmaet er i en gratis periode. Så bruges en af rabatmånederne i den gratis måned.",
+      // "Behold Starts gratis måned + introrabat" (20261102450000): kun Start,
+      // før firmaet har betalt i Checkout. Aldrig standard.
+      behold: "Behold Starts gratis måned + introrabat",
+      beholdHjaelp: (pct: number, mdr: number) =>
+        `Særaftale: første måned gratis, derefter ${pct} % i ${mdr === 1 ? "1 måned (måned 2)" : `${mdr} måneder (måned 2-${mdr + 1})`} fra første betaling, og så fuld pris. Begrundelsen gemmes i loggen.`,
       ugyldig: "Skriv hele tal: 1-100 % og 1-24 måneder.",
       begrundelsePladsholder: "Fx Filip har ringet til firmaet",
       bekraeft: "Gem introrabat",
@@ -255,8 +262,8 @@ export const ADMIN_FIRMA = {
     saerpris: "Særpris",
     saerprisAftale: "Aftale",
     introrabat: "Introrabat",
-    introTekst: (pct: number, mdr: number, fra: string) =>
-      `${pct} % i ${mdr} ${mdr === 1 ? "måned" : "måneder"} ${fra === "straks" ? "fra nu" : "fra første betaling"}`,
+    introTekst: (pct: number, mdr: number, fra: string, beholdGratis = false) =>
+      `${beholdGratis ? "Første måned gratis, derefter " : ""}${pct} % i ${mdr} ${mdr === 1 ? "måned" : "måneder"} ${fra === "straks" ? "fra nu" : "fra første betaling"}`,
     introStatus: (tilstand: "planlagt" | "koerer" | "slut", til: string | null) =>
       tilstand === "koerer"
         ? `Kører – til ${til}`
