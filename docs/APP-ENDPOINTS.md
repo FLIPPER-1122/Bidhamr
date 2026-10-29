@@ -561,6 +561,15 @@ RPC'er direkte fra appen (`anon` og `authenticated`, samme mønster som `populae
 | `founding_seller({ p_bruger })` | `boolean` | Profilen: vis mærket "Founding seller" (tooltip/forklaring "Founding seller hos BidHamr") |
 | `founding_sellere({ p_brugere: uuid[] })` | `uuid[]` (højst 200 ind) | Auktionskort: de sælgere i listen, der er aktive founders |
 | `auktion_founder_rabat({ p_auktion })` | `0 \| 50 \| 100` | Auktionssiden og "tilbud til næste byder": rabatten på gebyret, hvis auktionen slutter som planlagt. 0 for erhverv og ukendte auktioner |
+| `min_founder_rabat({ p_tid })` (kun `authenticated`, 20261102460000) | `0 \| 50 \| 100` | Opret/redigér auktion: den **indloggede** sælgers egen rabat på tidspunktet `p_tid` (ISO-tid). Send auktionens **planlagte sluttid** (nu + varighed, eller den gemte `slutter_kl` ved redigering). Uden `p_tid` (eller `null`) = nu. Ingen bruger-id: den svarer altid for `auth.uid()`; uden login 0. Brug den kun for private auktioner - erhverv får aldrig rabat |
+
+- **"Du får udbetalt" ved opret/redigér** (20261102460000): sælgergebyret er
+  `saelgergebyrOere(pris, false, rabat)` og udbetalingen `udbetalingOere(pris, false, rabat)` fra
+  `src/lib/betaling/beregn.ts` med `rabat = min_founder_rabat({ p_tid: sluttid })`. Ved 100 % er sælgergebyret 0 kr.
+  Det er en visning: buddet kendes først, når auktionen slutter, og databasen låser rabatten på betalingen ud fra
+  auktionens **sluttid** (`least(nu, slutter_kl)`) - præcis det tidspunkt, appen sender med. Stoppes aftalen før
+  sluttiden, er rabatten 0; stoppes den efter, gælder rabatten ved sluttiden. Tilbud til næste byder låses efter
+  tidspunktet, hvor tilbuddet accepteres.
 
 - **Mærket**: lille og diskret ved siden af "Populær sælger" (hjemmesiden: lys orange flade, almindelig tekstfarve,
   lille orange flag, tekst "Founding seller"). Vis det aldrig på erhvervsauktioner.

@@ -22,6 +22,7 @@ const FEJL: Record<string, string> = {
   inhabil: "Du kan ikke gøre dig selv til seller founder.",
   ikke_fundet: "Brugeren findes ikke.",
   firma: "Firmakonti kan ikke være seller founder.",
+  staff: "Brugere med en staff-rolle (fx medarbejder, admin eller erhvervssælger) kan ikke være seller founder.",
   allerede: "Brugeren er allerede seller founder.",
   ikke_founder: "Brugeren har ingen aktiv seller founder-aftale.",
   ugyldig_dato: "Vælg en gyldig startdato (fra 2026 og højst et år frem).",

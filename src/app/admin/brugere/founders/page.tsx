@@ -2,7 +2,14 @@ import Link from "next/link";
 import BrugereFaner from "@/components/admin/BrugereFaner";
 import AdminSideHoved from "@/components/admin/AdminSideHoved";
 import AdminSide from "@/components/admin/AdminSide";
-import { FounderFaseMaerke, founderDato, type FounderAftale } from "@/components/admin/SellerFounderKort";
+import {
+  FounderAlarmMaerke,
+  FounderFaseMaerke,
+  founderDato,
+  founderStripeTabOere,
+  type FounderAftale,
+} from "@/components/admin/SellerFounderKort";
+import { STRIPE_GEBYR_SKOEN_TEKST } from "@/lib/betaling/stripeGebyrSkoen";
 import { kraevSideRolle } from "@/lib/adminAuth";
 import { kroner } from "@/lib/kroner";
 
@@ -16,12 +23,14 @@ export default async function AdminSellerFounders() {
   if (error) console.error("seller_founder_liste fejlede:", error);
   const liste = (Array.isArray(data) ? data : []) as FounderAftale[];
   const aktive = liste.filter((a) => !a.stoppet_kl).length;
+  const alarmer = liste.filter((a) => a.alarm_aktiv).length;
+  const stripeTab = liste.reduce((sum, a) => sum + founderStripeTabOere(a), 0);
 
   return (
     <AdminSide>
       <AdminSideHoved
         titel="Seller founders"
-        forklaring="Private sælgere med en founder-aftale: 0 kr. i købergebyr og sælgergebyr i 6 måneder fra startdatoen, derefter 50 %. Gør en bruger til founder fra brugersiden (søg brugeren, og brug boksen Seller founder)."
+        forklaring="Private sælgere med en founder-aftale: 0 kr. i købergebyr og sælgergebyr i 6 måneder fra startdatoen, derefter 50 %. I måned 1-6 betaler BidHamr selv Stripes gebyr på founderens handler. Gør en bruger til founder fra brugersiden (søg brugeren, og brug boksen Seller founder)."
       />
 
       <BrugereFaner aktiv="founders" />
@@ -35,6 +44,16 @@ export default async function AdminSellerFounders() {
       {!error && (
         <p className="text-sm text-tekst-svag">
           {aktive} aktive · {liste.length - aktive} stoppede
+          {alarmer > 0 && (
+            <>
+              {" · "}
+              <span className="font-semibold text-red-700">{alarmer} med mulige falske handler</span>
+            </>
+          )}
+          <span className="block text-xs">
+            Anslået Stripe-gebyr betalt af BidHamr i alt: ca. {kroner(stripeTab)} (skøn: {STRIPE_GEBYR_SKOEN_TEKST} pr.
+            betalt handel med 0 kr. i gebyr, også refunderede).
+          </span>
         </p>
       )}
 
@@ -53,7 +72,9 @@ export default async function AdminSellerFounders() {
             </div>
             <p className="text-sm text-tekst-daempet">
               {a.handler} {a.handler === 1 ? "handel" : "handler"} · rabat {kroner(Number(a.rabat_oere))}
+              {a.gratis_handler !== undefined && <> · Stripe-gebyr ca. {kroner(founderStripeTabOere(a))} (skøn)</>}
             </p>
+            <FounderAlarmMaerke a={a} />
             <FounderFaseMaerke a={a} />
           </Link>
         ))}

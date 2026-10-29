@@ -30,6 +30,8 @@ import "server-only";
 //      den betalt (eller under behandling), spejles den nu, og der gives
 //      alarm. Uden dette blev en mistet webhook først opdaget ved fristen
 //      (48 t), hvis køberen ikke selv vendte tilbage til handelssiden.
+//   I. Seller founders: mistanke om falske handler (src/lib/betaling/
+//      founderAlarm.ts, 20261102460000).
 //
 // Kaster aldrig. Fejl i et tjek logges med kilde 'cron' (kørslen markeres som
 // fejlet); Stripe-vagten (StripeTilstandFejl) giver selv alarm.
@@ -41,6 +43,7 @@ import { logDriftFejl } from "@/lib/drift";
 import { alarmPrTilfaelde, lukTilfaelde } from "@/lib/betaling/driftTilfaelde";
 import { dkk, skyldigOere, spejlBidhamrPayout } from "@/lib/betaling/udbetaling";
 import { spejlIndsigelse, spejlPaymentIntent, spejlSvindelvarsel } from "@/lib/betaling/stripeBetaling";
+import { tjekFounderAlarmer } from "@/lib/betaling/founderAlarm";
 
 const INTERVAL_MIN = 60;
 const DAG = 24 * 60 * 60_000;
@@ -110,6 +113,12 @@ export async function koerBetalingsovervaagning(tving = false): Promise<Overvaag
   await tjek("svindelvarsler", () => svindelvarselEvents(admin, alarm));
   await tjek("saldo", () => saldoAfstemning(admin, r, alarm));
   await tjek("gamle midler", () => gamleMidler(admin, alarm));
+  // I. Seller founders: samme køber med mindst 3 betalte handler hos samme
+  //    founder inden for 30 dage (mistanke om falske handler). Én alarm pr.
+  //    par pr. periode (databasen).
+  await tjek("founder-handler", async () => {
+    r.alarmer += await tjekFounderAlarmer();
+  });
   // G. Sikkerhedsnet A: hver sælgerkontos udbetalingsplan (dagligt pr. konto).
   await tjek("udbetalingsplan", async () => {
     const { kontrollerAllePlaner } = await import("@/lib/betaling/kontoVagt");
