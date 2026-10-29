@@ -146,6 +146,9 @@ export const HANDLING_NAVNE: Record<string, string> = {
   seller_founder_oprettet: "Gjorde brugeren til seller founder",
   seller_founder_startdato: "Ændrede startdatoen for seller founder",
   seller_founder_stoppet: "Stoppede seller founder-aftalen",
+  // 20261102430000_huskeliste_oprydning_rettelser.sql (chefens udvej, hvis en
+  // medarbejder er spærret ude af admin-loginets loft pr. e-mail).
+  login_loft_nulstillet: "Nulstillede login-loftet for en medarbejder",
   // 20261029020000_ekstra_fragt.sql (sælgerens indsigelse og betaling logges
   // med systembrugeren som afsender).
   ekstra_fragt_oprettet: "Oprettede ekstraregning for fragt (for lille pakke)",

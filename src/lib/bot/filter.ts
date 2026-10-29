@@ -98,7 +98,8 @@ export function lavOrdFilter(): OrdFilter {
 // Svaret holdes tilbage sætning for sætning. En sætning, der nævner point
 // eller boost OG enten en pris eller hjemmesiden (bidhamr.dk, hjemmesiden,
 // browseren ...), erstattes af en neutral sætning (første gang) eller
-// fjernes (senere). Alt andet sendes uændret.
+// fjernes (senere). Det samme gælder, når kombinationen står i to sætninger
+// efter hinanden (erForbudtPar). Alt andet sendes uændret.
 
 const POINT_ORD = /(?<![\p{L}\p{N}])(?:boost|point)/iu;
 const PRIS = /\d[\d.,]*\s*(?:kroner|kr|dkk|usd|euro|€|\$|,-)(?![\p{L}])|(?:(?<![\p{L}])kr\.?|dkk|\$|€)\s*\d/iu;
@@ -114,6 +115,17 @@ export function erForbudtIApp(saetning: string): boolean {
   return PRIS.test(saetning) || HJEMMESIDE.test(saetning);
 }
 
+// Hele svaret, ikke kun sætning for sætning (review af 20261102410000):
+// point/boost i den ene sætning og en pris eller hjemmesiden i den næste
+// ("Vil du have flere point? Gå ind på bidhamr.dk.") er også forbudt. Den
+// senere sætning erstattes/fjernes (den første er allerede sendt, men siger
+// intet forbudt alene).
+export function erForbudtPar(forrige: string, saetning: string): boolean {
+  if (!forrige) return false;
+  const prisEllerSide = (t: string) => PRIS.test(t) || HJEMMESIDE.test(t);
+  return (POINT_ORD.test(forrige) && prisEllerSide(saetning)) || (POINT_ORD.test(saetning) && prisEllerSide(forrige));
+}
+
 // Sætningsgrænse: tegnsætning + mellemrum + stort bogstav/tal/citat (så
 // "49 kr. på bidhamr.dk" ikke deles), eller linjeskift.
 const SAETNING_SLUT = /[.!?…]+["')\]»”]*[ \t]+(?=[\p{Lu}\p{N}"„“«(-])|\n+/gu;
@@ -123,8 +135,13 @@ const MAKS_SAETNING = 2000;
 export function lavAppFilter(): OrdFilter {
   let rest = "";
   let erstattet = false;
+  // Den forrige sætning (som modellen skrev den), så kombinationen også
+  // fanges over to sætninger.
+  let forrige = "";
   const ren = (stykke: string): string => {
-    if (!erForbudtIApp(stykke)) return stykke;
+    const forbudt = erForbudtIApp(stykke) || erForbudtPar(forrige, stykke);
+    if (stykke.trim()) forrige = stykke;
+    if (!forbudt) return stykke;
     if (erstattet) return "";
     erstattet = true;
     const hale = stykke.match(/\s*$/)?.[0] ?? "";

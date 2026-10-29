@@ -364,7 +364,7 @@ describe("outbox (20261102410000)", () => {
     expect(kald("email_skift_behold_session")[0][1]).toMatchObject({ p_session: null });
   });
 
-  it("mailen fejler: skiftet lykkes, fejlen gemmes på rækken (cron prøver igen), Stripe venter", async () => {
+  it("mailen fejler: skiftet lykkes, log-ud og Stripe gøres alligevel, fejlen gemmes på rækken (cron prøver igen)", async () => {
     rpcSvar({
       email_skift_tjek: { kode: "ok", id: "s1", ny_email: "ny@test.bidhamr.dk", gammel_email: "ida@test.bidhamr.dk" },
       email_skift_behold_session: true,
@@ -375,12 +375,76 @@ describe("outbox (20261102410000)", () => {
     m.send.mockResolvedValueOnce({ ok: false, fejl: "Resend nede for ida@test.bidhamr.dk" });
     const r = await lib.bekraeftEmailSkiftFor({ bruger, kode: "123456", sessionId: SESSION, logUdAndre });
     expect(r).toMatchObject({ ok: true });
-    expect(kald("email_skift_outbox_trin")).toHaveLength(0);
+    expect(kald("email_skift_outbox_log_ud")).toHaveLength(1);
+    // Stripe er uafhængig af mailen.
+    expect(kald("email_skift_outbox_trin").map((c) => c[1].p_trin)).toEqual(["stripe"]);
+    expect(m.kundeUpdate).toHaveBeenCalledWith("cus_1", { email: "ny@test.bidhamr.dk" });
     const fejl = kald("email_skift_outbox_fejl");
     expect(fejl).toHaveLength(1);
+    expect(fejl[0][1].p_fejl).toMatch(/^mail til den gamle adresse: /);
     // Ingen e-mailadresser i fejlteksten.
     expect(fejl[0][1].p_fejl).not.toContain("@");
     expect(m.drift).toHaveBeenCalledWith(expect.objectContaining({ hvor: "emailSkift/outbox" }));
+  });
+
+  it("log-ud fejler: mail og Stripe gøres alligevel; flere fejl gemmes samlet én gang", async () => {
+    rpcSvar(
+      { email_skift_outbox_tag: [raekke({ id: "o5" })], email_skift_outbox_trin: true },
+      { email_skift_outbox_log_ud: { code: "42501", message: "permission denied for table sessions" } },
+    );
+    m.kundeUpdate.mockRejectedValueOnce(new Error("Stripe nede")); // logges af synkEmailTilStripe
+    expect(await lib.koerEmailSkiftOutbox()).toEqual({ behandlet: 0, fejl: 1 });
+    expect(m.send).toHaveBeenCalledTimes(1);
+    expect(kald("email_skift_outbox_trin").map((c) => c[1].p_trin)).toEqual(["mail", "stripe"]);
+    const fejl = kald("email_skift_outbox_fejl");
+    expect(fejl).toHaveLength(1);
+    expect(fejl[0][1]).toEqual({ p_id: "o5", p_fejl: expect.stringMatching(/^log ud: 42501 permission denied/) });
+
+    // Et kast i et trin (fx markeringen) stopper heller ikke de andre.
+    vi.clearAllMocks();
+    m.rpc.mockImplementation(async (navn: string, args: Record<string, unknown>) => {
+      if (navn === "email_skift_outbox_tag") return { data: [raekke({ id: "o6" })], error: null };
+      if (navn === "email_skift_outbox_log_ud") return { data: null, error: { code: "XX000", message: "nede" } };
+      if (navn === "email_skift_outbox_trin" && args.p_trin === "mail") throw new Error("netværk");
+      return { data: true, error: null };
+    });
+    m.send.mockResolvedValue({ ok: true });
+    expect(await lib.koerEmailSkiftOutbox()).toEqual({ behandlet: 0, fejl: 1 });
+    expect(kald("email_skift_outbox_trin").map((c) => c[1].p_trin)).toEqual(["mail", "stripe"]);
+    const samlet = String(kald("email_skift_outbox_fejl")[0][1].p_fejl);
+    expect(samlet).toContain("log ud: XX000 nede");
+    expect(samlet).toContain(" | mail til den gamle adresse: netværk");
+  });
+
+  it("advarselsmailen sendes med idempotency key pr. outbox-række", async () => {
+    rpcSvar({ email_skift_outbox_tag: [raekke({ id: "o7", log_ud: true })], email_skift_outbox_trin: true });
+    await lib.koerEmailSkiftOutbox();
+    expect(m.send.mock.calls[0][2]).toEqual({ idempotencyKey: "email-skift-o7" });
+  });
+
+  it("opgivne rækker (12 forsøg) meldes til /admin/drift", async () => {
+    rpcSvar({ email_skift_outbox_opgivne: { antal: 2, ids: ["a", "b"], mangler: { log_ud: 1, mail: 2, stripe: 0 } } });
+    expect(await lib.meldOpgivneEmailSkift()).toEqual({ opgivne: 2 });
+    expect(kald("email_skift_outbox_opgivne")[0][1]).toEqual({ p_graense: 20 });
+    expect(m.drift).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hvor: expect.stringContaining("opgivet"),
+        fejl: expect.stringContaining("2 skift af e-mail er ikke gjort færdige (mangler: log ud 1, mail 2, Stripe 0)"),
+      }),
+    );
+
+    vi.clearAllMocks();
+    rpcSvar({ email_skift_outbox_opgivne: { antal: 0, ids: [], mangler: {} } });
+    expect(await lib.meldOpgivneEmailSkift()).toEqual({ opgivne: 0 });
+    expect(m.drift).not.toHaveBeenCalled();
+
+    rpcSvar({}, { email_skift_outbox_opgivne: { code: "PGRST202", message: "Could not find the function" } });
+    expect(await lib.meldOpgivneEmailSkift()).toBeNull();
+    expect(m.drift).not.toHaveBeenCalled();
+
+    m.rpc.mockRejectedValueOnce(new Error("netværk"));
+    expect(await lib.meldOpgivneEmailSkift()).toEqual({ opgivne: 0 });
+    expect(m.drift).toHaveBeenCalledTimes(1);
   });
 
   it("cron: kun de trin, der mangler; slettet konto får ingen mail; opgivet efter 12 forsøg", async () => {

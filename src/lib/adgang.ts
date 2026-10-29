@@ -31,7 +31,7 @@ import {
 } from "@/lib/rateLimit";
 import { renEmail } from "@/lib/kontoOprettelse";
 import { hentKontoStatus } from "@/lib/kontoStatus";
-import { erKendtEnhed, registrerLogin } from "@/lib/enheder";
+import { loftUndtagelse, markerAdminMfa, registrerLogin } from "@/lib/enheder";
 import { logDriftFejl } from "@/lib/drift";
 import {
   aktivTotpFaktor,
@@ -119,19 +119,29 @@ async function staffMaaLoggeInd(email: string): Promise<StaffOpslag> {
 // Loftet pr. e-mail alene (uden IP) stopper, at mange IP'er gætter løs på
 // samme konto. Men en angriber kunne også bruge det til at spærre en
 // medarbejder ude ved at ramme loftet med forkerte forsøg (PLAN-MOD-
-// LANCERING, "staff kan ikke spærres ude"). Derfor gælder det IKKE fra en
-// kendt enhed for netop den konto (cookien bh_enhed fra et tidligere login
-// på admin-hosten, erKendtEnhed) - dér gælder kun lofterne pr. IP og pr.
-// e-mail+IP. Fra alle andre browsere tælles loftet som før, også for
-// e-mails, der ikke er staff, og svaret er det samme, så hverken tekst
-// eller svartid (MIN_SVARTID_MS) afslører, om e-mailen er staff. Tælles
-// efter opslaget, men for alle uden en kendt enhed.
+// LANCERING, "staff kan ikke spærres ude"). Derfor gælder det IKKE
+//   - fra en kendt enhed for netop den konto: cookien bh_enhed, hvorfra
+//     to-trins-loginet (koden fra app'en) er gennemført på admin-hosten
+//     (loftUndtagelse, 20261102430000). Dér tælles i stedet et loft pr.
+//     enhed (admin_login_enhed / admin_gendan_enhed), så en stjålet cookie
+//     ikke giver ubegrænsede forsøg.
+//   - når chefen har nulstillet loftet for medarbejderen ("Nulstil
+//     login-loft" under Medarbejdere) - udvejen på en ny enhed.
+// Lofterne pr. IP og pr. e-mail+IP gælder altid. Fra alle andre browsere
+// tælles loftet som før, også for e-mails, der ikke er staff, og svaret er
+// det samme, så hverken tekst eller svartid (ADMIN_SVARTID) afslører, om
+// e-mailen er staff. Tælles efter opslaget, men for alle uden undtagelse.
 async function graensePrEmail(
   navn: "admin_login_email" | "admin_gendan_email",
   email: string,
   adgang: StaffOpslag,
 ): Promise<string | null> {
-  if (adgang.kode === "ja" && (await erKendtEnhed(adgang.id))) return null;
+  const undtaget = adgang.kode === "ja" ? await loftUndtagelse(adgang.id) : null;
+  if (undtaget?.kode === "enhed") {
+    const enhed = navn === "admin_login_email" ? "admin_login_enhed" : "admin_gendan_enhed";
+    return graenseFejl(await tjekGraenserLukket([[enhed, undtaget.hash]]));
+  }
+  if (undtaget?.kode === "fritaget") return null;
   return graenseFejl(await tjekGraenserLukket([[navn, email]]));
 }
 
@@ -244,6 +254,8 @@ export async function bekraeftAdminKode(kodeInput: string): Promise<{ ok: true }
     if (svar === "forkert") return { fejl: KODE_FORKERT };
     if (svar !== "ok") return { fejl: GENERISK };
     await nulstilGraense("admin_kode_bruger", user.id);
+    // Enheden er nu kendt for loftet pr. e-mail (kun efter koden fra app'en).
+    await markerAdminMfa(user.id);
 
     // Kun de godkendte faktorer må findes (ukendte slettes, drift-alarm).
     const godkendte = await godkendteFaktorer(user.id);
@@ -438,6 +450,8 @@ export async function bekraeftToTrinOpsaet(
       return { fejl: GENERISK };
     }
 
+    // Den første kode fra den nye app er gennemført her: enheden er kendt.
+    await markerAdminMfa(user.id);
     await sendSikkerhedsmail(user.id, toTrinOpsatMail({ tidspunkt: new Date() }));
     return { ok: true, koder };
   } catch (err) {

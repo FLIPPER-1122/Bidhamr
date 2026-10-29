@@ -20,7 +20,7 @@ I dag viser bidhamr.dk coming soon direkte på forsiden `/` for alle uden adgang
 
 ## Sikkerhed før lancering (sikkerhedsgennemgang 27. okt. 2026)
 - **CAPTCHA og adgangskoder i Supabase:** slå "Prevent use of leaked passwords", CAPTCHA (Cloudflare Turnstile) og lavere rate limits til – se `docs/SIKKERHED-AUTH.md`. **Ikke før appen sender `captchaToken`** (ellers kan appen hverken oprette konti eller logge ind), og Cloudflare skal stå i privatlivspolitikken (advokat nr. 138-139).
-- **Staff kan spærres ude af admin-login:** loftet `admin_login_email` (10 pr. 15 min. pr. e-mail, alle IP'er) kan rammes med vilje af nogen, der kender en staff-e-mail. Skal løses før lancering (fx kun tælle mislykkede forsøg på staff-konti + "kendt enhed"-cookie efter to-trins-login), når gaten på /adgang fjernes.
+- **Staff kan spærres ude af admin-login:** løst i `20261102410000` + `20261102430000` (kør begge på prod). Loftet `admin_login_email` gælder ikke fra en enhed, hvor to-trins-loginet er gennemført på admin-hosten (90 dage, loft pr. enhed i stedet). **Udvejen på en ny enhed:** chefen trykker "Nulstil login-loft" ud for medarbejderen under Admin → Medarbejdere (30 minutter uden loftet pr. e-mail, logges). Se `docs/ADMIN-VAERT.md`, "Spærret ude af login-loftet".
 - **Edge-funktionen `notificer-foelgere`** skal deployes til prod igen (dit ja), lige efter migration 20261102060000 er kørt: `supabase functions deploy notificer-foelgere --project-ref lkifkrexeldimmghnsie --use-api`.
 
 ## Betalingsformularen vises ikke på bidhamr.dk (19. okt. 2026) – tjek Stripe-nøglen i Vercel
@@ -240,3 +240,15 @@ Småt:
 - `bot_indstillinger_log` skal bruge systembrugeren ved ændringer i SQL-editoren
 
 Appen: lås "Send" i botten, mens svaret streames, og håndtér `409 svar_i_gang`.
+
+**Rettet i `20261102430000_huskeliste_oprydning_rettelser.sql` (29. okt. 2026, kørt på test, afventer ny review):** 410000 er uændret (samme udgave som på test). Prod: kør 410000 og derefter 430000.
+1. `kendte_enheder.admin_mfa_kl` sættes kun efter koden fra app'en på admin-hosten (`kendt_enhed_admin_mfa`); kun sådan en enhed (90 dage) slipper uden om loftet pr. e-mail, og dér tælles et loft pr. enhed (`admin_login_enhed`/`admin_gendan_enhed`). Ryddes ved ny adgangskode (trigger på `auth.users`), nulstillet/gendannet to-trins-login (trigger på `staff_to_trin`) og "Log ud andre steder".
+2. Outboxen: tre uafhængige trin, fejlene gemmes samlet. Rettighederne er bekræftet på testdatabasen (i en transaktion, rullet tilbage): `email_skift_outbox_log_ud` sletter i `auth.sessions` og `auth.one_time_tokens` og opdaterer `auth.users`.
+3. **Udvejen:** chefen trykker "Nulstil login-loft" under Admin → Medarbejdere (`staff_login_loft_nulstil`, logges som `login_loft_nulstillet`). Dokumenteret i `docs/ADMIN-VAERT.md` og `docs/SIKKERHED-AUTH.md`.
+4. `email_skift_outbox_opgivne` + `meldOpgivneEmailSkift` i betalings-cron'en melder opgivne rækker til /admin/drift.
+Småt: alt fem er rettet (idempotency keys `email-skift-<id>` og `firma-faktura-<id>`, lås-ejer `p_ejer`, filteret ser på to sætninger efter hinanden, `bot_indstillinger_gem` + systembrugeren ellers).
+
+## Efter review af 430000 (29. okt. 2026), godkendt
+- **Før prod:** test skift af adgangskode og "Glemt adgangskode" på test, når 430000 er kørt. Triggeren på `auth.users` må ikke blokere skiftet.
+- **Senere:** bind chefens "Nulstil login-loft" til medarbejderens enhed, fx med et engangslink til medarbejderens e-mail, der markerer browseren, eller med et ekstra loft pr. konto under fritagelsen. I dag fjerner fritagelsen loftet pr. e-mail for hele kontoen i 30 minutter.
+- Tjek, hvordan Resend håndterer idempotency key efter et fejlet forsøg (500/timeout), og behandl 409 `invalid_idempotent_request` som "måske sendt".

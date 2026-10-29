@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { huskelisteAfsnit } from "./huskelisteAfsnit";
+import { huskelisteAfsnit, rettelseAfsnit } from "./huskelisteAfsnit";
 
 const MIGRATION = readFileSync(
   path.resolve(import.meta.dirname, "../../supabase/migrations/20261102240000_bidhamr_bot.sql"),
@@ -584,5 +584,62 @@ describe("svar_i_gang og log over lofterne (20261102410000)", () => {
     await d.exec(fn.replace("c_maks_bruger   constant integer := 30;", "c_maks_bruger   constant integer := 31;"));
     await expect(d.exec(huskelisteAfsnit("bot"))).rejects.toThrow(/bot_ny_besked.*md5/);
     await d.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 20261102430000 (afsnit "bot"): medarbejderen i loggen er kun den, der
+// gemte via bot_indstillinger_gem (/admin/bot). En direkte ændring (fx i
+// SQL-editoren) logges med systembrugeren - også når opdateret_af står på en
+// medarbejder fra en tidligere ændring.
+// ---------------------------------------------------------------------------
+describe("systembrugeren i loggen over lofterne (20261102430000)", () => {
+  const CHEF = "00000000-0000-4000-8000-0000000000e1";
+  const SYSTEM = "00000000-0000-4000-8000-0000000b1d00";
+  const seneste = async () =>
+    (await db.query<{ medarbejder_id: string; aarsag: string }>(
+      `select medarbejder_id, aarsag from public.moderation_log order by oprettet_kl desc, id desc limit 1`)).rows[0];
+
+  beforeAll(async () => {
+    const afsnit = rettelseAfsnit("bot");
+    await db.exec(afsnit);
+    await db.exec(afsnit); // idempotent
+  });
+
+  it("gemt via bot_indstillinger_gem: chefen står i loggen, og opdateret_af sættes", async () => {
+    await db.exec(`delete from public.moderation_log`);
+    const r = await db.query<{ ok: boolean }>(`select public.bot_indstillinger_gem($1, 7, 0.3, 0.5, 1500) ok`, [CHEF]);
+    expect(r.rows[0].ok).toBe(true);
+    const l = await seneste();
+    expect(l.medarbejder_id).toBe(CHEF);
+    expect(l.aarsag).not.toMatch(/uden for \/admin\/bot/);
+    const ind = (await db.query<{ opdateret_af: string; doegnloft_anon: number }>(
+      `select opdateret_af, doegnloft_anon from public.bot_indstillinger`)).rows[0];
+    expect(ind).toEqual({ opdateret_af: CHEF, doegnloft_anon: 1500 });
+    // Indstillingen gælder kun i kaldet.
+    expect((await db.query<{ v: string | null }>(`select nullif(current_setting('bidhamr.bot_lofter_af', true), '') v`)).rows[0].v).toBeNull();
+  });
+
+  it("direkte ændring uden om /admin/bot: systembrugeren, selv om opdateret_af står på chefen", async () => {
+    await db.exec(`delete from public.moderation_log`);
+    await db.exec(`update public.bot_indstillinger set doegnloft_usd = 9`);
+    const l = await seneste();
+    expect(l.medarbejder_id).toBe(SYSTEM);
+    expect(l.aarsag).toMatch(/ændret uden for \/admin\/bot/);
+    // Også når nogen selv sætter opdateret_af og opdateret_kl.
+    await db.exec(`delete from public.moderation_log`);
+    await db.query(`update public.bot_indstillinger set doegnloft_usd = 10, opdateret_af = $1, opdateret_kl = now()`, [CHEF]);
+    expect((await seneste()).medarbejder_id).toBe(SYSTEM);
+  });
+
+  it("kun service_role må kalde bot_indstillinger_gem", async () => {
+    for (const rolle of ["authenticated", "anon"]) {
+      await db.exec(`set role ${rolle}`);
+      try {
+        await expect(db.query(`select public.bot_indstillinger_gem($1, 1, 0.5, 0.25, 10)`, [CHEF])).rejects.toThrow(/permission denied/);
+      } finally {
+        await db.exec(`reset role`);
+      }
+    }
   });
 });

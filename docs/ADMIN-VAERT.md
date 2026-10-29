@@ -75,6 +75,9 @@ Filips beslutninger 19. okt. 2026 (ROADMAP-BESLUTNINGER.md, "Admin på admin.bid
 
 Rul tilbage: slet `ADMIN_VAERT` (og `ADMIN_LUK_HOVEDDOMAENE`) og redeploy – så er admin på bidhamr.dk/admin igen uden to-trins-login. Tabellerne kan blive liggende.
 
+## Spærret ude af login-loftet ("For mange forsøg")
+Loftet pr. e-mail (10 forsøg pr. 15 min. fra alle IP'er) gælder ikke fra en enhed, hvor medarbejderen har gennemført to-trins-loginet (koden fra app'en) inden for 90 dage. På en **ny enhed** kan en medarbejder blive spærret ude, hvis nogen gætter løs på e-mailen. Udvejen: chefen trykker **"Nulstil login-loft"** ud for medarbejderen under Admin → Medarbejdere (kræver en frisk kode fra chefens app). Tællerne slettes, og loftet pr. e-mail gælder ikke for kontoen i 30 minutter, eller til medarbejderen har gennemført to-trins-loginet. Adgangskoden, koden fra app'en og lofterne pr. IP gælder stadig. Handlingen står i medarbejderloggen. Er det chefen selv: vent op til 15 minutter, eller slet tælleren i SQL Editor: `delete from public.rate_limits where noegle in ('admin_login_email:<e-mail med små bogstaver>', 'admin_gendan_email:<e-mail med små bogstaver>');`
+
 ## Nødudgang: "Låst ude af admin"
 Kan ingen chef komme ind (fx Filip har mistet både telefon og gendannelseskoder), så kør i Supabase → SQL Editor på det rigtige projekt (byt id'et):
 ```sql

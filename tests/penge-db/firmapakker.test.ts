@@ -718,3 +718,39 @@ describe("firmapakker (20261102010000)", () => {
     });
   });
 });
+
+// Nye kvoter (Filip, 29. okt. 2026): Start 20, Butik 40 - 20261102440000.
+const KVOTER = readFileSync(path.join(MIG, "20261102440000_pakke_kvoter.sql"), "utf8");
+
+describe("pakke_kvoter (20261102440000)", () => {
+  beforeAll(async () => {
+    await nyDatabase();
+  });
+
+  const pakker = async () =>
+    (await db.query<{ navn: string; auktioner_pr_maaned: number | null; beskrivelse: string }>(
+      `select navn, auktioner_pr_maaned, beskrivelse from public.erhverv_pakker
+        where id = any($1::uuid[]) order by sortering`,
+      [Object.values(NY)],
+    )).rows;
+
+  it("Start 20, Butik 40, Pro uændret - og to kørsler giver det samme", async () => {
+    await db.exec(KVOTER);
+    await db.exec(KVOTER);
+    const r = await pakker();
+    expect(r.map((p) => [p.navn, p.auktioner_pr_maaned])).toEqual([["Start", 20], ["Butik", 40], ["Pro", null]]);
+    expect(r[0].beskrivelse).toContain("20 auktioner om måneden");
+    expect(r[1].beskrivelse).toContain("Som Start + 40 auktioner om måneden");
+  });
+
+  it("overskriver ikke en kvote eller beskrivelse, chefen selv har sat", async () => {
+    await db.query(`update public.erhverv_pakker set auktioner_pr_maaned = 35, beskrivelse = 'Chefens tekst' where id = $1`, [NY.BUTIK]);
+    await db.exec(KVOTER);
+    expect((await pakker())[1]).toMatchObject({ auktioner_pr_maaned: 35, beskrivelse: "Chefens tekst" });
+  });
+
+  it("kvoten følger pakken med det samme", async () => {
+    const k = await rpc<Record<string, unknown>>(`public.erhverv_kvote($1, false)`, [B.basis]);
+    expect(k.max).toBe(20);
+  });
+});

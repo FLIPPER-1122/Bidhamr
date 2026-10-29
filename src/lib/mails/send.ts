@@ -17,9 +17,12 @@ export async function sendHandelMail(til: string | undefined | null, mail: Mail)
 
 // Som sendHandelMail, men med fejlen (Resends navn og besked - aldrig
 // mailens indhold). Bruges af notifikationerne til /admin/drift.
+// idempotencyKey: Resend sender højst én mail pr. nøgle (inden for 24 timer),
+// så et nyt forsøg efter fx en timeout ikke giver to mails.
 export async function sendHandelMailDetaljer(
   til: string | undefined | null,
   mail: Mail,
+  opts: { idempotencyKey?: string } = {},
 ): Promise<{ ok: true } | { ok: false; fejl: string }> {
   if (!til) return { ok: false, fejl: "Ingen modtager" };
   // Slettede konti har en pladsholder-adresse (konto_slet) - send aldrig dertil.
@@ -30,14 +33,17 @@ export async function sendHandelMailDetaljer(
     return { ok: false, fejl: "RESEND_API_KEY mangler" };
   }
   try {
-    const { error } = await resend.emails.send({
+    const payload = {
       from: HANDEL_AFSENDER,
       to: til,
       subject: mail.subject,
       html: mail.html,
       ...(mail.text ? { text: mail.text } : {}),
       ...(mail.replyTo ? { replyTo: mail.replyTo } : {}),
-    });
+    };
+    const { error } = opts.idempotencyKey
+      ? await resend.emails.send(payload, { idempotencyKey: opts.idempotencyKey })
+      : await resend.emails.send(payload);
     if (error) {
       console.error("Mail fejlede:", error);
       return { ok: false, fejl: `Resend: ${error.name ?? "fejl"}: ${error.message ?? ""}` };

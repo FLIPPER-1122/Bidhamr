@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { FOR_MANGE_FORSOEG, tjekGraenser } from "@/lib/rateLimit";
 import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { skiftAdgangskodeFor } from "@/lib/adgangskodeSkift";
+import { rydAdminMfa } from "@/lib/enheder";
 
 const GENERISK = "Noget gik galt. Prøv igen om lidt.";
 const IKKE_LOGGET_IND = "Du er ikke logget ind længere. Log ind igen.";
@@ -73,6 +74,9 @@ export async function logUdAndreSteder(): Promise<Ok | Fejl> {
     console.error("logUdAndreSteder fejlede:", error.code, error.message);
     return { fejl: GENERISK };
   }
+  // Ingen enhed er længere kendt for admin-loginets loft pr. e-mail
+  // (20261102430000) - den skal igennem to-trins-loginet igen.
+  await rydAdminMfa(bruger.id);
   revalidatePath("/konto");
   return { ok: true };
 }

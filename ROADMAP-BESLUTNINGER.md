@@ -366,9 +366,10 @@ Baggrund og research: `ERHVERV-OVERBLIK.md`. Lovspørgsmålene er sendt til advo
 - **NYE pakker og priser (Filip, 26. okt. 2026 – erstatter Basis/Plus/Pro/Max fra 8. okt.).** Alle priser er faste og **ekskl. moms**. Firmaet betaler aldrig gebyr af sine salg (køber betaler 5 %). En auktion kan være én vare eller en samlet pakke (fx "8 jakker") – den tæller som 1 auktion.
   | Pakke | Auktioner pr. måned | Pris pr. måned ekskl. moms | Indhold |
   |---|---|---|---|
-  | **Start** | 10 | 499 kr. | Firmaprofil og Firma oversigt; salg, udbetalinger og regninger. Ugens butik kan købes til 500 kr./uge ekskl. moms |
-  | **Butik** | 30 | 999 kr. | Som Start + **50 % rabat på Ugens butik de første 3 gange hvert kalenderår** + **5 fremhævede auktioner om måneden** + statistik |
+  | **Start** | 20 | 499 kr. | Firmaprofil og Firma oversigt; salg, udbetalinger og regninger. Ugens butik kan købes til 500 kr./uge ekskl. moms |
+  | **Butik** | 40 | 999 kr. | Som Start + **50 % rabat på Ugens butik de første 3 gange hvert kalenderår** + **5 fremhævede auktioner om måneden** + statistik |
   | **Pro** | Ubegrænset | 1.999 kr. | Som Butik, men **50 % på Ugens butik op til 5 gange hvert kalenderår**, **20 fremhævede auktioner om måneden**, fuld statistik og **fast kontaktperson hos BidHamr** |
+  - **Ændret (Filip, 29. okt. 2026):** Start 20 auktioner om måneden (før 10), Butik 40 (før 30). Pro er uændret.
   - **Kvoten er pr. kalendermåned** (nulstilles den 1., dansk tid) – ikke pr. uge længere. Alle auktioner oprettet i måneden tæller, også annullerede. Bruges kvoten, kan firmaet opgradere med det samme.
   - **Fremhævede auktioner:** ubrugte forsvinder ved månedens udgang (ny kvote den 1.). Fremhævning markeres som annonce.
   - **Rabat på Ugens butik** tælles pr. kalenderår (nulstilles 1. januar).

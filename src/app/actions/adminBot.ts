@@ -4,7 +4,9 @@
 // bot_indstillinger (én række, kun service-role). Databasen tjekker
 // grænserne igen (bot_indstillinger_vaerdier). Hver ændring logges i
 // moderation_log ('bot_lofter_aendret', gamle og nye værdier) af en trigger
-// i samme transaktion (20261102410000) - med opdateret_af som medarbejder.
+// i samme transaktion (20261102410000) - med chefen som medarbejder, når
+// ændringen gemmes her (bot_indstillinger_gem, 20261102430000), og ellers
+// med BidHamr-systembrugeren (fx SQL-editoren).
 
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
@@ -26,13 +28,28 @@ export async function gemBotIndstillinger(formData: FormData): Promise<{ ok: tru
       doegnloft_anon: formData.get("doegnloft_anon"),
     });
     if ("fejl" in v) return v;
-    const { data, error } = await admin
-      .from("bot_indstillinger")
-      .update({ ...v, opdateret_kl: new Date().toISOString(), opdateret_af: userId })
-      .eq("id", true)
-      .select("id");
-    if (error) throw new Error(`bot_indstillinger: ${error.code ?? ""} ${error.message}`);
-    if (!data || data.length === 0) throw new Error("bot_indstillinger: rækken findes ikke");
+    // bot_indstillinger_gem (20261102430000) sætter chefen som medarbejder i
+    // loggen; en ændring uden om den logges med systembrugeren.
+    const { data: gemt, error: gemFejl } = await admin.rpc("bot_indstillinger_gem", {
+      p_af: userId,
+      p_doegnloft_usd: v.doegnloft_usd,
+      p_anon_andel: v.anon_andel,
+      p_bruger_loft_usd: v.bruger_loft_usd,
+      p_doegnloft_anon: v.doegnloft_anon,
+    });
+    if (gemFejl?.code === "PGRST202") {
+      // Migrationen er ikke kørt endnu: som før.
+      const { data, error } = await admin
+        .from("bot_indstillinger")
+        .update({ ...v, opdateret_kl: new Date().toISOString(), opdateret_af: userId })
+        .eq("id", true)
+        .select("id");
+      if (error) throw new Error(`bot_indstillinger: ${error.code ?? ""} ${error.message}`);
+      if (!data || data.length === 0) throw new Error("bot_indstillinger: rækken findes ikke");
+    } else {
+      if (gemFejl) throw new Error(`bot_indstillinger_gem: ${gemFejl.code ?? ""} ${gemFejl.message}`);
+      if (gemt !== true) throw new Error("bot_indstillinger: rækken findes ikke");
+    }
     revalidatePath("/admin/bot");
     return { ok: true };
   } catch (err) {
