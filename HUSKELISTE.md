@@ -247,3 +247,8 @@ Appen: lås "Send" i botten, mens svaret streames, og håndtér `409 svar_i_gang
 3. **Udvejen:** chefen trykker "Nulstil login-loft" under Admin → Medarbejdere (`staff_login_loft_nulstil`, logges som `login_loft_nulstillet`). Dokumenteret i `docs/ADMIN-VAERT.md` og `docs/SIKKERHED-AUTH.md`.
 4. `email_skift_outbox_opgivne` + `meldOpgivneEmailSkift` i betalings-cron'en melder opgivne rækker til /admin/drift.
 Småt: alt fem er rettet (idempotency keys `email-skift-<id>` og `firma-faktura-<id>`, lås-ejer `p_ejer`, filteret ser på to sætninger efter hinanden, `bot_indstillinger_gem` + systembrugeren ellers).
+
+## Efter review af 430000 (29. okt. 2026), godkendt
+- **Før prod:** test skift af adgangskode og "Glemt adgangskode" på test, når 430000 er kørt. Triggeren på `auth.users` må ikke blokere skiftet.
+- **Senere:** bind chefens "Nulstil login-loft" til medarbejderens enhed, fx med et engangslink til medarbejderens e-mail, der markerer browseren, eller med et ekstra loft pr. konto under fritagelsen. I dag fjerner fritagelsen loftet pr. e-mail for hele kontoen i 30 minutter.
+- Tjek, hvordan Resend håndterer idempotency key efter et fejlet forsøg (500/timeout), og behandl 409 `invalid_idempotent_request` som "måske sendt".
