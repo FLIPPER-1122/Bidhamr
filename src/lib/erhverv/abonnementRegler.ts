@@ -322,9 +322,12 @@ export function velkomstSkiftRabat(input: {
 //   ret_rabat: databasen og Stripe er uenige (fx 'aktiv' uden kupon, en
 //              introkupon uden aftale eller en fremmed rabat). Intet trækkes,
 //              og staff skal rette det (drift-alarm). aarsag til alarmen.
+// fraSkiftet (kun ved en introrabat): introrabatten sættes på igen fra
+// skiftet (introFraSkiftet) - siden siger "i N måneder" og ikke den gamle
+// slutdato, og det indgår i visningen (velkomstVisning).
 // Firmaet må aldrig blive trukket et andet beløb end det, siden har vist.
 export type VelkomstSkiftUdfald =
-  | { udfald: "skift"; rabat: VelkomstSkiftRabat; velkomstKupon: boolean }
+  | { udfald: "skift"; rabat: VelkomstSkiftRabat; velkomstKupon: boolean; fraSkiftet?: boolean }
   | { udfald: "venter" }
   | { udfald: "ret_rabat"; aarsag: string };
 
@@ -376,6 +379,7 @@ export function velkomstSkiftUdfald(input: {
       intro: { procent, til: !input.fraSkiftet && k.slutSek != null ? input.dato(k.slutSek) : null, maaneder },
     }),
     velkomstKupon: false,
+    ...(input.fraSkiftet ? { fraSkiftet: true } : {}),
   });
 
   if (aftale.status === "planlagt" && aftale.procent != null && aftale.maaneder != null) {
@@ -435,14 +439,20 @@ export function introFraSkiftet(input: {
 
 // Hvad siden viste for et skift op fra den gratis måned (sendes med skiftet,
 // så serveren kan afvise, hvis rabatten er ændret imens): "velkomst:50",
-// "intro:30", "saerpris:0" - eller "venter"/"ret_rabat", når der ikke blev
-// vist et beløb. Kun beløbet I DAG tæller (slags + procent).
+// "intro:30", "intro:30:skift", "saerpris:0" - eller "venter"/"ret_rabat",
+// når der ikke blev vist et beløb. Beløbet I DAG (slags + procent) og, for en
+// introrabat, om den sættes på igen fra skiftet (":skift" - siden viste "i N
+// måneder" i stedet for den gamle slutdato). Skifter det mellem GET og POST
+// (fx fordi den kørende kupons resterende måneder ændrer sig), afvises
+// skiftet med pris_aendret - firmaet ser den rigtige tekst, før det trykker igen.
 export function velkomstVisning(u: VelkomstSkiftUdfald): string {
-  return u.udfald === "skift" ? `${u.rabat.slags}:${u.rabat.procent}` : u.udfald;
+  if (u.udfald !== "skift") return u.udfald;
+  const skift = u.rabat.slags === "intro" && u.fraSkiftet ? ":skift" : "";
+  return `${u.rabat.slags}:${u.rabat.procent}${skift}`;
 }
 
 export function erVelkomstVisning(v: unknown): v is string {
-  return typeof v === "string" && /^(velkomst:\d{1,3}|intro:\d{1,3}|saerpris:0|venter|ret_rabat)$/.test(v);
+  return typeof v === "string" && /^(velkomst:\d{1,3}|intro:\d{1,3}(:skift)?|saerpris:0|venter|ret_rabat)$/.test(v);
 }
 
 // Beløbet ekskl. og inkl. moms i hele øre (moms 25 %, afrundet til nærmeste

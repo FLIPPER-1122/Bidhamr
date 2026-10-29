@@ -2876,12 +2876,37 @@ async function findVelkomstSkift(f: FirmaRaekke, faktura: Stripe.Invoice): Promi
   return gemt?.length ? { ...skift, stripe_invoice_id: faktura.id } : null;
 }
 
+// Stripe genforsøger en webhook i op til 3 dage (docs.stripe.com/webhooks).
+const SPEJL_IGEN_SEK = 4 * 86_400;
+
 // Betalt faktura fra et skift op i Starts gratis måned: er prisen i Stripe
 // skiftet, gennemføres skiftet (firma_pakkeskift_uden_betaling - selve
 // betalingen registreres bagefter som en almindelig abonnementsbetaling af
 // firma_abonnement_betalt). Ellers refunderes og annulleres det.
-async function betaltVelkomstOpgradering(f: FirmaRaekke, faktura: Stripe.Invoice, skift: SkiftRaekke): Promise<string> {
-  if (skift.status === "gennemfoert") return "velkomst_opgradering:allerede_registreret";
+// Eksporteret til enhedstesten (filen er server-only, ikke en server action).
+export async function betaltVelkomstOpgradering(f: FirmaRaekke, faktura: Stripe.Invoice, skift: SkiftRaekke): Promise<string> {
+  if (skift.status === "gennemfoert") {
+    // Allerede registreret (fx en gentaget invoice.paid, eller en anden
+    // levering kom først og døde før spejlingen): spejl introrabatten igen -
+    // den er idempotent (firma_intro_spejl) og skal ikke afhænge af, hvilken
+    // levering der vandt. Kun inden for Stripes genforsøgsvindue (3 dage +
+    // margen) regnet på Stripes ur (stripeNu - også et test clock), så en
+    // gammel faktura aldrig spejler en senere aftale eller en udløbet rabat.
+    const subId = fakturaensAbonnement(faktura) ?? f.stripe_subscription_id;
+    if (subId) {
+      try {
+        const nu = await stripeNu(await stripe().subscriptions.retrieve(subId));
+        if (nu - faktura.created < SPEJL_IGEN_SEK) await spejlIntroEfterVelkomstSkift(f.id, subId);
+      } catch (err) {
+        await logDriftFejl({
+          kilde: "webhook",
+          hvor: "erhverv/velkomst-intro-spejl",
+          fejl: `Firma ${f.id} (${subId}): introrabatten efter skiftet op fra den gratis måned kunne ikke spejles igen: ${fejltekst(err)}. Tjek introrabatten i Stripe og i admin.`,
+        });
+      }
+    }
+    return "velkomst_opgradering:allerede_registreret";
+  }
   if (skift.status !== "afventer_betaling") {
     await refunderOpgradering(f, skift.id, faktura);
     return `velkomst_opgradering:pris_ikke_skiftet:${skift.status}`;

@@ -121,6 +121,7 @@ const {
   velkomstSkiftForPakke,
   velkomstSkiftVisning,
   spejlIntroEfterVelkomstSkift,
+  betaltVelkomstOpgradering,
 } = await import("@/lib/erhverv/betaling");
 const { skiftPakkeForBruger } = await import("@/lib/erhverv/pakkeskift");
 const { retRabatAlarmNoegle } = await import("@/lib/erhverv/abonnementRegler");
@@ -358,7 +359,7 @@ describe("skift op i den gratis måned: introrabatten i præcis N måneder fra s
     it(`kuponen giver 7 fra nu (${behold ? "med" : "uden"} valget): bidhamr_intro_50_6_skift i samme kald som trial_end 'now' (idempotency key)`, async () => {
       t.firmaer = [firma({ ...aktivIntro, intro_behold_gratis: behold })];
       t.sub = medKupon(200);
-      const r = await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50");
+      const r = await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50:skift");
       expect(r).not.toMatchObject({ status: "fejl" });
       const kald = prisOpdateringer();
       expect(kald).toHaveLength(1);
@@ -389,7 +390,7 @@ describe("skift op i den gratis måned: introrabatten i præcis N måneder fra s
     t.firmaer = [firma({ ...aktivIntro })];
     t.sub = medKupon(200);
     const ny = await velkomstSkiftForPakke(BRUGER, PRO);
-    expect(ny).toMatchObject({ status: "ok", tilbud: { udfald: "skift", visning: "intro:50", rabat: { slags: "intro", til: null, maaneder: 6 } } });
+    expect(ny).toMatchObject({ status: "ok", tilbud: { udfald: "skift", visning: "intro:50:skift", rabat: { slags: "intro", til: null, maaneder: 6 } } });
     if (ny.status === "ok") expect(ny.tilbud?.tekst).toContain("50 % rabat i 6 måneder");
     t.sub = medKupon(170);
     const ligger = await velkomstSkiftForPakke(BRUGER, PRO);
@@ -406,10 +407,39 @@ describe("skift op i den gratis måned: introrabatten i præcis N måneder fra s
     (t.sub.discounts as Raekke[])[0].source = {
       coupon: { id: "bidhamr_intro_50_6_skift", percent_off: 50, metadata: { bidhamr: "intro" } },
     };
-    const r = await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50");
+    const r = await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50:skift");
     expect(r).toMatchObject({ status: "fejl" });
     expect((r as { fejl?: string }).fejl).toMatch(/introkuponen bidhamr_intro_50_6_skift ligger allerede på sub_1/);
     expect(prisOpdateringer()).toEqual([]);
+  });
+
+  // Visningen siger, om kuponen sættes på igen (":skift" - "i N måneder")
+  // eller bliver liggende (Stripes slutdato). Skifter det mellem GET og POST,
+  // har firmaet set en anden tekst: pris_aendret, før noget ændres i Stripe.
+  it("siden viste 'til <dato>' (intro:50), men nu sættes kuponen på igen: pris_aendret - intet ændres", async () => {
+    t.firmaer = [firma({ ...aktivIntro })];
+    t.sub = medKupon(200);
+    const r = await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50");
+    expect(r).toMatchObject({ status: "fejl", intetTrukket: true, afvistKode: "pris_aendret", besked: FIRMA_ABONNEMENT.skiftPrisAendret });
+    expect(stripeFalsk.subscriptions.update).not.toHaveBeenCalled();
+  });
+
+  it("siden viste 'i 6 måneder' (intro:50:skift), men nu bliver kuponen liggende: pris_aendret - intet ændres", async () => {
+    t.firmaer = [firma({ ...aktivIntro })];
+    t.sub = medKupon(170);
+    const r = await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50:skift");
+    expect(r).toMatchObject({ status: "fejl", intetTrukket: true, afvistKode: "pris_aendret", besked: FIRMA_ABONNEMENT.skiftPrisAendret });
+    expect(stripeFalsk.subscriptions.update).not.toHaveBeenCalled();
+  });
+
+  it("appens POST med visningen fra GET'en (intro:50:skift) gennemføres; intro:50 afvises med 409 pris_aendret", async () => {
+    t.pakker = [t.pakker[0], { ...t.pakker[1], maaned1: "halv" }];
+    t.firmaer = [firma({ ...aktivIntro })];
+    t.sub = medKupon(200);
+    const vist = await velkomstSkiftForPakke(BRUGER, PRO);
+    expect(vist).toMatchObject({ status: "ok", tilbud: { visning: "intro:50:skift" } });
+    expect(await skiftPakkeForBruger(BRUGER, PRO, "intro:50")).toEqual({ fejl: FIRMA_ABONNEMENT.skiftPrisAendret, kode: "pris_aendret" });
+    expect(stripeFalsk.subscriptions.update).not.toHaveBeenCalled();
   });
 });
 
@@ -442,6 +472,34 @@ describe("spejlIntroEfterVelkomstSkift: kontrol af slutdato og ingen stille fejl
     });
   const alarmer = () => t.drift.filter((d) => String(d.hvor).startsWith("erhverv/velkomst-intro"));
   const spejlinger = () => t.rpcLog.filter((r) => r.navn === "firma_intro_spejl");
+
+  // En gentaget invoice.paid (eller en anden levering, der vandt og døde før
+  // spejlingen - fx testserverens ældre kode): skiftet er allerede
+  // registreret, men introrabatten spejles igen (idempotent).
+  const betaltSkift = { id: SKIFT, firma_id: FIRMA, til_pakke_id: PRO, type: "opgradering", status: "gennemfoert", stripe_invoice_id: "in_ny" };
+  const skiftFaktura = (created: number) =>
+    ({ id: "in_ny", created, parent: { subscription_details: { subscription: "sub_1" } } }) as unknown as Parameters<
+      typeof betaltVelkomstOpgradering
+    >[1];
+
+  it("allerede registreret: introrabatten spejles igen (idempotent), ingen ny registrering", async () => {
+    t.firmaer = [firma(aktiv)];
+    t.sub = efterSkift();
+    const r = await betaltVelkomstOpgradering(firma(aktiv) as never, skiftFaktura(NU - 3600), betaltSkift);
+    expect(r).toBe("velkomst_opgradering:allerede_registreret");
+    expect(spejlinger()).toHaveLength(1);
+    expect(spejlinger()[0].args).toMatchObject({ p_coupon: "bidhamr_intro_50_6_skift" });
+    expect(t.rpcLog.map((x) => x.navn)).not.toContain("firma_pakkeskift_uden_betaling");
+    expect(alarmer()).toEqual([]);
+  });
+
+  it("allerede registreret, men fakturaen er ældre end Stripes genforsøg (4 dage): intet spejles", async () => {
+    t.firmaer = [firma(aktiv)];
+    t.sub = efterSkift();
+    const r = await betaltVelkomstOpgradering(firma(aktiv) as never, skiftFaktura(NU - 5 * 86_400), betaltSkift);
+    expect(r).toBe("velkomst_opgradering:allerede_registreret");
+    expect(spejlinger()).toEqual([]);
+  });
 
   it("passer (6 fra skiftet): spejler kupon og slutdato, ingen alarm", async () => {
     t.firmaer = [firma(aktiv)];

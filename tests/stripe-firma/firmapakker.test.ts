@@ -1578,7 +1578,9 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
     expect((await stripe.subscriptions.retrieve(subId)).status).toBe("trialing");
     expect(await beloeb()).toEqual([]);
 
-    // Appens GET viser nu 30 % (rabattens slutdato fra Stripe) - og det beløb trækkes.
+    // Appens GET viser nu 30 % (rabattens slutdato fra Stripe) - og det beløb
+    // trækkes. Kuponen giver præcis 3 fra skiftet, så den bliver liggende
+    // (ingen ":skift" i visningen).
     const vist = await velkomstSkiftForPakke(brugerId, PRO);
     expect(vist).toMatchObject({
       status: "ok",
@@ -1586,6 +1588,10 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
     });
     if (vist.status === "ok") expect(vist.tilbud?.rabat).toMatchObject({ til: expect.stringMatching(/^\d{1,2}\. \S+ \d{4}$/) });
 
+    await nulstilSkiftGraense();
+    // En side, der påstår, at kuponen sættes på igen (":skift"), afvises.
+    expect(await skiftPakkeForBruger(brugerId, PRO, "intro:30:skift")).toEqual({ fejl: FIRMA_ABONNEMENT.skiftPrisAendret, kode: "pris_aendret" });
+    expect(await beloeb()).toEqual([]);
     await nulstilSkiftGraense();
     expect(await skiftPakkeForBruger(brugerId, PRO, "intro:30")).toMatchObject({ ok: true, kode: "opgraderet" });
     {
@@ -1703,7 +1709,11 @@ describe("rettelser til reglen for måned 1 (20261102150000)", () => {
 
     // Nu med den viste pris (30 %): Butik til 70 % i dag.
     await nulstilSkiftGraense();
-    expect(await skiftPakkeForBruger(brugerId, BUTIK, "intro:30")).toMatchObject({ ok: true, kode: "opgraderet" });
+    const vistButik = await velkomstSkiftForPakke(brugerId, BUTIK);
+    expect(vistButik).toMatchObject({ status: "ok", tilbud: { udfald: "skift", rabat: { slags: "intro", procent: 30 } } });
+    const visningButik = vistButik.status === "ok" ? vistButik.tilbud!.visning : "";
+    expect(visningButik).toMatch(/^intro:30(:skift)?$/);
+    expect(await skiftPakkeForBruger(brugerId, BUTIK, visningButik)).toMatchObject({ ok: true, kode: "opgraderet" });
     expect((await stripe.subscriptions.retrieve(subId)).status).toBe("active");
     expect(await betalt()).toEqual([Math.round(BUTIK_OERE * 0.7)]);
     expect(await firma()).toMatchObject({ pakke_id: BUTIK });
