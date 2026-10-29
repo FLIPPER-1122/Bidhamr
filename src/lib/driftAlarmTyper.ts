@@ -34,6 +34,7 @@ const SIDE = {
   dac7: { sti: "/admin/dac7", tekst: "Åbn DAC7" },
   erhverv: { sti: "/admin/erhverv", tekst: "Åbn erhverv" },
   auktioner: { sti: "/admin/auktioner", tekst: "Åbn auktioner" },
+  founders: { sti: "/admin/brugere/founders", tekst: "Åbn seller founders" },
 } as const;
 
 const STRIPE_TILSTAND_TEKST = {
@@ -519,6 +520,21 @@ export const ALARM_TYPER: Record<string, AlarmType> = {
 
 // Grupper af koder, der ikke står enkeltvis ovenfor.
 const PRAEFIKS: { praefiks: string; type: AlarmType }[] = [
+  // Seller founders (20261102460000, src/lib/betaling/founderAlarm.ts). Gul -
+  // som præfiks og ikke i ALARM_TYPER, så databasens lister
+  // (drift_alarm_er_roed) ikke skal ændres: ukendte "founder/"-koder er gule
+  // dér også.
+  {
+    praefiks: "founder/falske-handler",
+    type: {
+      titel: "Mulige falske handler hos en seller founder",
+      betyder: "Samme køber har mindst 3 betalte handler hos samme seller founder inden for 30 dage. Founderen betaler 0 kr. eller halvt gebyr, så falske handler koster BidHamr penge.",
+      goer: "Se handlerne på founderens side, og stop aftalen, hvis handlerne ikke er ægte.",
+      alvor: "gul",
+      side: SIDE.founders,
+      emne: emneAntal("mulig falsk handel", "mulige falske handler", "hos seller founders"),
+    },
+  },
   {
     praefiks: "Pengeafstemning",
     type: { ...ALARM_TYPER["betaling/afstemning"] },

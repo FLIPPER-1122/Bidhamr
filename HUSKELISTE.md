@@ -252,3 +252,7 @@ Småt: alt fem er rettet (idempotency keys `email-skift-<id>` og `firma-faktura-
 - **Før prod:** test skift af adgangskode og "Glemt adgangskode" på test, når 430000 er kørt. Triggeren på `auth.users` må ikke blokere skiftet.
 - **Senere:** bind chefens "Nulstil login-loft" til medarbejderens enhed, fx med et engangslink til medarbejderens e-mail, der markerer browseren, eller med et ekstra loft pr. konto under fritagelsen. I dag fjerner fritagelsen loftet pr. e-mail for hele kontoen i 30 minutter.
 - Tjek, hvordan Resend håndterer idempotency key efter et fejlet forsøg (500/timeout), og behandl 409 `invalid_idempotent_request` som "måske sendt".
+
+## Seller founder – småt efter review (29. okt. 2026)
+- `founderAlarm.ts`: markér alarmrækken som "alarmeret", først når drift-alarmen er givet. Så går en alarm ikke tabt i 30 dage, hvis `logDriftFejl` fejler.
+- Overvej på sigt et loft eller en alarm for founderens samlede gratis omsætning, fordi skinhandler fordelt på mange købere ikke fanges af alarmen pr. par.
