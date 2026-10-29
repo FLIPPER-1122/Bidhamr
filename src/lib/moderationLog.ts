@@ -142,6 +142,9 @@ export const HANDLING_NAVNE: Record<string, string> = {
   ugens_butik_loft_omgaaet: "Omgik loftet for Ugens butik (4 uger i træk)",
   // 20261102410000_huskeliste_oprydning.sql (gamle og nye værdier i årsagen).
   bot_lofter_aendret: "Ændrede lofterne for BidHamr-bot",
+  // 20261102430000_huskeliste_oprydning_rettelser.sql (chefens udvej, hvis en
+  // medarbejder er spærret ude af admin-loginets loft pr. e-mail).
+  login_loft_nulstillet: "Nulstillede login-loftet for en medarbejder",
   // 20261029020000_ekstra_fragt.sql (sælgerens indsigelse og betaling logges
   // med systembrugeren som afsender).
   ekstra_fragt_oprettet: "Oprettede ekstraregning for fragt (for lille pakke)",

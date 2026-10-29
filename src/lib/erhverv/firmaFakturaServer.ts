@@ -1,5 +1,5 @@
 import "server-only";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getResend } from "@/lib/resend";
 import { logDriftFejl } from "@/lib/drift";
@@ -166,14 +166,17 @@ type MailUdfald = "sendt" | "fejl" | "i_gang";
 // Som sendFakturaMail, men "i_gang", hvis et andet forsøg sender mailen
 // lige nu (to samtidige tryk på "Send mailen igen"). Låsen tages under
 // rækkelåsen på fakturaen (firma_faktura_mail_tag, 20261102410000) og
-// slippes, når forsøget er slut (ellers efter 5 minutter).
+// slippes, når forsøget er slut (ellers efter 5 minutter). Låsen har en ejer
+// (et tilfældigt id pr. forsøg, 20261102430000): kun det forsøg, der tog
+// den, kan slippe den - også hvis den er udløbet og taget af et nyt forsøg.
 export async function sendFakturaMailLaast(r: SendtRaekke): Promise<MailUdfald> {
   const d = r.data;
   if (!d || r.status !== "sendt") return "fejl";
   // Mailen sendes højst én gang (ingen dobbelt-mail ved "Send mailen igen").
   if (r.mail_sendt_kl) return "sendt";
   const admin = createAdminClient();
-  const { data: laast, error: laasFejl } = await admin.rpc("firma_faktura_mail_tag", { p_id: r.id });
+  const ejer = randomUUID();
+  const { data: laast, error: laasFejl } = await admin.rpc("firma_faktura_mail_tag", { p_id: r.id, p_ejer: ejer });
   // Migrationen er ikke kørt: som før (uden lås).
   const udenLaas = laasFejl?.code === "PGRST202" || laasFejl?.code === "42883";
   if (laasFejl && !udenLaas) {
@@ -189,7 +192,7 @@ export async function sendFakturaMailLaast(r: SendtRaekke): Promise<MailUdfald> 
     return (await sendFakturaMailNu(admin, r, d)) ? "sendt" : "fejl";
   } finally {
     if (!udenLaas) {
-      const { error } = await admin.rpc("firma_faktura_mail_frigiv", { p_id: r.id });
+      const { error } = await admin.rpc("firma_faktura_mail_frigiv", { p_id: r.id, p_ejer: ejer });
       if (error) await logDriftFejl({ kilde: "server", hvor: "firma_faktura_mail_frigiv", fejl: error });
     }
   }
@@ -218,15 +221,21 @@ async function sendFakturaMailNu(
       return false;
     }
     const mail = fakturaMail(d);
-    const { error } = await resend.emails.send({
-      from: afsender(d.saelger.firmanavn),
-      to: til,
-      ...(svar ? { replyTo: svar, bcc: svar } : {}),
-      subject: mail.subject,
-      html: mail.html,
-      text: mail.text,
-      attachments: [{ filename: pdfFilnavn(d), content: Buffer.from(pdf) }],
-    });
+    // Idempotency key pr. faktura (Resend, 24 timer): er mailen sendt, men
+    // svaret eller markeringen gik tabt (timeout), sender et nyt forsøg den
+    // ikke igen. Mailen sendes alligevel højst én gang (mail_sendt_kl).
+    const { error } = await resend.emails.send(
+      {
+        from: afsender(d.saelger.firmanavn),
+        to: til,
+        ...(svar ? { replyTo: svar, bcc: svar } : {}),
+        subject: mail.subject,
+        html: mail.html,
+        text: mail.text,
+        attachments: [{ filename: pdfFilnavn(d), content: Buffer.from(pdf) }],
+      },
+      { idempotencyKey: `firma-faktura-${r.id}` },
+    );
     if (error) {
       await gem(false, `Resend: ${error.name ?? "fejl"}: ${error.message ?? ""}`);
       return false;

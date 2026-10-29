@@ -255,6 +255,8 @@ via en stjålet session).
    Fra `20261102410000`: log-ud af andre enheder, mailen til den gamle adresse og Stripe sker via en outbox i
    databasen (oprettet i samme transaktion som skiftet). Dør serveren midt i skiftet, gør cron'en resten inden for
    ca. 5 minutter. Appens egen session (fra Bearer-tokenet) logges ikke ud - intet at ændre i appen.
+   Fra `20261102430000`: de tre trin kører uafhængigt af hinanden (en fejl i mailen stopper ikke log-ud eller
+   Stripe), og rækker, der er opgivet efter 12 forsøg, meldes til /admin/drift ved hver cron-kørsel.
 
 Grænser: `konto_app_ip`, `adgangskode_bruger` (deles med skift af adgangskode og sletning), `email_skift_bruger`
 (5/time), `email_skift_ny_email` (3/time pr. ny adresse - tælles først efter en rigtig adgangskode) og

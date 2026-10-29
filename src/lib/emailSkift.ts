@@ -388,46 +388,112 @@ export async function koerEmailSkiftOutbox(
   let behandlet = 0;
   let fejl = 0;
   for (const r of raekker) {
-    try {
-      if (!r.log_ud) {
-        const { error: udFejl } = await admin.rpc("email_skift_outbox_log_ud", { p_id: r.id });
-        if (udFejl) throw new Error(`log ud: ${udFejl.code ?? ""} ${udFejl.message}`);
+    // De tre trin er uafhængige (review af 20261102410000): hvert har sin
+    // egen try/catch, så fx en Resend-fejl ikke forhindrer log-ud eller
+    // Stripe. Fejlene samles og gemmes på rækken bagefter.
+    const trinFejl: string[] = [];
+    const trin = async (navn: string, fn: () => Promise<void>) => {
+      try {
+        await fn();
+      } catch (err) {
+        trinFejl.push(`${navn}: ${err instanceof Error ? err.message : String(err)}`);
       }
-      if (!r.mail) {
+    };
+    const marker = async (t: "mail" | "stripe") => {
+      const { error: markFejl } = await admin.rpc("email_skift_outbox_trin", { p_id: r.id, p_trin: t });
+      if (markFejl) throw new Error(`markering fejlede: ${markFejl.code ?? ""} ${markFejl.message}`);
+    };
+
+    if (!r.log_ud) {
+      await trin("log ud", async () => {
+        const { error: udFejl } = await admin.rpc("email_skift_outbox_log_ud", { p_id: r.id });
+        if (udFejl) throw new Error(`${udFejl.code ?? ""} ${udFejl.message}`);
+      });
+    }
+    if (!r.mail) {
+      await trin("mail til den gamle adresse", async () => {
         const gammel = r.gammel_email;
         // Slettet konto (adresserne er fjernet) eller pladsholder: ingen mail.
         if (gammel && r.ny_email && !gammel.endsWith(".invalid")) {
           const tidspunkt = r.skiftet_kl ? new Date(r.skiftet_kl) : new Date();
-          const res = await sendHandelMailDetaljer(gammel, emailAendretMail({ tidspunkt, nyEmail: r.ny_email }));
-          if (!res.ok) throw new Error(`mail til den gamle adresse: ${String(res.fejl)}`);
+          // Samme nøgle ved hvert forsøg: er mailen sendt, men markeringen
+          // fejlede, sender Resend den ikke igen.
+          const res = await sendHandelMailDetaljer(gammel, emailAendretMail({ tidspunkt, nyEmail: r.ny_email }), {
+            idempotencyKey: `email-skift-${r.id}`,
+          });
+          if (!res.ok) throw new Error(String(res.fejl));
         }
-        const { error: trinFejl } = await admin.rpc("email_skift_outbox_trin", { p_id: r.id, p_trin: "mail" });
-        if (trinFejl) throw new Error(`mail markeret: ${trinFejl.message}`);
-      }
-      if (!r.stripe) {
-        // synkEmailTilStripe logger selv sine fejl og stopper ikke skiftet.
-        if (r.ny_email && !r.ny_email.endsWith(".invalid")) await synkEmailTilStripe(r.bruger_id, r.ny_email);
-        const { error: trinFejl } = await admin.rpc("email_skift_outbox_trin", { p_id: r.id, p_trin: "stripe" });
-        if (trinFejl) throw new Error(`Stripe markeret: ${trinFejl.message}`);
-      }
-      behandlet++;
-    } catch (err) {
-      fejl++;
-      const tekst = skjulEmail(err instanceof Error ? err.message : String(err));
-      const { error: gemFejl } = await admin.rpc("email_skift_outbox_fejl", { p_id: r.id, p_fejl: tekst });
-      if (gemFejl) console.error("email_skift_outbox_fejl fejlede:", gemFejl.message);
-      await logDriftFejl({
-        kilde: "server",
-        hvor:
-          r.forsoeg >= EMAIL_SKIFT_OUTBOX_MAKS_FORSOEG
-            ? "emailSkift/outbox (opgivet efter 12 forsøg - log brugeren ud og send mailen manuelt)"
-            : "emailSkift/outbox",
-        fejl: tekst,
-        brugerId: r.bruger_id,
+        await marker("mail");
       });
     }
+    if (!r.stripe) {
+      await trin("Stripe", async () => {
+        // synkEmailTilStripe logger selv sine fejl og stopper ikke skiftet.
+        if (r.ny_email && !r.ny_email.endsWith(".invalid")) await synkEmailTilStripe(r.bruger_id, r.ny_email);
+        await marker("stripe");
+      });
+    }
+
+    if (trinFejl.length === 0) {
+      behandlet++;
+      continue;
+    }
+    fejl++;
+    const tekst = skjulEmail(trinFejl.join(" | ")).slice(0, 1000);
+    try {
+      const { error: gemFejl } = await admin.rpc("email_skift_outbox_fejl", { p_id: r.id, p_fejl: tekst });
+      if (gemFejl) console.error("email_skift_outbox_fejl fejlede:", gemFejl.message);
+    } catch (err) {
+      console.error("email_skift_outbox_fejl kastede:", err);
+    }
+    await logDriftFejl({
+      kilde: "server",
+      hvor:
+        r.forsoeg >= EMAIL_SKIFT_OUTBOX_MAKS_FORSOEG
+          ? "emailSkift/outbox (opgivet efter 12 forsøg - log brugeren ud og send mailen manuelt)"
+          : "emailSkift/outbox",
+      fejl: tekst,
+      brugerId: r.bruger_id,
+    });
   }
   return { behandlet, fejl };
+}
+
+// Opgivne rækker (12 forsøg uden at blive færdige - email_skift_outbox_tag
+// tager dem ikke mere) meldes til /admin/drift ved hver kørsel af
+// betalings-cron'en, til nogen har gjort resten manuelt (log brugeren ud,
+// send advarslen, ret Stripe) og sat udfoert_kl. Se docs/SIKKERHED-AUTH.md.
+// null = migrationen 20261102430000 er ikke kørt. Kaster aldrig.
+export async function meldOpgivneEmailSkift(): Promise<{ opgivne: number } | null> {
+  try {
+    const { data, error } = await createAdminClient().rpc("email_skift_outbox_opgivne", { p_graense: 20 });
+    if (error) {
+      if (manglerMigration(error)) return null;
+      await logDriftFejl({ kilde: "server", hvor: "emailSkift/outbox_opgivne", fejl: error });
+      return { opgivne: 0 };
+    }
+    const svar = (data ?? {}) as {
+      antal?: number;
+      mangler?: { log_ud?: number; mail?: number; stripe?: number };
+    };
+    const antal = Number(svar.antal ?? 0);
+    if (antal > 0) {
+      const m = svar.mangler ?? {};
+      // Ingen id'er i teksten (drift-loggen renser talrækker som telefonnumre);
+      // rækkerne findes med forespørgslen herunder.
+      await logDriftFejl({
+        kilde: "server",
+        hvor: "emailSkift/outbox opgivet (12 forsøg) - gør resten manuelt",
+        fejl:
+          `${antal} skift af e-mail er ikke gjort færdige (mangler: log ud ${m.log_ud ?? 0}, mail ${m.mail ?? 0}, Stripe ${m.stripe ?? 0}). ` +
+          "Find dem med: select * from email_skift_outbox where forsoeg >= 12 and udfoert_kl is null",
+      });
+    }
+    return { opgivne: antal };
+  } catch (err) {
+    await logDriftFejl({ kilde: "server", hvor: "emailSkift/outbox_opgivne", fejl: err });
+    return { opgivne: 0 };
+  }
 }
 
 // Den private Stripe-kunde (kvitteringer, gemt kort) får den nye adresse.

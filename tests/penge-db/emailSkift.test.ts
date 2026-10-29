@@ -14,7 +14,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { huskelisteAfsnit } from "./huskelisteAfsnit";
+import { huskelisteAfsnit, rettelseAfsnit } from "./huskelisteAfsnit";
 
 const MIGRATION = readFileSync(
   path.resolve(import.meta.dirname, "../../supabase/migrations/20261102120000_skift_email.sql"),
@@ -493,6 +493,80 @@ describe("outbox efter skiftet (20261102410000)", () => {
     await d.exec(RETTELSER);
     await d.exec(`create or replace function public.auth_users_email_spejl() returns trigger language plpgsql as $$ begin return new; end $$;`);
     await expect(d.exec(huskelisteAfsnit("email"))).rejects.toThrow(/auth_users_email_spejl.*md5/);
+    await d.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 20261102430000 (afsnit "email"): coalesce(created_at, '-infinity') i
+// log-ud og opgivne rækker til /admin/drift.
+// ---------------------------------------------------------------------------
+describe("outbox-rettelser (20261102430000)", () => {
+  const TRE = "00000000-0000-4000-8000-0000000000b3";
+  const opgivne = async () => (await en<{ v: Record<string, unknown> }>(`select public.email_skift_outbox_opgivne() v`)).v;
+
+  beforeAll(async () => {
+    // Supabase Auth kan have rækker uden tidspunkt.
+    await db.exec(`alter table auth.sessions alter column created_at drop not null;
+      alter table auth.one_time_tokens alter column created_at drop not null;`);
+    const afsnit = rettelseAfsnit("email");
+    await db.exec(afsnit);
+    await db.exec(afsnit); // idempotent
+    await db.query(`insert into auth.users (id, email) values ($1, 'tre@test.dk')`, [TRE]);
+    await db.query(`insert into public.users (id, email) values ($1, 'tre@test.dk')`, [TRE]);
+  });
+
+  it("sessioner og tokens uden created_at regnes for at være fra før skiftet og ryddes", async () => {
+    await db.query(`insert into auth.sessions (id, user_id, created_at) values (gen_random_uuid(), $1, null), (gen_random_uuid(), $1, null)`, [TRE]);
+    expect((await anmod(TRE, "tre-ny@test.dk", "400400")).kode).toBe("ok");
+    const ok = await tjek(TRE, "400400");
+    await db.query(`select public.email_skift_behold_session($1, $2, null)`, [ok.id, TRE]);
+    await db.query(`update auth.users set email = 'tre-ny@test.dk' where id = $1`, [TRE]);
+    // Supabase Auth skriver en gammel token tilbage efter skiftet - uden tidspunkt.
+    await db.query(
+      `insert into auth.one_time_tokens (user_id, token_type, token_hash, relates_to, created_at) values ($1, 'recovery_token', 'x', 'tre@test.dk', null)`,
+      [TRE]);
+    await db.query(`update auth.users set recovery_token = 'gammel', recovery_sent_at = null where id = $1`, [TRE]);
+    const [r] = (await en<{ v: Record<string, unknown>[] }>(`select public.email_skift_outbox_tag($1) v`, [ok.id])).v;
+    const ud = await en<{ v: Record<string, unknown> }>(`select public.email_skift_outbox_log_ud($1) v`, [r.id]);
+    expect(ud.v).toEqual({ kode: "ok", sessioner: 2, tokens: 2 });
+    expect(Number((await en<{ n: number }>(`select count(*)::int n from auth.sessions where user_id = $1`, [TRE])).n)).toBe(0);
+    expect((await en<{ recovery_token: string }>(`select recovery_token from auth.users where id = $1`, [TRE])).recovery_token).toBe("");
+  });
+
+  it("opgivne rækker: forsoeg >= 12 og ikke udført - med hvad der mangler", async () => {
+    const foer = await opgivne();
+    const o = await en<{ id: string }>(
+      `select x.id from public.email_skift_outbox x join public.email_skift s on s.id = x.email_skift_id where s.bruger_id = $1`, [TRE]);
+    await db.query(`update public.email_skift_outbox set forsoeg = 12 where id = $1`, [o.id]);
+    const efter = await opgivne();
+    expect(Number(efter.antal)).toBe(Number(foer.antal) + 1);
+    expect(efter.ids).toContain(o.id);
+    expect((efter.mangler as Record<string, number>).mail).toBe(Number((foer.mangler as Record<string, number>).mail) + 1);
+    // Gjort færdig manuelt: ikke længere opgivet.
+    await db.query(`update public.email_skift_outbox set udfoert_kl = now() where id = $1`, [o.id]);
+    expect(Number((await opgivne()).antal)).toBe(Number(foer.antal));
+    // 11 forsøg er ikke opgivet endnu.
+    await db.query(`update public.email_skift_outbox set udfoert_kl = null, forsoeg = 11 where id = $1`, [o.id]);
+    expect((await opgivne()).ids).not.toContain(o.id);
+  });
+
+  it("kun service_role", async () => {
+    for (const rolle of ["authenticated", "anon"]) {
+      await db.exec(`set role ${rolle}`);
+      try {
+        await expect(db.query(`select public.email_skift_outbox_opgivne()`)).rejects.toThrow(/permission denied/);
+        await expect(db.query(`select public.email_skift_outbox_log_ud($1)`, [TRE])).rejects.toThrow(/permission denied/);
+      } finally {
+        await db.exec(`reset role`);
+      }
+    }
+  });
+
+  it("410000 mangler: afsnittet stopper med en tydelig fejl", async () => {
+    const d = new PGlite();
+    await d.exec(STUB);
+    await expect(d.exec(rettelseAfsnit("email"))).rejects.toThrow(/kør 20261102410000 først/);
     await d.close();
   });
 });

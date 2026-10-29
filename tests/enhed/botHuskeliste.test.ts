@@ -5,7 +5,7 @@
 //   - skønnet pr. runde hævet til 60.000 input-tokens og advarslen på
 //     /admin/bot, når ét svar kan koste mere end loftet pr. bruger
 import { describe, expect, it } from "vitest";
-import { APP_ERSTATNING, appSikkerTekst, erForbudtIApp, lavAppFilter, lavOrdFilter } from "@/lib/bot/filter";
+import { APP_ERSTATNING, appSikkerTekst, erForbudtIApp, erForbudtPar, lavAppFilter, lavOrdFilter } from "@/lib/bot/filter";
 import { BOT_SKOEN_INPUT_PR_RUNDE, botMaksPrisUsd, botSvarOverBrugerLoft, loftFejl } from "@/lib/bot/konfig";
 import { botSystemprompt } from "@/lib/bot/viden";
 
@@ -68,6 +68,34 @@ describe("App Store-reglen: filteret", () => {
     for (const bid of ["Din forsik", "ring hedder ", "BidHamr Beskyttelse. Point koster ", "10 kr. på web."]) ud += app.skub(ord.skub(bid));
     ud += app.skub(ord.toem()) + app.toem();
     expect(ud).toBe(`Din BidHamr Beskyttelse hedder BidHamr Beskyttelse. ${APP_ERSTATNING}`);
+  });
+
+  it("hele svaret: point/boost og pris eller hjemmeside i to sætninger efter hinanden fanges også", () => {
+    expect(erForbudtPar("Vil du have flere point?", "Gå ind på bidhamr.dk.")).toBe(true);
+    expect(erForbudtPar("Det er nemt på hjemmesiden.", "Der kan du købe boost.")).toBe(true);
+    expect(erForbudtPar("Pakken med 100 point.", "Den koster 49 kr.")).toBe(true);
+    expect(erForbudtPar("", "Gå ind på bidhamr.dk.")).toBe(false);
+    expect(erForbudtPar("Boost gør din auktion synlig.", "Spørg endelig igen.")).toBe(false);
+
+    expect(appSikkerTekst("Vil du have flere point? Gå ind på bidhamr.dk. Spørg endelig igen.")).toBe(
+      `Vil du have flere point? ${APP_ERSTATNING} Spørg endelig igen.`,
+    );
+    expect(appSikkerTekst("Det er billigst på hjemmesiden. Der kan du købe boost. God dag.")).toBe(
+      `Det er billigst på hjemmesiden. ${APP_ERSTATNING} God dag.`,
+    );
+    // Over et linjeskift og i små bidder.
+    const tekst = "Point får du sådan her:\nGå ind på www.bidhamr.dk.\nGod dag.";
+    for (const stoerrelse of [1, 4, 50]) {
+      const f = lavAppFilter();
+      let ud = "";
+      for (let i = 0; i < tekst.length; i += stoerrelse) ud += f.skub(tekst.slice(i, i + stoerrelse));
+      ud += f.toem();
+      expect(ud, `bidder på ${stoerrelse}`).toBe(`Point får du sådan her:\n${APP_ERSTATNING}\nGod dag.`);
+    }
+    // Kun to sætninger efter hinanden - ikke langt fra hinanden.
+    expect(appSikkerTekst("Du har 120 point. Mine handler viser dine køb. Læs mere på hjemmesiden.")).toBe(
+      "Du har 120 point. Mine handler viser dine køb. Læs mere på hjemmesiden.",
+    );
   });
 
   it("systemprompten forbyder køb af point uden for appen og pointpriser", () => {

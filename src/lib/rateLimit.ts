@@ -247,10 +247,16 @@ export const GRAENSER = {
   admin_login_email_ip: { maks: 5, vindueSek: 15 * 60 },
   // Pr. e-mail alene (uden IP), så mange IP'er ikke kan gætte løs på samme
   // konto. Tælles for alle e-mails (også dem, der ikke er staff), men IKKE
-  // fra en kendt enhed for netop den medarbejder (bh_enhed), så en angriber
-  // ikke kan spærre en medarbejder ude (src/lib/adgang.ts, graensePrEmail).
-  // Nulstilles ikke ved succes. Samme for admin_gendan_email.
+  // fra en kendt enhed for netop den medarbejder (bh_enhed, hvorfra
+  // to-trins-loginet er gennemført på admin-hosten) eller efter chefens
+  // "Nulstil login-loft", så en angriber ikke kan spærre en medarbejder ude
+  // (src/lib/adgang.ts, graensePrEmail). Nulstilles ikke ved succes. Samme
+  // for admin_gendan_email.
   admin_login_email: { maks: 10, vindueSek: 15 * 60 },
+  // Fra en kendt enhed tælles i stedet et loft pr. enhed (hash af bh_enhed),
+  // så en stjålet cookie ikke giver ubegrænsede forsøg.
+  admin_login_enhed: { maks: 10, vindueSek: 15 * 60 },
+  admin_gendan_enhed: { maks: 5, vindueSek: 60 * 60 },
   admin_kode_bruger: { maks: 5, vindueSek: 15 * 60 },
   admin_kode_ip: { maks: 30, vindueSek: 15 * 60 },
   admin_opsaet_bruger: { maks: 10, vindueSek: 60 * 60 },
