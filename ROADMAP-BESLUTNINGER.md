@@ -675,3 +675,15 @@ Erstatter "Firmaet sender selv fakturaen på varen fra sit eget regnskabsprogram
   - **"Til politiet"** er den fulde udgave med MitID-verificering (navn og fødselsdato), e-mail og log. Den udleveres kun til politiet, når de beder om det, eller når BidHamr selv anmelder. Kun chefen kan lave den.
 - Hver udlevering logges (hvem, hvornår, hvilken udgave, til hvem).
 - Skal bekræftes af advokaten (jura/noter-til-advokat.md).
+
+## Seller founder (Filip, 29. okt. 2026)
+- **Hvad det er:** en "seller founder" er en privat sælger, som Filip har lavet en aftale med om at sætte mange varer til salg.
+- **Kun private:** firmaer kan ikke være founder.
+- **Kun chefen** kan gøre en bruger til founder i admin. Chefen sætter en startdato, som er aftalens dato, og kan stoppe aftalen igen. Det logges.
+- **Gebyrer på founderens salg:**
+  - Måned 1-6 fra startdatoen: **0 kr. i både købergebyr og sælgergebyr**.
+  - Derefter: **50 % af begge gebyrer for altid**, så længe aftalen ikke stoppes.
+- **Hvornår gebyret låses:** gebyret fastsættes, når betalingen oprettes, og låses på betalingen ligesom prismodellen. Senere ændringer i aftalen påvirker ikke handler, der allerede er betalt.
+- **BidHamr Beskyttelse** gælder uændret for køberne. Ved 0 kr. i gebyr laves der ingen gebyrfaktura.
+- **Mærke:** profilen og founderens auktioner viser et lille mærke **"Founding seller"**.
+- **Fragt** betales som normalt.
