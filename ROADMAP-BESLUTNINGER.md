@@ -688,3 +688,8 @@ Erstatter "Firmaet sender selv fakturaen på varen fra sit eget regnskabsprogram
 - **BidHamr Beskyttelse** gælder uændret for køberne. Ved 0 kr. i gebyr laves der ingen gebyrfaktura.
 - **Mærke:** profilen og founderens auktioner viser et lille mærke **"Founding seller"**.
 - **Fragt** betales som normalt.
+- **Founderens gratis handler (Filip, 29. okt. 2026):**
+  - **Accepteret investering:** i måned 1-6 betaler BidHamr selv Stripes gebyr på founderens handler (ca. 1,5 % + 1,80 kr.), fordi der ikke kommer gebyr ind.
+  - **Overblik i admin:** admin viser det anslåede Stripe-tab pr. founder.
+  - **Alarm ved mistanke om falske handler:** staff får en alarm, hvis samme køber har 3 eller flere betalte handler hos samme founder inden for 30 dage.
+  - **Låst efter auktionens sluttid:** når betalingen kommer fra en auktion, beregnes founder-rabatten ud fra auktionens sluttid. Køberen betaler altså det gebyr, der blev vist før buddet.
