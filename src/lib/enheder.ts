@@ -35,29 +35,72 @@ export async function nuvaerendeEnhedHash(): Promise<string | null> {
   return gyldigVaerdi(v) ? hashEnhed(v) : null;
 }
 
-// Er denne browser en kendt enhed for brugeren (cookien bh_enhed er
-// registreret ved et tidligere gennemført login på samme vært)? false ved
-// fejl, ingen cookie eller en ugyldig cookie. Bruges på admin-hosten, så en
-// medarbejder på sin egen enhed ikke kan spærres ude af loftet pr. e-mail
-// (src/lib/adgang.ts). Cookien er 32 tilfældige bytes - den kan ikke gættes.
-export async function erKendtEnhed(brugerId: string): Promise<boolean> {
+// Loftet pr. e-mail på admin-login (src/lib/adgang.ts, graensePrEmail)
+// gælder ikke, hvis
+//   - denne browser er en kendt enhed for netop den medarbejder: cookien
+//     bh_enhed er registreret, OG to-trins-loginet (koden fra app'en) er
+//     gennemført på admin-hosten fra den inden for 90 dage
+//     (kendte_enheder.admin_mfa_kl, markerAdminMfa). Et login med
+//     adgangskoden alene gør IKKE enheden kendt. Markeringen ryddes, når
+//     adgangskoden skiftes, når to-trins-loginet nulstilles eller gendannes
+//     (triggere, 20261102430000), og ved "Log ud andre steder"
+//     (rydAdminMfa). Svaret har enhedens hash, så adgang.ts kan tælle et
+//     loft pr. enhed i stedet.
+//   - chefen har nulstillet loftet for medarbejderen ("Nulstil login-loft"
+//     under Medarbejdere: 30 minutter, eller til to-trins-loginet er
+//     gennemført).
+// null = loftet gælder (også ved fejl, ingen cookie, eller hvis migrationen
+// 20261102430000 ikke er kørt). Cookien er 32 tilfældige bytes - den kan
+// ikke gættes. Den er host-only, så admin-hosten har sin egen.
+export type LoftUndtagelse = { kode: "enhed"; hash: string } | { kode: "fritaget" };
+
+export async function loftUndtagelse(brugerId: string): Promise<LoftUndtagelse | null> {
   try {
     const hash = await nuvaerendeEnhedHash();
-    if (!hash) return false;
-    const { data, error } = await createAdminClient()
-      .from("kendte_enheder")
-      .select("bruger_id")
-      .eq("bruger_id", brugerId)
-      .eq("enhed_hash", hash)
-      .limit(1);
+    const { data, error } = await createAdminClient().rpc("admin_login_loft_undtaget", {
+      p_bruger: brugerId,
+      p_hash: hash,
+    });
     if (error) {
-      console.error("erKendtEnhed: opslag fejlede:", error.message);
-      return false;
+      console.error("loftUndtagelse: opslag fejlede:", error.message);
+      return null;
     }
-    return Array.isArray(data) && data.length === 1;
+    if (data === "enhed" && hash) return { kode: "enhed", hash };
+    if (data === "fritaget") return { kode: "fritaget" };
+    return null;
   } catch (err) {
-    console.error("erKendtEnhed kastede:", err);
-    return false;
+    console.error("loftUndtagelse kastede:", err);
+    return null;
+  }
+}
+
+// To-trins-loginet er netop gennemført på admin-hosten fra denne browser:
+// enheden bliver kendt for loftet pr. e-mail (se loftUndtagelse), og en
+// fritagelse fra chefen slutter. Kaster aldrig - koden er godkendt, og
+// loginet må ikke fejle her.
+export async function markerAdminMfa(brugerId: string): Promise<void> {
+  try {
+    const hash = await nuvaerendeEnhedHash();
+    if (!hash) return;
+    const { error } = await createAdminClient().rpc("kendt_enhed_admin_mfa", { p_bruger: brugerId, p_hash: hash });
+    if (error && error.code !== "PGRST202") {
+      await logDriftFejl({ kilde: "action", hvor: "markerAdminMfa", fejl: error, brugerId });
+    }
+  } catch (err) {
+    await logDriftFejl({ kilde: "action", hvor: "markerAdminMfa", fejl: err, brugerId });
+  }
+}
+
+// "Log ud andre steder": ingen af brugerens enheder er længere kendt for
+// loftet pr. e-mail. Kaster aldrig.
+export async function rydAdminMfa(brugerId: string): Promise<void> {
+  try {
+    const { error } = await createAdminClient().rpc("kendte_enheder_ryd_admin_mfa", { p_bruger: brugerId });
+    if (error && error.code !== "PGRST202") {
+      await logDriftFejl({ kilde: "action", hvor: "rydAdminMfa", fejl: error, brugerId });
+    }
+  } catch (err) {
+    await logDriftFejl({ kilde: "action", hvor: "rydAdminMfa", fejl: err, brugerId });
   }
 }
 

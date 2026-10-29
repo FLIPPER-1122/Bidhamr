@@ -95,6 +95,42 @@ export async function nulstilToTrin(formData: FormData): Promise<Svar> {
   }
 }
 
+// "Nulstil login-loft" (20261102430000): udvejen, hvis en medarbejder er
+// spærret ude af loftet pr. e-mail på en ny enhed (fx fordi nogen har
+// gættet løs på e-mailen). Tællerne pr. e-mail nulstilles, og loftet gælder
+// ikke for kontoen i 30 minutter, eller til medarbejderen har gennemført
+// to-trins-loginet. Adgangskoden, koden fra app'en og lofterne pr. IP gælder
+// stadig. Kun chefen (med frisk kode); databasen tjekker igen og logger i
+// moderation_log. Ingen mail - intet er ændret på kontoen.
+export async function nulstilLoginLoft(formData: FormData): Promise<Svar> {
+  try {
+    const bruger = maalId(formData);
+    if (!bruger) return { fejl: "Medarbejderen findes ikke." };
+    const adgang = await chefMedFriskKode(formData.get("kode"));
+    if ("fejl" in adgang) return adgang;
+    if (bruger === adgang.userId) return { fejl: "Du kan ikke nulstille dit eget login-loft." };
+
+    const { data, error } = await adgang.admin.rpc("staff_login_loft_nulstil", {
+      p_chef: adgang.userId,
+      p_bruger: bruger,
+      p_minutter: 30,
+    });
+    const r = data as { kode?: string } | null;
+    if (error || (r?.kode !== "ok" && r?.kode !== "uaendret")) {
+      if (r?.kode === "egen") return { fejl: "Du kan ikke nulstille dit eget login-loft." };
+      if (r?.kode === "ikke_staff") return { fejl: "Personen er ikke medarbejder." };
+      if (r?.kode === "ingen_adgang") return { fejl: "Du har ikke adgang til at gøre dette." };
+      console.error("staff_login_loft_nulstil:", error?.message ?? r?.kode);
+      return { fejl: GENERISK };
+    }
+    revalidatePath("/admin/medarbejdere");
+    return { ok: true };
+  } catch (err) {
+    console.error("nulstilLoginLoft kastede:", err);
+    return { fejl: GENERISK };
+  }
+}
+
 export async function aabnToTrinTilmelding(formData: FormData): Promise<Svar> {
   try {
     const bruger = maalId(formData);

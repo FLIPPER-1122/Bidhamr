@@ -24,7 +24,7 @@ import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 import { funktion, MIG } from "./prismodelStub";
-import { huskelisteAfsnit } from "./huskelisteAfsnit";
+import { huskelisteAfsnit, rettelseAfsnit } from "./huskelisteAfsnit";
 import { beregnFaktura } from "@/lib/erhverv/firmaFaktura";
 
 const MIGRATION = readFileSync(path.join(MIG, "20261102330000_firma_fakturaer.sql"), "utf8");
@@ -870,5 +870,66 @@ describe("20261102410000: låse", () => {
     await d.exec(fn.replace("'Fakturaen findes ikke.'", "'Ukendt faktura.'"));
     await expect(d.exec(huskelisteAfsnit("faktura"))).rejects.toThrow(/firma_faktura_send.*md5/);
     await d.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 20261102430000 (afsnit "faktura"): kun låsens ejer kan slippe mail-låsen.
+// ---------------------------------------------------------------------------
+describe("20261102430000: mail-låsens ejer", () => {
+  const A = "00000000-0000-4000-8000-00000000aa01";
+  const B = "00000000-0000-4000-8000-00000000aa02";
+  let sendt: string;
+  const tag = async (id: string, ejer: string | null) =>
+    (await en<{ r: boolean }>(`select public.firma_faktura_mail_tag($1, $2) r`, [id, ejer])).r;
+  const frigiv = async (id: string, ejer: string | null) =>
+    (await en<{ r: boolean }>(`select public.firma_faktura_mail_frigiv($1, $2) r`, [id, ejer])).r;
+
+  beforeAll(async () => {
+    const afsnit = rettelseAfsnit("faktura");
+    await db.exec(afsnit);
+    await db.exec(afsnit); // idempotent
+    sendt = await kladdeFor((await salg({ bud: 17000, levering: KASPER_DOER })).trade);
+    expect((await send(sendt)).kode).toBe("sendt");
+  });
+
+  it("udgaven med ét argument er væk", async () => {
+    const r = await en<{ n: number }>(
+      `select count(*)::int n from pg_proc where proname in ('firma_faktura_mail_tag', 'firma_faktura_mail_frigiv') and pronargs = 1`);
+    expect(r.n).toBe(0);
+  });
+
+  it("kun ejeren slipper låsen - en udløbet lås, der er taget af et nyt forsøg, kan det gamle ikke slippe", async () => {
+    expect(await tag(sendt, null)).toBe(false); // ingen ejer
+    expect(await tag(sendt, A)).toBe(true);
+    expect(await tag(sendt, B)).toBe(false); // optaget
+    expect(await frigiv(sendt, B)).toBe(false); // ikke B's lås
+    expect(await tag(sendt, B)).toBe(false); // stadig låst
+    // A's lås udløber (serveren var langsom), B tager den.
+    await db.query(`update public.firma_faktura_mail_laas set laast_til = now() - interval '1 second' where faktura_id = $1`, [sendt]);
+    expect(await tag(sendt, B)).toBe(true);
+    // A er færdig og vil slippe - B's lås bliver stående.
+    expect(await frigiv(sendt, A)).toBe(false);
+    expect(await tag(sendt, A)).toBe(false);
+    expect(await frigiv(sendt, B)).toBe(true);
+    expect(await tag(sendt, A)).toBe(true);
+    expect(await frigiv(sendt, A)).toBe(true);
+    // Mailen er sendt: ingen flere forsøg.
+    await db.query(`select public.firma_faktura_mail_resultat($1, true, null)`, [sendt]);
+    expect(await tag(sendt, B)).toBe(false);
+  });
+
+  it("kun service role", async () => {
+    for (const rolle of ["authenticated", "anon"]) {
+      await db.exec(`set role ${rolle}`);
+      try {
+        await som(FIRMA_U);
+        expect(await fejlkode(`select public.firma_faktura_mail_tag($1, $2)`, [sendt, A])).toBe("42501");
+        expect(await fejlkode(`select public.firma_faktura_mail_frigiv($1, $2)`, [sendt, A])).toBe("42501");
+      } finally {
+        await som(null);
+        await db.exec(`reset role`);
+      }
+    }
   });
 });

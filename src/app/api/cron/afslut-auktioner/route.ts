@@ -8,7 +8,7 @@ import { koerReturfragtCron } from "@/lib/betaling/returfragt";
 import { koerBoostCron } from "@/lib/betaling/boost";
 import { koerHenvisningCron } from "@/lib/henvisning/server";
 import { koerIapCron } from "@/lib/iap/server";
-import { koerEmailSkiftOutbox } from "@/lib/emailSkift";
+import { koerEmailSkiftOutbox, meldOpgivneEmailSkift } from "@/lib/emailSkift";
 import { koerUgensButikCron } from "@/lib/betaling/ugensButik";
 import { koerEkstraFragtCron } from "@/lib/betaling/ekstraFragt";
 import { harCronAdgang } from "@/lib/cronAdgang";
@@ -301,7 +301,10 @@ async function haandter(req: NextRequest) {
     } catch (err) {
       await logDriftFejl({ kilde: "server", sti: JOB, hvor: "Skift af e-mail: outbox", fejl: err });
     }
-    const r = { ...betaling, fragt, returfragt, boost, ugensButik, ekstraFragt, dac7, erhvervLuk, erhvervSynk, betaFejlOprydning, ekstraFragtOprydning, henvisning, iap, emailSkift };
+    // Opgivne rækker (12 forsøg, 20261102430000) meldes til /admin/drift ved
+    // hver kørsel, til de er gjort færdige manuelt. Kaster aldrig.
+    const emailSkiftOpgivne = (await meldOpgivneEmailSkift())?.opgivne ?? null;
+    const r = { ...betaling, fragt, returfragt, boost, ugensButik, ekstraFragt, dac7, erhvervLuk, erhvervSynk, betaFejlOprydning, ekstraFragtOprydning, henvisning, iap, emailSkift, emailSkiftOpgivne };
     resultat = kortResultat(r);
     if (trinFejl.length > 0) {
       fejl = `Fejl i ${trinFejl.length} trin: ${[...new Set(trinFejl)].slice(0, 5).join(" | ")}`.slice(0, 1000);

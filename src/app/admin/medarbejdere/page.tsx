@@ -5,7 +5,7 @@ import { kraevSideRolle } from "@/lib/adminAuth";
 import { adminVaertAktiv } from "@/lib/adminVaert";
 import { FRISK_KODE_MINUTTER } from "@/lib/staffToTrinRegler";
 import { nuMs } from "@/lib/dsa/regler";
-import { aabnToTrinTilmelding, nulstilToTrin } from "@/app/actions/adminToTrin";
+import { aabnToTrinTilmelding, nulstilLoginLoft, nulstilToTrin } from "@/app/actions/adminToTrin";
 import ToTrinHandling from "@/components/admin/ToTrinHandling";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { setRolle } from "@/app/actions/adminActions";
@@ -96,6 +96,17 @@ export default async function AdminMedarbejdere({
                 kraeverKode={kraeverKode}
               />
             )}
+            {/* Udvejen, hvis medarbejderen er spærret ude af loftet pr. e-mail
+                på en ny enhed (20261102430000). */}
+            <ToTrinHandling
+              userId={user.id}
+              navn={user.navn ?? "medarbejderen"}
+              handling={nulstilLoginLoft}
+              label="Nulstil login-loft"
+              kvittering="Login-loftet er nulstillet. Medarbejderen kan logge ind de næste 30 minutter."
+              bekraeft="Nulstil login-loftet for {navn}? Brug det, hvis medarbejderen ikke kan logge ind på grund af for mange forsøg. De næste 30 minutter gælder loftet pr. e-mail ikke for kontoen. Adgangskoden og koden fra app'en kræves stadig."
+              kraeverKode={kraeverKode}
+            />
           </div>
         )}
       </div>
