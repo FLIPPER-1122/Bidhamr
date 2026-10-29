@@ -356,11 +356,10 @@ export function velkomstSkiftUdfald(input: {
   };
   // Dansk dato for discount.end (fx langDato).
   dato: (sek: number) => string;
-  // "Behold Starts gratis måned + introrabat" (firmaer.intro_behold_gratis):
-  // ved skiftet sættes introrabatten på igen fra skiftet (N betalte måneder i
-  // alt - Filip, 29. okt. 2026), så den nuværende slutdato gælder ikke. til er
-  // null (teksten siger "i N måneder").
-  beholdGratis?: boolean;
+  // introFraSkiftet (nedenfor): ved skiftet sættes introrabatten på igen fra
+  // skiftet (N betalte måneder i alt - Filip, 29. okt. 2026), så den
+  // nuværende slutdato gælder ikke. til er null (teksten siger "i N måneder").
+  fraSkiftet?: boolean;
 }): VelkomstSkiftUdfald {
   const { aftale, abonnement } = input;
   if (abonnement.andre > 0) {
@@ -374,7 +373,7 @@ export function velkomstSkiftUdfald(input: {
     udfald: "skift",
     rabat: velkomstSkiftRabat({
       saerprisGaelder: false,
-      intro: { procent, til: !input.beholdGratis && k.slutSek != null ? input.dato(k.slutSek) : null, maaneder },
+      intro: { procent, til: !input.fraSkiftet && k.slutSek != null ? input.dato(k.slutSek) : null, maaneder },
     }),
     velkomstKupon: false,
   });
@@ -407,6 +406,31 @@ export function velkomstSkiftUdfald(input: {
   }
   if (input.saerprisGaelder) return { udfald: "skift", rabat: velkomstSkiftRabat({ saerprisGaelder: true, intro: null }), velkomstKupon: false };
   return { udfald: "skift", rabat: velkomstSkiftRabat({ saerprisGaelder: false, intro: null }), velkomstKupon: true };
+}
+
+// Skift op fra Starts gratis velkomstmåned med en introrabat (Filip, 29. okt.
+// 2026): introrabatten gælder ALTID i præcis det aftalte antal måneder (N),
+// regnet fra skiftet - uanset valget "Behold Starts gratis måned +
+// introrabat". Den kørende kupon er regnet fra den gamle trial_end, så fra
+// skiftet giver den typisk N+1 rabatfakturaer (fx når staff har gemt
+// introrabatten igen efter Checkout, eller sat den i den gratis måned). Så
+// sættes kuponen på igen fra skiftet. Alle tre skal være opfyldt:
+//   - abonnementet har kun Starts velkomstmåned (erKunVelkomstGratis)
+//   - rabatten er en introrabat (præcis én BidHamr-introkupon)
+//   - den kørende kupon giver flere rabatfakturaer fra nu end N
+//     (introResterende; en rabat uden slutdato giver uendeligt mange)
+// nuSek er skiftets tidspunkt = første faktura (trial_end 'now').
+export function introFraSkiftet(input: {
+  kunVelkomstGratis: boolean;
+  introKuponer: number;
+  nuSek: number;
+  rabatSlutSek: number | null;
+  maaneder: number | null;
+}): boolean {
+  if (!input.kunVelkomstGratis || input.introKuponer !== 1) return false;
+  if (input.maaneder == null || !Number.isInteger(input.maaneder) || input.maaneder < 1) return false;
+  if (input.rabatSlutSek == null) return true;
+  return introResterende({ naesteFakturaSek: input.nuSek, rabatSlutSek: input.rabatSlutSek }) > input.maaneder;
 }
 
 // Hvad siden viste for et skift op fra den gratis måned (sendes med skiftet,

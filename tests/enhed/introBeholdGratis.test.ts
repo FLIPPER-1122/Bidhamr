@@ -11,6 +11,7 @@ import {
   checkoutPlan,
   erKunVelkomstGratis,
   introForloeb,
+  introFraSkiftet,
   introKuponMaaneder,
   introKuponMaanederCheckout,
   maaned1Regel,
@@ -243,11 +244,11 @@ describe("tekster", () => {
   });
 });
 
-// Skift op i den gratis måned med valget (Filip, 29. okt. 2026): rabatten
-// sættes på igen fra skiftet (N betalte måneder i alt), så siden viser "i N
-// måneder" og ikke den gamle slutdato. Uden valget: slutdatoen som før.
-describe("skift op i den gratis måned med valget", () => {
-  const input = (beholdGratis: boolean) => ({
+// Skift op i den gratis måned (Filip, 29. okt. 2026): sættes rabatten på igen
+// fra skiftet (introFraSkiftet - N betalte måneder i alt), viser siden "i N
+// måneder" og ikke den gamle slutdato. Ellers: slutdatoen som før.
+describe("skift op i den gratis måned: visningen", () => {
+  const input = (fraSkiftet: boolean) => ({
     saerprisGaelder: false,
     aftale: { status: "aktiv", procent: 50, maaneder: 6, kuponId: "bidhamr_intro_50_6", noegle: "n", gaelder: true },
     abonnement: {
@@ -256,10 +257,10 @@ describe("skift op i den gratis måned med valget", () => {
       introNoegle: "n",
     },
     dato: () => "29. april 2027",
-    beholdGratis,
+    fraSkiftet,
   });
 
-  it("med valget: til er null, samme visning (intro:50)", () => {
+  it("sættes på igen fra skiftet: til er null, samme visning (intro:50)", () => {
     const u = velkomstSkiftUdfald(input(true));
     expect(u).toEqual({ udfald: "skift", rabat: { slags: "intro", procent: 50, til: null, maaneder: 6 }, velkomstKupon: false });
     expect(velkomstVisning(u)).toBe("intro:50");
@@ -270,7 +271,7 @@ describe("skift op i den gratis måned med valget", () => {
     }
   });
 
-  it("uden valget: rabattens slutdato fra Stripe", () => {
+  it("bliver liggende: rabattens slutdato fra Stripe", () => {
     expect(velkomstSkiftUdfald(input(false))).toMatchObject({ udfald: "skift", rabat: { slags: "intro", til: "29. april 2027" } });
   });
 
@@ -281,5 +282,92 @@ describe("skift op i den gratis måned med valget", () => {
 
   it("admin: advarsel, når valget forsvinder", () => {
     expect(ADMIN_FIRMA.hurtig.intro.beholdMistesAdvarsel).toContain("forsvinder den gratis måned");
+  });
+});
+
+// Skift op i den gratis måned gælder ALTID N måneder fra skiftet - også uden
+// valget (Filip, 29. okt. 2026). Kuponen efterlignes som Stripe: den gælder
+// fakturaer før start + K måneder; fakturaerne fra skiftet kommer ved skiftet
+// + 0, 1, 2 ... måneder (trial_end 'now' nulstiller billing_cycle_anchor).
+describe("introFraSkiftet: sættes introrabatten på igen ved skiftet?", () => {
+  const t0 = sek("2026-11-03T09:00:00Z");
+  const trialEnd = plusMaaneder(t0, 1);
+  const dag10 = t0 + 10 * 86_400;
+  const rabatter = (skift: number, slut: number) => {
+    let n = 0;
+    while (plusMaaneder(skift, n) < slut) n++;
+    return n;
+  };
+  const basis = { kunVelkomstGratis: true, introKuponer: 1, nuSek: dag10, maaneder: 6 };
+
+  // Kuponerne, BidHamr selv sætter i velkomstmåneden, er regnet fra
+  // trial_end og starter før skiftet - de giver højst N fra skiftet (som
+  // Stripe-testen viser). Reglen er alligevel generel: en kupon, der løber til
+  // trial_end + N måneder (fx sat på direkte eller fra en ældre beregning),
+  // giver N+1 fra skiftet og sættes på igen.
+  it("kupon, der løber til trial_end + 6 md.: 7 fra dag 10 -> på igen", () => {
+    const slut = plusMaaneder(trialEnd, 6);
+    expect(rabatter(dag10, slut)).toBe(7);
+    expect(introFraSkiftet({ ...basis, rabatSlutSek: slut })).toBe(true);
+  });
+
+  it("Checkout-kuponen med valget (regnet fra trial_end): 6 fra dag 10 -> bliver liggende", () => {
+    const k = introKuponMaanederCheckout({ nuSek: t0, trialEndSek: trialEnd, maaneder: 6, fra: "efter_gratis" })!;
+    const slut = plusMaaneder(t0 + 600, k);
+    expect(rabatter(dag10, slut)).toBe(6);
+    expect(introFraSkiftet({ ...basis, rabatSlutSek: slut })).toBe(false);
+  });
+
+  it("staff gemmer introrabatten igen efter Checkout / sætter den i den gratis måned: 6 fra dag 10 -> bliver liggende", () => {
+    for (const sat of [t0 + 3600, t0 + 2 * 86_400, t0 + 9 * 86_400]) {
+      const k = introKuponMaaneder({ nuSek: sat, naesteFakturaSek: trialEnd, maaneder: 6, fra: "efter_gratis" })!;
+      const slut = plusMaaneder(sat, k);
+      expect(rabatter(dag10, slut)).toBe(6);
+      expect(introFraSkiftet({ ...basis, rabatSlutSek: slut })).toBe(false);
+    }
+  });
+
+  it("reglen svarer altid til 'flere end N fra skiftet' (alle skiftedage i den gratis måned, slutdatoer +-40 dage)", () => {
+    for (let dag = 0; dag < 30; dag++) {
+      const skift = t0 + dag * 86_400 + 4000;
+      for (let d = -40; d <= 40; d++) {
+        const slut = plusMaaneder(trialEnd, 5) + d * 86_400;
+        expect(introFraSkiftet({ ...basis, nuSek: skift, rabatSlutSek: slut })).toBe(rabatter(skift, slut) > 6);
+      }
+    }
+  });
+
+  it("kuponen giver allerede præcis N fra skiftet ('fra nu' sat på dag 2) -> bliver liggende", () => {
+    const slut = plusMaaneder(t0 + 2 * 86_400, 6);
+    expect(rabatter(dag10, slut)).toBe(6);
+    expect(introFraSkiftet({ ...basis, rabatSlutSek: slut })).toBe(false);
+  });
+
+  it("grænsen: slut præcis skiftet + N måneder giver N (bliver liggende), ét sekund mere giver N+1", () => {
+    expect(introFraSkiftet({ ...basis, rabatSlutSek: plusMaaneder(dag10, 6) })).toBe(false);
+    expect(introFraSkiftet({ ...basis, rabatSlutSek: plusMaaneder(dag10, 6) + 1 })).toBe(true);
+  });
+
+  it("alle tre skal være opfyldt", () => {
+    const syv = plusMaaneder(dag10, 6) + 86_400;
+    expect(introFraSkiftet({ ...basis, rabatSlutSek: syv })).toBe(true);
+    // Ikke kun Starts velkomstmåned (fx staff-givet gratis periode - særaftale).
+    expect(introFraSkiftet({ ...basis, kunVelkomstGratis: false, rabatSlutSek: syv })).toBe(false);
+    // Ingen introrabat (velkomstrabatten) eller flere introkuponer (ret_rabat).
+    expect(introFraSkiftet({ ...basis, introKuponer: 0, rabatSlutSek: null })).toBe(false);
+    expect(introFraSkiftet({ ...basis, introKuponer: 2, rabatSlutSek: syv })).toBe(false);
+    // Ingen aftalte måneder.
+    expect(introFraSkiftet({ ...basis, maaneder: null, rabatSlutSek: syv })).toBe(false);
+    expect(introFraSkiftet({ ...basis, maaneder: 0, rabatSlutSek: syv })).toBe(false);
+  });
+
+  it("en introrabat uden slutdato giver uendeligt mange -> på igen", () => {
+    expect(introFraSkiftet({ ...basis, rabatSlutSek: null })).toBe(true);
+  });
+
+  it("andre antal måneder (3 og 12)", () => {
+    expect(introFraSkiftet({ ...basis, maaneder: 3, rabatSlutSek: plusMaaneder(trialEnd, 3) })).toBe(true);
+    expect(introFraSkiftet({ ...basis, maaneder: 3, rabatSlutSek: plusMaaneder(dag10, 3) })).toBe(false);
+    expect(introFraSkiftet({ ...basis, maaneder: 12, rabatSlutSek: plusMaaneder(trialEnd, 12) })).toBe(true);
   });
 });

@@ -114,9 +114,14 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 process.env.STRIPE_SECRET_KEY = "sk_test_enhed";
 
-const { startOpgradering, udloebetOpgradering, introTilStripe, velkomstSkiftForPakke, velkomstSkiftVisning } = await import(
-  "@/lib/erhverv/betaling"
-);
+const {
+  startOpgradering,
+  udloebetOpgradering,
+  introTilStripe,
+  velkomstSkiftForPakke,
+  velkomstSkiftVisning,
+  spejlIntroEfterVelkomstSkift,
+} = await import("@/lib/erhverv/betaling");
 const { skiftPakkeForBruger } = await import("@/lib/erhverv/pakkeskift");
 const { retRabatAlarmNoegle } = await import("@/lib/erhverv/abonnementRegler");
 const { FIRMA_ABONNEMENT, FIRMA_OVERSIGT_EKSTRA } = await import("@/lib/tekster/erhverv");
@@ -320,10 +325,12 @@ describe("skift op fra den gratis måned uden visning (blokerende fund)", () => 
   });
 });
 
-// Skift op i den gratis måned med "Behold Starts gratis måned + introrabat"
-// (Filip, 29. okt. 2026): introkuponen sættes på igen fra skiftet (K = N) i
-// SAMME kald som trial_end 'now'. Uden valget: ingen discounts i kaldet.
-describe("skift op med valget: introrabatten fra skiftet", () => {
+// Skift op i den gratis måned (Filip, 29. okt. 2026): introrabatten gælder
+// ALTID i præcis N måneder fra skiftet - uafhængigt af valget "Behold Starts
+// gratis måned + introrabat". Giver den kørende kupon flere end N fra nu
+// (introFraSkiftet), sættes introkuponen på igen fra skiftet (K = N) i SAMME
+// kald som trial_end 'now'. Giver den præcis N, bliver den liggende.
+describe("skift op i den gratis måned: introrabatten i præcis N måneder fra skiftet", () => {
   const aktivIntro = {
     intro_status: "aktiv",
     intro_procent: 50,
@@ -332,36 +339,174 @@ describe("skift op med valget: introrabatten fra skiftet", () => {
     intro_coupon_id: "bidhamr_intro_50_6",
     intro_noegle: NOEGLE,
   };
-  const medKupon = () =>
+  // 170 dage: 6 rabatfakturaer fra nu (nu + 0..5 måneder). 200 dage: 7.
+  const medKupon = (dage: number, over: Raekke = {}) =>
     abonnement({
       discounts: [
         {
           id: "di_1",
-          end: NU + 170 * 86_400,
+          end: NU + dage * 86_400,
           source: { coupon: { id: "bidhamr_intro_50_6", percent_off: 50, metadata: { bidhamr: "intro" } } },
         },
       ],
+      ...over,
+    });
+  const noegler = () =>
+    stripeFalsk.subscriptions.update.mock.calls.map((c) => (c as unknown[])[2] as { idempotencyKey?: string } | undefined);
+
+  for (const behold of [true, false]) {
+    it(`kuponen giver 7 fra nu (${behold ? "med" : "uden"} valget): bidhamr_intro_50_6_skift i samme kald som trial_end 'now' (idempotency key)`, async () => {
+      t.firmaer = [firma({ ...aktivIntro, intro_behold_gratis: behold })];
+      t.sub = medKupon(200);
+      const r = await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50");
+      expect(r).not.toMatchObject({ status: "fejl" });
+      const kald = prisOpdateringer();
+      expect(kald).toHaveLength(1);
+      expect(kald[0]).toMatchObject({ trial_end: "now", discounts: [{ coupon: "bidhamr_intro_50_6_skift" }], payment_behavior: "pending_if_incomplete" });
+      expect(noegler().every((n) => typeof n?.idempotencyKey === "string" && n.idempotencyKey.length > 0)).toBe(true);
     });
 
-  it("med valget: discounts med bidhamr_intro_50_6_skift i samme kald som trial_end 'now' (idempotency key)", async () => {
-    t.firmaer = [firma({ ...aktivIntro, intro_behold_gratis: true })];
-    t.sub = medKupon();
+    it(`kuponen giver præcis 6 fra nu (${behold ? "med" : "uden"} valget): ingen discounts i kaldet (rabatten bliver liggende)`, async () => {
+      t.firmaer = [firma({ ...aktivIntro, intro_behold_gratis: behold })];
+      t.sub = medKupon(170);
+      await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50");
+      const kald = prisOpdateringer();
+      expect(kald).toHaveLength(1);
+      expect(kald[0]).toMatchObject({ trial_end: "now" });
+      expect("discounts" in kald[0]).toBe(false);
+    });
+  }
+
+  it("ikke kun Starts velkomstmåned (staff-givet gratis periode): ingen ny kupon", async () => {
+    t.firmaer = [firma({ ...aktivIntro })];
+    t.sub = medKupon(200, { metadata: { maaned1: "gratis", firma_id: FIRMA, gratis_ekstra: "1" } });
     await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50");
-    const kald = prisOpdateringer();
-    expect(kald).toHaveLength(1);
-    expect(kald[0]).toMatchObject({ trial_end: "now", discounts: [{ coupon: "bidhamr_intro_50_6_skift" }], payment_behavior: "pending_if_incomplete" });
-    const noegler = stripeFalsk.subscriptions.update.mock.calls.map((c) => (c as unknown[])[2] as { idempotencyKey?: string } | undefined);
-    expect(noegler.every((n) => typeof n?.idempotencyKey === "string" && n.idempotencyKey.length > 0)).toBe(true);
+    expect(prisOpdateringer().some((k) => "discounts" in k)).toBe(false);
   });
 
-  it("uden valget: ingen discounts i kaldet (rabatten bliver liggende)", async () => {
-    t.firmaer = [firma({ ...aktivIntro, intro_behold_gratis: false })];
-    t.sub = medKupon();
-    await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50");
-    const kald = prisOpdateringer();
-    expect(kald).toHaveLength(1);
-    expect(kald[0]).toMatchObject({ trial_end: "now" });
-    expect("discounts" in kald[0]).toBe(false);
+  it("siden (GET) viser det samme: 'i 6 måneder' (til null) ved ny kupon, ellers Stripes slutdato", async () => {
+    t.pakker = [t.pakker[0], { ...t.pakker[1], maaned1: "halv" }];
+    t.firmaer = [firma({ ...aktivIntro })];
+    t.sub = medKupon(200);
+    const ny = await velkomstSkiftForPakke(BRUGER, PRO);
+    expect(ny).toMatchObject({ status: "ok", tilbud: { udfald: "skift", visning: "intro:50", rabat: { slags: "intro", til: null, maaneder: 6 } } });
+    if (ny.status === "ok") expect(ny.tilbud?.tekst).toContain("50 % rabat i 6 måneder");
+    t.sub = medKupon(170);
+    const ligger = await velkomstSkiftForPakke(BRUGER, PRO);
+    expect(ligger).toMatchObject({ status: "ok", tilbud: { udfald: "skift", visning: "intro:50", rabat: { slags: "intro", maaneder: 6 } } });
+    if (ligger.status === "ok") expect(ligger.tilbud?.rabat).toMatchObject({ til: expect.stringMatching(/\d{4}$/) });
+  });
+
+  it("værnet (det friske abonnement): ligger skift-kuponen der allerede, afvises skiftet - intet trækkes", async () => {
+    // Kun muligt, hvis databasen allerede peger på skift-kuponen (fx spejlet
+    // fra et tidligere skift), og Stripes slutdato giver 7: Stripe ville
+    // beholde den gamle rabat, så kaldet sendes ikke.
+    t.firmaer = [firma({ ...aktivIntro, intro_coupon_id: "bidhamr_intro_50_6_skift" })];
+    t.sub = medKupon(200);
+    (t.sub.discounts as Raekke[])[0].source = {
+      coupon: { id: "bidhamr_intro_50_6_skift", percent_off: 50, metadata: { bidhamr: "intro" } },
+    };
+    const r = await startOpgradering(SKIFT, TILBAGERUL, "laas-1", "intro:50");
+    expect(r).toMatchObject({ status: "fejl" });
+    expect((r as { fejl?: string }).fejl).toMatch(/introkuponen bidhamr_intro_50_6_skift ligger allerede på sub_1/);
+    expect(prisOpdateringer()).toEqual([]);
+  });
+});
+
+// Spejlingen efter et betalt skift op fra den gratis måned: ingen stille fejl
+// - alt, der ikke passer, giver en drift-alarm; slutdatoen kontrolleres
+// (introPasser fra billing_cycle_anchor = skiftet).
+describe("spejlIntroEfterVelkomstSkift: kontrol af slutdato og ingen stille fejl", () => {
+  const ANKER = NU;
+  const aktiv = {
+    intro_status: "aktiv",
+    intro_procent: 50,
+    intro_maaneder: 6,
+    intro_fra: "efter_gratis",
+    intro_coupon_id: "bidhamr_intro_50_6",
+    intro_noegle: NOEGLE,
+  };
+  const efterSkift = (over: Raekke = {}, slut = ANKER + 170 * 86_400, procent = 50) =>
+    abonnement({
+      status: "active",
+      billing_cycle_anchor: ANKER,
+      trial_end: ANKER,
+      discounts: [
+        {
+          id: "di_2",
+          end: slut,
+          source: { coupon: { id: "bidhamr_intro_50_6_skift", percent_off: procent, metadata: { bidhamr: "intro" } } },
+        },
+      ],
+      ...over,
+    });
+  const alarmer = () => t.drift.filter((d) => String(d.hvor).startsWith("erhverv/velkomst-intro"));
+  const spejlinger = () => t.rpcLog.filter((r) => r.navn === "firma_intro_spejl");
+
+  it("passer (6 fra skiftet): spejler kupon og slutdato, ingen alarm", async () => {
+    t.firmaer = [firma(aktiv)];
+    t.sub = efterSkift();
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1");
+    expect(spejlinger()).toHaveLength(1);
+    expect(spejlinger()[0].args).toMatchObject({ p_coupon: "bidhamr_intro_50_6_skift", p_status: "aktiv", p_noegle: NOEGLE });
+    expect(alarmer()).toEqual([]);
+  });
+
+  it("Stripes discount.end giver 7 fra skiftet: drift-alarm (velkomst-intro-antal)", async () => {
+    t.firmaer = [firma(aktiv)];
+    t.sub = efterSkift({}, ANKER + 200 * 86_400);
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1");
+    expect(alarmer().map((a) => a.hvor)).toEqual(["erhverv/velkomst-intro-antal"]);
+    expect(String(alarmer()[0].fejl)).toMatch(/giver 7 fakturaer.*ikke præcis 6/);
+  });
+
+  it("Stripes discount.end giver 5: også alarm", async () => {
+    t.firmaer = [firma(aktiv)];
+    t.sub = efterSkift({}, ANKER + 140 * 86_400);
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1");
+    expect(alarmer().map((a) => a.hvor)).toEqual(["erhverv/velkomst-intro-antal"]);
+  });
+
+  it("ventende ændring: alarm i stedet for stille return - intet spejles", async () => {
+    t.firmaer = [firma(aktiv)];
+    t.sub = efterSkift({ pending_update: { expires_at: NU + 3600 } });
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1");
+    expect(alarmer().map((a) => a.hvor)).toEqual(["erhverv/velkomst-intro-spejl"]);
+    expect(String(alarmer()[0].fejl)).toMatch(/ventende ændring/);
+    expect(spejlinger()).toEqual([]);
+  });
+
+  it("anden procent end aftalen: alarm i stedet for stille return - intet spejles", async () => {
+    t.firmaer = [firma(aktiv)];
+    t.sub = efterSkift({}, ANKER + 170 * 86_400, 30);
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1");
+    expect(alarmer().map((a) => a.hvor)).toEqual(["erhverv/velkomst-intro-spejl"]);
+    expect(String(alarmer()[0].fejl)).toMatch(/30 %.*aftalen er 50 %/);
+    expect(spejlinger()).toEqual([]);
+  });
+
+  it("ingen introkupon, men en introrabat i databasen: alarm", async () => {
+    t.firmaer = [firma(aktiv)];
+    t.sub = efterSkift({ discounts: [] });
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1");
+    expect(alarmer().map((a) => a.hvor)).toEqual(["erhverv/velkomst-intro-spejl"]);
+  });
+
+  it("ingen introrabat i databasen (velkomstrabatten): intet at spejle, ingen alarm", async () => {
+    t.firmaer = [firma()];
+    t.sub = efterSkift({ discounts: [] });
+    await spejlIntroEfterVelkomstSkift(FIRMA, "sub_1");
+    expect(alarmer()).toEqual([]);
+    expect(spejlinger()).toEqual([]);
+  });
+
+  it("Stripe fejler: alarm, kaster ikke", async () => {
+    t.firmaer = [firma(aktiv)];
+    stripeFalsk.subscriptions.retrieve.mockImplementationOnce(async () => {
+      throw new Error("Stripe nede");
+    });
+    await expect(spejlIntroEfterVelkomstSkift(FIRMA, "sub_1")).resolves.toBeUndefined();
+    expect(alarmer().map((a) => a.hvor)).toEqual(["erhverv/velkomst-intro-spejl"]);
   });
 });
 
