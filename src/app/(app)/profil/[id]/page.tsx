@@ -23,6 +23,7 @@ import ProfileTabs, {
 import MineHandlerListe, { MineHandlerSkelet, visAfsluttedeFra } from "@/components/handel/MineHandlerListe";
 import { tilProfilFane } from "@/lib/profilFaner";
 import { erPopulaerSaelger } from "@/lib/populaerSaelger";
+import { erFoundingSeller } from "@/lib/foundingSeller";
 import { ProfilSkelet } from "@/components/Skeletter";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -171,6 +172,7 @@ async function ProfilIndhold({ params, searchParams }: ProfilProps) {
       { data: egneFoelgere },
       opsummering,
       egenPopulaer,
+      egenFounder,
       { data: egetNavn },
     ] = await Promise.all([
       supabase
@@ -199,6 +201,7 @@ async function ProfilIndhold({ params, searchParams }: ProfilProps) {
       // Gennemsnit og antal fra databasen - listen er begrænset til 200.
       hentBedoemmelseOpsummering(supabase, id),
       erPopulaerSaelger(id),
+      erFoundingSeller(id),
       // Eget fulde navn (users.navn kan kun læses af en selv via mit_navn).
       supabase.rpc("mit_navn").maybeSingle<{ navn: string | null }>(),
     ]);
@@ -310,6 +313,7 @@ async function ProfilIndhold({ params, searchParams }: ProfilProps) {
             mitidVerificeret={!!profil.mitid_verificeret_kl && profil.konto_type !== "erhverv"}
             mitidManglerEjer={!profil.mitid_verificeret_kl && profil.konto_type !== "erhverv"}
             populaerSaelger={egenPopulaer}
+            foundingSeller={egenFounder}
             antalFoelgere={typeof egneFoelgere === "number" ? egneFoelgere : undefined}
           />
 
@@ -358,6 +362,7 @@ async function ProfilIndhold({ params, searchParams }: ProfilProps) {
     opsummering,
     profilTal,
     populaer,
+    founder,
   ] = await Promise.all([
     supabase
       .from("auctions")
@@ -396,6 +401,7 @@ async function ProfilIndhold({ params, searchParams }: ProfilProps) {
     hentBedoemmelseOpsummering(supabase, id),
     hentProfilTal(supabase, id),
     erPopulaerSaelger(id),
+    erFoundingSeller(id),
   ]);
 
   const aktiveAuktioner = await markerBoostede(supabase, (aktiveAuktionerRaw ?? []).map(mapAuctionTilKort));
@@ -422,6 +428,7 @@ async function ProfilIndhold({ params, searchParams }: ProfilProps) {
           brugerId={id}
           mitidVerificeret={!!profil.mitid_verificeret_kl && profil.konto_type !== "erhverv"}
           populaerSaelger={populaer}
+          foundingSeller={founder}
           antalFoelgere={typeof antalFoelgere === "number" ? antalFoelgere : undefined}
           handling={
             !blokeretAfProfil && harBlokeret !== true ? (

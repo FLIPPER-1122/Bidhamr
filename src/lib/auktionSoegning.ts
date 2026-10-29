@@ -7,6 +7,7 @@ import { beregnAfstandKm } from "@/lib/distance";
 import { slaaPostnummerOp } from "@/lib/postnumre";
 import { logDriftFejl } from "@/lib/drift";
 import { markerPopulaereSaelgere } from "@/lib/populaerSaelger";
+import { markerFoundingSellers } from "@/lib/foundingSeller";
 import { læsSortering, type Sortering } from "@/lib/sortering";
 import { escapeLike, escapeRegex } from "@/lib/postgrest";
 import type { TotalType } from "@/lib/soegeTotal";
@@ -87,7 +88,10 @@ async function medBoost(
   const kort = [...top, ...side.filter((r) => !iTop.has(r.id))].map(mapAuctionTilKort);
   // Mærkerne "Boostet" og "Populær sælger".
   // Fremhævede firma-auktioner ("Annonce") er i samme pulje øverst (liste_top).
-  return markerPopulaereSaelgere(await markerAnnoncer(supabase, await markerBoostede(supabase, kort)));
+  // "Founding seller" (seller founder, 20261102420000).
+  return markerFoundingSellers(
+    await markerPopulaereSaelgere(await markerAnnoncer(supabase, await markerBoostede(supabase, kort))),
+  );
 }
 
 const FEJL = "Auktionerne kunne ikke hentes. Prøv igen.";

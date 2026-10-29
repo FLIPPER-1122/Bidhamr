@@ -12,6 +12,7 @@ import { hentLoggetIndBruger } from "@/lib/hentBruger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { erBeskyttet, fragtOere, koebergebyrOere } from "@/lib/betaling/beregn";
+import { auktionFounderRabat } from "@/lib/foundingSeller";
 import {
   genopsaetAuktionFor,
   hentAndenchanceStatusFor,
@@ -77,6 +78,8 @@ export type MitTilbud = {
     billede: string | null;
     budOere: number;
     koebergebyrOere: number;
+    // Seller founder-rabat på gebyret (0/50/100).
+    founderRabatPct: number;
     fragtOere: number;
     beskyttelse: boolean;
     beskyttelseOere: number;
@@ -116,7 +119,10 @@ export async function hentMitTilbud(tilbudId: string): Promise<MitTilbud | Fejl>
     // byderen siger ja. BidHamr Beskyttelse er inkluderet i gebyret ved
     // forsendelse (privat) - tilbuddets gamle valg (t.beskyttelse) ignoreres.
     const erhverv = Boolean(a?.erhverv);
-    const koeb = koebergebyrOere(bud, erhverv);
+    // Seller founder (20261102420000): rabatten, hvis byderen siger ja nu -
+    // databasen låser den, når betalingen oprettes.
+    const founderRabatPct = erhverv ? 0 : await auktionFounderRabat(t.auction_id as string);
+    const koeb = koebergebyrOere(bud, erhverv, founderRabatPct);
     const fragt = fragtOere(Boolean(a?.forsendelse_mulig), a?.fragt_pakkeshop_oere as number | null | undefined);
     const besk = 0;
     // Tilbuddet er udløbet, selv om cron endnu ikke har markeret det.
@@ -158,6 +164,7 @@ export async function hentMitTilbud(tilbudId: string): Promise<MitTilbud | Fejl>
         billede: ((a?.billeder as string[] | undefined) ?? [])[0] ?? null,
         budOere: bud,
         koebergebyrOere: koeb,
+        founderRabatPct,
         fragtOere: fragt,
         beskyttelse: erBeskyttet(erhverv, Boolean(a?.forsendelse_mulig)),
         beskyttelseOere: besk,

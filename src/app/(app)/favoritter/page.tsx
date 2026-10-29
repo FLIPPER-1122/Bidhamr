@@ -6,6 +6,7 @@ import TomTilstand from "@/components/TomTilstand";
 import { mapAuctionTilKort } from "@/lib/mapAuctionCard";
 import { markerBoostede } from "@/lib/boost/visning";
 import { markerPopulaereSaelgere } from "@/lib/populaerSaelger";
+import { markerFoundingSellers } from "@/lib/foundingSeller";
 
 export const dynamic = "force-dynamic";
 
@@ -56,13 +57,15 @@ export default async function FavoritterSide() {
   // (afsluttet handel for over 48 timer siden) vises ikke, selv om de stadig
   // ligger på favoritlisten. RLS skjuler arkiverede for alle andre end
   // parterne; her fjernes de også for parterne.
-  const auktioner = await markerPopulaereSaelgere(
-    await markerBoostede(
-      supabase,
-      (data ?? [])
-        .map((f) => f.auctions)
-        .filter((a): a is NonNullable<FavoritRow["auctions"]> => !!a && !a.skjult && !a.arkiveret_kl)
-        .map(mapAuctionTilKort),
+  const auktioner = await markerFoundingSellers(
+    await markerPopulaereSaelgere(
+      await markerBoostede(
+        supabase,
+        (data ?? [])
+          .map((f) => f.auctions)
+          .filter((a): a is NonNullable<FavoritRow["auctions"]> => !!a && !a.skjult && !a.arkiveret_kl)
+          .map(mapAuctionTilKort),
+      ),
     ),
   );
 
