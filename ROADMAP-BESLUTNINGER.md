@@ -693,3 +693,11 @@ Erstatter "Firmaet sender selv fakturaen på varen fra sit eget regnskabsprogram
   - **Overblik i admin:** admin viser det anslåede Stripe-tab pr. founder.
   - **Alarm ved mistanke om falske handler:** staff får en alarm, hvis samme køber har 3 eller flere betalte handler hos samme founder inden for 30 dage.
   - **Låst efter auktionens sluttid:** når betalingen kommer fra en auktion, beregnes founder-rabatten ud fra auktionens sluttid. Køberen betaler altså det gebyr, der blev vist før buddet.
+  - *Bygget 29. okt. 2026 (`20261102460000_seller_founder_rettelser.sql`):*
+    - Rabatten regnes ud fra `least(nu, slutter_kl)`, når betalingen kommer fra auktionens lukning. Tilbud til næste byder bruger tidspunktet, hvor tilbuddet accepteres.
+    - Et stop gælder fra stoptidspunktet: stoppes aftalen før sluttiden, er rabatten 0. Stoppes den efter, gælder rabatten ved sluttiden.
+    - Stripe-tabet er et skøn (`src/lib/betaling/stripeGebyrSkoen.ts`) over betalte handler med 0 kr. i gebyr, også refunderede, fordi Stripe beholder sit gebyr.
+    - Alarmen kører i betalingsovervågningen (højst én gang i timen) og gives én gang pr. par pr. 30 dage. Den står på founderens admin-side og på listen.
+    - Staff kan ikke være founder.
+    - Ved genoptagelse bevares den første oprettelse.
+    - Appen: `min_founder_rabat(p_tid)` (docs/APP-ENDPOINTS.md).
