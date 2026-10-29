@@ -231,14 +231,61 @@ export const START_PAKKE_ID = "7e57a000-0000-4000-8000-000000000001";
 // Særpris udelukker også velkomstfordelen (Filip, 27. okt. 2026): særprisen
 // gælder fra første betaling - ingen gratis måned og ingen 50 %
 // (erhverv_maaned1, 20261102150000).
+//
+// "Behold Starts gratis måned + introrabat" (20261102450000): staffs bevidste
+// valg (introBeholdGratis - firmaer.intro_behold_gratis, kun med intro_fra
+// 'efter_gratis'). Så fjerner introrabatten IKKE Starts gratis måned: måned 1
+// er gratis, og introrabatten gælder fra første betaling (checkoutPlan giver
+// 1 gratis måned, introKuponMaanederCheckout rammer præcis N betalte måneder
+// efter den). Kun på en pakke, der er gratis i måned 1 - Butik/Pro får aldrig
+// en gratis måned af det. Samme regel som erhverv_maaned1.
 export function maaned1Regel(input: {
   pakke: PakkeMaaned1;
   velkomst: boolean;
   introGaelder: boolean;
   saerprisGaelder: boolean;
+  introBeholdGratis?: boolean;
 }): Maaned1 {
-  if (!input.velkomst || input.introGaelder || input.saerprisGaelder) return "ingen";
+  if (!input.velkomst || input.saerprisGaelder) return "ingen";
+  if (input.introGaelder && !(input.introBeholdGratis === true && input.pakke === "gratis")) return "ingen";
   return input.pakke;
+}
+
+// --- "Behold Starts gratis måned + introrabat" (Filip, 29. okt. 2026) ----------
+// Særaftale til udvalgte firmaer på Start: måned 1 gratis, derefter
+// introrabatten (standard 50 % i 6 måneder: måned 2-7), fuld pris derefter.
+// Aldrig standard - staff slår det aktivt til med begrundelse (logges).
+// Databasen afviser det samme (erhverv_firma_intro_gem / erhverv_firma_opret,
+// 20261102450000).
+export type BeholdGratisAfvisning = "ugyldig_rabat" | "behold_kun_start" | "behold_startet" | "behold_ingen_gratis";
+
+export function beholdGratisAfvisning(input: {
+  fra: IntroFra | null;
+  pakke: PakkeMaaned1;
+  // Firmaet har et Stripe-abonnement (Checkout er gennemført).
+  harAbonnement: boolean;
+  // Firmaet har velkomstfordelen til gode (erhverv_faar_velkomst_gratis).
+  velkomst: boolean;
+}): BeholdGratisAfvisning | null {
+  if (input.fra !== "efter_gratis") return "ugyldig_rabat";
+  if (input.harAbonnement) return "behold_startet";
+  if (input.pakke !== "gratis") return "behold_kun_start";
+  if (!input.velkomst) return "behold_ingen_gratis";
+  return null;
+}
+
+// Forløbet med introrabat i hele måneder (måned 1 = første måned af
+// abonnementet): gratisMaaneder er Starts gratis måned (0 eller 1), rabatten
+// gælder måned rabatFra-rabatTil, og fuld pris fra fuldFra.
+export function introForloeb(input: { maaneder: number; beholdGratis: boolean }): {
+  gratisMaaneder: 0 | 1;
+  rabatFra: number;
+  rabatTil: number;
+  fuldFra: number;
+} {
+  const n = Math.max(1, Math.trunc(input.maaneder));
+  const gratis = input.beholdGratis ? 1 : 0;
+  return { gratisMaaneder: gratis, rabatFra: 1 + gratis, rabatTil: n + gratis, fuldFra: n + gratis + 1 };
 }
 
 // Rabatten på første betaling ved et skift op fra Starts gratis velkomstmåned

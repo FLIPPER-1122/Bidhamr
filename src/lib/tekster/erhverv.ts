@@ -479,6 +479,16 @@ export const ADMIN_ERHVERV = {
     introOpsummering: (procent: number, maaneder: number) =>
       `${procent} % rabat i ${maaneder === 1 ? "måned 1" : `måned 1-${maaneder}`}. Ingen gratis måned. Så betaler firmaet pakkens almindelige pris.`,
     udenIntro: "Start: første måned gratis. Butik og Pro: første måned til halv pris. Derefter betaler firmaet pakkens almindelige pris.",
+    // "Behold Starts gratis måned + introrabat" (20261102450000): særaftale,
+    // aldrig standard - kun Start.
+    beholdSlaa: "Behold Starts gratis måned + introrabat",
+    beholdHjaelp:
+      "Særaftale: firmaet får første måned gratis og derefter introrabatten fra første betaling (fx måned 2-7). Kun på Start. Kræver en begrundelse, som gemmes i loggen.",
+    beholdBegrundelse: "Begrundelse for særaftalen (5-500 tegn)",
+    beholdPladsholder: "Fx Filip har aftalt det med firmaet i telefonen",
+    beholdUgyldig: "Skriv en begrundelse på 5-500 tegn.",
+    beholdTidligereCvr:
+      "CVR'et har haft et abonnement før, så der er ingen gratis måned at beholde. Giv velkomstrabatten som særaftale nedenfor, eller luk og slå valget fra.",
     // Bekræftelsen: pakke og pris efter reglen for måned 1 (Filip, 27. okt.
     // 2026), fx "Butik – 999 kr./md. + moms. Første måned til halv pris
     // (499,50 kr. + moms). Derefter 999 kr./md. + moms."
@@ -486,15 +496,25 @@ export const ADMIN_ERHVERV = {
     // abonnement før (ingen velkomstrabat), "saeraftale" = velkomstrabat som
     // særaftale. maaned1: pakkens regel ('gratis' = Start, 'halv' = Butik/Pro).
     // En introrabat gælder fra måned 1 i stedet for velkomstrabatten.
+    // intro.beholdGratis: "Behold Starts gratis måned + introrabat" - kun på
+    // Start (maaned1 'gratis') og ikke for et tidligere CVR uden særaftale:
+    // "1 måned gratis, derefter 50 % i 6 måneder (måned 2-7)".
     pakkeOpsummering: (
       pakke: string,
       pris: string | null,
-      intro: { procent: number; maaneder: number; pris: string | null } | null,
+      intro: { procent: number; maaneder: number; pris: string | null; beholdGratis?: boolean } | null,
       gratis: "ny" | "ingen" | "saeraftale" = "ny",
       maaned1: "gratis" | "halv" = "halv",
       halvPris: string | null = null,
     ) => {
       const prisMd = pris ? `${pris}/md. + moms` : "pris ikke sat";
+      if (intro?.beholdGratis && maaned1 === "gratis" && gratis !== "ingen") {
+        const n = intro.maaneder;
+        const mdr = n === 1 ? "1 måned (måned 2)" : `${n} måneder (måned 2-${n + 1})`;
+        const introPris = intro.pris ? `, ${intro.pris}/md. + moms` : "";
+        const saer = gratis === "saeraftale" ? " (særaftale)" : "";
+        return `${pakke} – ${prisMd}. 1 måned gratis${saer}, derefter ${intro.procent} % i ${mdr}${introPris}. Derefter ${prisMd}.`;
+      }
       if (intro) {
         const mdr = intro.maaneder === 1 ? "måned 1" : `måned 1-${intro.maaneder}`;
         const introPris = intro.pris ? ` (${intro.pris}/md. + moms)` : "";
@@ -1234,9 +1254,13 @@ export const FIRMA_ABONNEMENT_MAIL = {
   intro: {
     emne: "I har fået introrabat hos BidHamr",
     overskrift: "I har fået introrabat",
-    tekst: (firmanavn: string, procent: number, maaneder: number, efterGratis: boolean) => [
+    // beholdGratis: "Behold Starts gratis måned + introrabat" (20261102450000) -
+    // første måned gratis, derefter rabatten fra første betaling.
+    tekst: (firmanavn: string, procent: number, maaneder: number, efterGratis: boolean, beholdGratis = false) => [
       `Hej ${firmanavn}.`,
-      `I får ${procent} % rabat på jeres pakke i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}${efterGratis ? " fra jeres første betaling" : ""}.`,
+      beholdGratis
+        ? `Jeres første måned er gratis. Derefter får I ${procent} % rabat på jeres pakke i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`} fra jeres første betaling.`
+        : `I får ${procent} % rabat på jeres pakke i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}${efterGratis ? " fra jeres første betaling" : ""}.`,
       "Rabatten trækkes automatisk fra på jeres regninger. Derefter betaler I pakkens almindelige pris.",
     ],
     fjernetEmne: "Jeres introrabat hos BidHamr er stoppet",
@@ -1299,6 +1323,16 @@ export const ADMIN_FIRMA_ABONNEMENT = {
     ingen: "Firmaet har ingen introrabat.",
     // Særpris og introrabat kan ikke kombineres (Filip, 27. okt. 2026).
     saerprisAktiv: "Firmaet har en særpris. Fjern særprisen først, hvis firmaet skal have introrabat i stedet.",
+    // "Behold Starts gratis måned + introrabat" (20261102450000).
+    satBehold: (procent: number, maaneder: number) =>
+      `Introrabatten er gemt: første måned gratis, derefter ${procent} % i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}. Den kommer på, når firmaet starter abonnementet.`,
+    beholdKunStart: "Den gratis måned kan kun beholdes på Start. Butik og Pro har ingen gratis måned.",
+    beholdStartet:
+      "Firmaet har allerede startet abonnementet. Vælg \"Fra første betaling\" – så gælder rabatten efter en kørende gratis periode.",
+    beholdIngenGratis:
+      "Firmaet har ikke Starts gratis måned til gode (fx fordi CVR'et har haft et abonnement før, eller fordi den gratis måned er brugt).",
+    beholdStraks: "Den gratis måned kan kun beholdes, når rabatten gælder fra første betaling.",
+    beholdMangler: "Valget kan ikke gemmes lige nu, så intet er ændret. Prøv igen senere, eller kontakt en udvikler.",
   },
   saerpris: {
     ugyldig: "Skriv prisen i hele kroner ekskl. moms (mindst 1 kr.).",
@@ -1383,8 +1417,11 @@ export const FIRMA_ABONNEMENT = {
   dinPris: "Din pris",
   saerpris: (pris: string, normal: string) =>
     `Du har en aftalt pris: ${pris} om måneden + moms. Pakkens almindelige pris er ${normal} om måneden + moms.`,
-  introPlanlagt: (procent: number, maaneder: number, efterGratis: boolean) =>
-    `Du får ${procent} % rabat i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}${efterGratis ? " fra din første betaling" : ""}. Derefter betaler du pakkens almindelige pris.`,
+  // beholdGratis: "Behold Starts gratis måned + introrabat" (20261102450000).
+  introPlanlagt: (procent: number, maaneder: number, efterGratis: boolean, beholdGratis = false) =>
+    beholdGratis
+      ? `Efter din gratis måned får du ${procent} % rabat i ${maaneder === 1 ? "1 måned (måned 2)" : `${maaneder} måneder (måned 2-${maaneder + 1})`}. Derefter betaler du pakkens almindelige pris.`
+      : `Du får ${procent} % rabat i ${maaneder === 1 ? "1 måned" : `${maaneder} måneder`}${efterGratis ? " fra din første betaling" : ""}. Derefter betaler du pakkens almindelige pris.`,
   // Butik/Pro: første måned til halv pris (Filip, 27. okt. 2026).
   halvPrisIDag: (ekskl: string, inkl: string) => `I dag betaler du ${ekskl} + moms (${inkl} i alt) for din første måned`,
   halvPrisTekst: (fuld: string) => `Din første måned koster halv pris. Fra næste måned betaler du ${fuld}.`,

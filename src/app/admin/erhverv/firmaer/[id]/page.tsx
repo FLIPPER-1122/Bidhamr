@@ -338,6 +338,8 @@ export default async function FirmaSide({
           gratisTil: gratisTil ? dato(gratisTil) : null,
           gratisVedStart: f.gratis_maaneder_ved_start ?? 0,
           intro,
+          // "Behold Starts gratis måned + introrabat" kan vælges (20261102450000).
+          beholdGratisMulig: f.behold_gratis_mulig === true,
           // Planlagt eller kører: så kan der ikke gives særpris (Filip, 27. okt. 2026).
           introAktiv: !!intro && introNu !== "slut",
           ekstraAuktioner: kvote?.ekstra ?? 0,
@@ -432,7 +434,7 @@ export default async function FirmaSide({
                   T.abonnement.introrabat,
                   intro && introNu ? (
                     <>
-                      {T.abonnement.introTekst(intro.procent, intro.maaneder, intro.fra)}
+                      {T.abonnement.introTekst(intro.procent, intro.maaneder, intro.fra, intro.behold_gratis === true)}
                       <span className="block font-normal text-tekst-daempet">
                         {T.abonnement.introStatus(introNu, intro.til ? dato(intro.til) : null)}
                       </span>

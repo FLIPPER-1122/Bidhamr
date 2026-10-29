@@ -169,6 +169,10 @@ const DB_FEJL: Record<string, string> = {
   // Særpris og introrabat kan ikke kombineres (20261102050000).
   intro_aktiv: T.saerpris.introAktiv,
   saerpris_aktiv: T.intro.saerprisAktiv,
+  // "Behold Starts gratis måned + introrabat" (20261102450000).
+  behold_kun_start: T.intro.beholdKunStart,
+  behold_startet: T.intro.beholdStartet,
+  behold_ingen_gratis: T.intro.beholdIngenGratis,
 };
 
 async function rpc(admin: Admin, navn: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -282,6 +286,11 @@ export async function givFirmaGratisPeriode(input: {
 
 // X % i N måneder. fra 'efter_gratis' (standard): N betalte måneder efter den
 // gratis periode. 'straks': N måneder fra nu (en gratis periode bruger af dem).
+// beholdGratis: "Behold Starts gratis måned + introrabat" (20261102450000) -
+// staffs bevidste valg, aldrig standard. Kun Start, før firmaet har betalt i
+// Checkout, og altid 'efter_gratis': Checkout beholder den gratis måned, og
+// rabatten gælder de N betalte måneder efter den (måned 2-7 ved 6 måneder).
+// Databasen afviser det samme (behold_*-koderne).
 export async function saetFirmaIntrorabat(input: {
   firmaId: string;
   procent: number;
@@ -289,11 +298,14 @@ export async function saetFirmaIntrorabat(input: {
   fra?: IntroFra;
   begrundelse: string;
   klikId?: string | null;
+  beholdGratis?: boolean;
 }): Promise<Svar> {
   return koer("saetFirmaIntrorabat", async () => {
     const { admin, userId } = await adgang();
     const firmaId = tjekUuid(input?.firmaId);
     const { procent, maaneder } = input;
+    const behold = input.beholdGratis === true;
+    if (behold && input.fra === "straks") throw new BrugerFejl(T.intro.beholdStraks);
     const fra: IntroFra = input.fra === "straks" ? "straks" : "efter_gratis";
     if (
       !Number.isInteger(procent) || procent < INTRO_GRAENSER.procentMin || procent > INTRO_GRAENSER.procentMaks ||
@@ -326,10 +338,21 @@ export async function saetFirmaIntrorabat(input: {
             p_maaneder: maaneder,
             p_fra: fra,
             p_begrundelse: begrundelse,
+            // Kun sendt, når valget er slået til (så kald uden det virker mod
+            // en database uden 20261102450000).
+            ...(behold ? { p_behold_gratis: true } : {}),
           },
           klik,
         ),
-      ),
+      ).catch((err: unknown) => {
+        // Databasen kender ikke valget endnu (20261102450000 er ikke kørt):
+        // intet er gemt - afvis med en dansk besked i stedet for at gemme
+        // introrabatten uden den gratis måned.
+        if (behold && !(err instanceof BrugerFejl) && err instanceof Error && /^erhverv_firma_intro_gem: .*schema cache/i.test(err.message)) {
+          throw new BrugerFejl(T.intro.beholdMangler);
+        }
+        throw err;
+      }),
     );
     if (!gemt.ok) throw new BrugerFejl(PAKKESKIFT_I_GANG);
     const stripeSvar = await introTilStripe(firmaId);
@@ -337,7 +360,7 @@ export async function saetFirmaIntrorabat(input: {
     if (stripeSvar.status === "ingen_stripe") await lukAabneCheckout(firmaId);
     let besked: string;
     if (stripeSvar.status === "ok") besked = T.intro.sat(procent, maaneder, true);
-    else if (stripeSvar.status === "ingen_stripe") besked = T.intro.sat(procent, maaneder, false);
+    else if (stripeSvar.status === "ingen_stripe") besked = behold ? T.intro.satBehold(procent, maaneder) : T.intro.sat(procent, maaneder, false);
     else {
       if (stripeSvar.status === "fejl") {
         await logDriftFejl({ kilde: "action", hvor: "adminErhvervAbonnement.intro", fejl: `Firma ${firmaId}: ${stripeSvar.fejl}`, brugerId: userId });
@@ -346,7 +369,7 @@ export async function saetFirmaIntrorabat(input: {
     }
     const sendt = await sendMail(
       f,
-      { emne: M.intro.emne, overskrift: M.intro.overskrift, afsnit: M.intro.tekst(f.firmanavn, procent, maaneder, fra === "efter_gratis") },
+      { emne: M.intro.emne, overskrift: M.intro.overskrift, afsnit: M.intro.tekst(f.firmanavn, procent, maaneder, fra === "efter_gratis", behold) },
       userId,
     );
     revalidatePath("/admin/erhverv");

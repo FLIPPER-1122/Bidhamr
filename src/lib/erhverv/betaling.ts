@@ -599,6 +599,10 @@ async function maaned1For(f: FirmaRaekke): Promise<Maaned1> {
     velkomst: await faarGratisPeriode(f),
     introGaelder: introGaelder(f),
     saerprisGaelder: saerprisGaelder(f),
+    // "Behold Starts gratis måned + introrabat" (intro_behold_gratis) kommer
+    // med 20261102450000, som kræver 20261102070000 - findes erhverv_maaned1
+    // ikke, findes valget heller ikke.
+    introBeholdGratis: false,
   });
 }
 
@@ -664,7 +668,10 @@ export async function startBetaling(brugerId: string, base: string): Promise<Lin
   // trial_end); Butik og Pro betaler 50 % af første måned nu (engangskupon) og
   // fuld pris fra måned 2. Kun første gang - et firma, der starter igen efter
   // en mislykket betaling, får ingen ny fordel. En introrabat gælder fra
-  // måned 1 i stedet (ingen velkomstfordel oveni). Gratis måneder, staff har
+  // måned 1 i stedet (ingen velkomstfordel oveni) - undtagen når staff har
+  // valgt "Behold Starts gratis måned + introrabat" (20261102450000): så er
+  // maaned1 'gratis' (1 gratis måned, ingen gratis_saeraftale), og
+  // introkuponen nedenfor gælder fra første betaling. Gratis måneder, staff har
   // givet (proeve_ekstra_ventende - en særaftale), lægges på (metadata
   // gratis_ekstra; trækkes fra i databasen, når Stripe har startet
   // abonnementet); for Butik/Pro erstatter de 50 %-måneden (checkoutPlan).
