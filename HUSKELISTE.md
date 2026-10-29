@@ -214,6 +214,10 @@ Svar til Claude Code, når du har besluttet dig, fx:
 - Backfill i 390000 slår triggeren fra. Brug flaget pr. række i stedet, hvis den skal køres igen manuelt.
 - ~~"Send mailen igen": lås rækken, så to samtidige tryk ikke giver to mails.~~ (rettet i `20261102410000_huskeliste_oprydning.sql`, 28. okt.)
 
+## Introrabat ved skift op – småt fra review (29. okt. 2026)
+- `spejlIntroEfterVelkomstSkift` (src/lib/erhverv/betaling.ts): status 'planlagt' med aftalens egen nøgle fra Checkout, men en fremmed BidHamr-introkupon på abonnementet, returnerer stille. Send en drift-alarm i det tilfælde, og tilføj samme kupon-tjek i `anvendIntro`s Checkout-gren (den stoler i dag kun på procenten).
+- Visningen før skift sammenlignes med serveren (`intro:N:skift`/`intro:N`). En gammel side, der sender `intro:N`, når kuponen sættes på igen, får 409 `pris_aendret` og skal hente siden igen.
+
 ## BidHamr-bot og App Store (review 28. okt. 2026)
 - ~~Botten må ALDRIG sige "køb point på bidhamr.dk" eller nævne BidHamrs pointpriser i appen (Apple 3.1.1/3.1.3). Tilføj det i systemprompten (`src/lib/bot/viden.ts`), og et filter, når samtalen kommer fra appen (`kilde = 'app'`).~~ (rettet 28. okt.: systemprompt + filter i `src/lib/bot/filter.ts`)
 
