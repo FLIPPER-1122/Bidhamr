@@ -1289,7 +1289,8 @@ describe("regel for måned 1 (20261102070000)", () => {
       await spol(t0 + 3600);
       await spejlAlt();
       expect((await firma()).intro_status).toBe("aktiv");
-      for (const m of [2, 4, 6, 7]) await spol(plusMaaneder(t0, m) + 1800);
+      // Én måned ad gangen: Stripe tillader højst to intervaller pr. spoling.
+      for (let m = 1; m <= 7; m++) await spol(plusMaaneder(t0, m) + 1800);
       const h = oere / 2;
       expect(await beloeb()).toEqual([h, h, h, h, h, h, oere, oere]);
       await db.from("firmaer").update({ intro_procent: null, intro_maaneder: null, intro_fra: null, intro_status: null, intro_noegle: null, intro_coupon_id: null, intro_til: null }).eq("id", FIRMA);
@@ -1297,7 +1298,17 @@ describe("regel for måned 1 (20261102070000)", () => {
   }
 
   it("M5. tidligere CVR: ingen fordel uden særaftale; med særaftale pakkens regel; et CVR-skift bagefter kan ikke omgå reglen", async () => {
-    await nulstilFirma(BUTIK, { proeve_maaneder: 0 });
+    // Ingen introrabat fra en tidligere test (M4 rydder kun op, når den består).
+    await nulstilFirma(BUTIK, {
+      proeve_maaneder: 0,
+      intro_procent: null,
+      intro_maaneder: null,
+      intro_fra: null,
+      intro_status: null,
+      intro_noegle: null,
+      intro_coupon_id: null,
+      intro_til: null,
+    });
     await nytUr("BidHamr maaned1 tidligere-cvr");
     expect(await rpc("erhverv_maaned1", { p_firma: FIRMA })).toBe("ingen");
     let s = await nySession();

@@ -356,6 +356,11 @@ export function velkomstSkiftUdfald(input: {
   };
   // Dansk dato for discount.end (fx langDato).
   dato: (sek: number) => string;
+  // "Behold Starts gratis måned + introrabat" (firmaer.intro_behold_gratis):
+  // ved skiftet sættes introrabatten på igen fra skiftet (N betalte måneder i
+  // alt - Filip, 29. okt. 2026), så den nuværende slutdato gælder ikke. til er
+  // null (teksten siger "i N måneder").
+  beholdGratis?: boolean;
 }): VelkomstSkiftUdfald {
   const { aftale, abonnement } = input;
   if (abonnement.andre > 0) {
@@ -369,7 +374,7 @@ export function velkomstSkiftUdfald(input: {
     udfald: "skift",
     rabat: velkomstSkiftRabat({
       saerprisGaelder: false,
-      intro: { procent, til: k.slutSek != null ? input.dato(k.slutSek) : null, maaneder },
+      intro: { procent, til: !input.beholdGratis && k.slutSek != null ? input.dato(k.slutSek) : null, maaneder },
     }),
     velkomstKupon: false,
   });

@@ -16,6 +16,8 @@ import {
   maaned1Regel,
   oereMedRabat,
   plusMaaneder,
+  velkomstSkiftUdfald,
+  velkomstVisning,
 } from "@/lib/erhverv/abonnementRegler";
 import { ADMIN_ERHVERV, FIRMA_ABONNEMENT, FIRMA_ABONNEMENT_MAIL } from "@/lib/tekster/erhverv";
 import { ADMIN_FIRMA } from "@/lib/tekster/adminFirma";
@@ -238,5 +240,46 @@ describe("tekster", () => {
     expect(I.beholdHjaelp(50, 6)).toContain("måned 2-7");
     expect(I.straksAdvarsel).toContain("bruges en af rabatmånederne i den gratis måned");
     expect(I.nu(50, 6, "efter_gratis", null, true)).toBe("Nu: første måned gratis, derefter 50 % i 6 måneder fra første betaling");
+  });
+});
+
+// Skift op i den gratis måned med valget (Filip, 29. okt. 2026): rabatten
+// sættes på igen fra skiftet (N betalte måneder i alt), så siden viser "i N
+// måneder" og ikke den gamle slutdato. Uden valget: slutdatoen som før.
+describe("skift op i den gratis måned med valget", () => {
+  const input = (beholdGratis: boolean) => ({
+    saerprisGaelder: false,
+    aftale: { status: "aktiv", procent: 50, maaneder: 6, kuponId: "bidhamr_intro_50_6", noegle: "n", gaelder: true },
+    abonnement: {
+      introer: [{ kuponId: "bidhamr_intro_50_6", procent: 50, slutSek: sek("2027-04-29T10:00:00Z") }],
+      andre: 0,
+      introNoegle: "n",
+    },
+    dato: () => "29. april 2027",
+    beholdGratis,
+  });
+
+  it("med valget: til er null, samme visning (intro:50)", () => {
+    const u = velkomstSkiftUdfald(input(true));
+    expect(u).toEqual({ udfald: "skift", rabat: { slags: "intro", procent: 50, til: null, maaneder: 6 }, velkomstKupon: false });
+    expect(velkomstVisning(u)).toBe("intro:50");
+    if (u.udfald === "skift") {
+      expect(FIRMA_ABONNEMENT.bekraeftOpgraderFraGratisMaaned("Butik", "499,50 kr. + moms (624,38 kr.)", u.rabat)).toContain(
+        "(50 % rabat i 6 måneder). Derefter betaler du pakkens almindelige pris.",
+      );
+    }
+  });
+
+  it("uden valget: rabattens slutdato fra Stripe", () => {
+    expect(velkomstSkiftUdfald(input(false))).toMatchObject({ udfald: "skift", rabat: { slags: "intro", til: "29. april 2027" } });
+  });
+
+  it("K = N, når første faktura er nu (trial_end 'now')", () => {
+    const nu = sek("2026-11-08T12:00:00Z");
+    expect(introKuponMaaneder({ nuSek: nu, naesteFakturaSek: nu, maaneder: 6, fra: "efter_gratis" })).toBe(6);
+  });
+
+  it("admin: advarsel, når valget forsvinder", () => {
+    expect(ADMIN_FIRMA.hurtig.intro.beholdMistesAdvarsel).toContain("forsvinder den gratis måned");
   });
 });

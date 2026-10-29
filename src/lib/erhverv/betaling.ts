@@ -587,6 +587,21 @@ async function pakkensMaaned1(pakkeId: string): Promise<PakkeMaaned1> {
   return data?.maaned1 === "gratis" ? "gratis" : "halv";
 }
 
+// "Behold Starts gratis måned + introrabat" (firmaer.intro_behold_gratis,
+// 20261102450000). 42703: migrationen er ikke kørt - så findes valget ikke.
+async function introBeholdGratis(firmaId: string): Promise<boolean> {
+  const { data, error } = await createAdminClient()
+    .from("firmaer")
+    .select("intro_behold_gratis")
+    .eq("id", firmaId)
+    .maybeSingle<{ intro_behold_gratis: boolean | null }>();
+  if (error) {
+    if (error.code === "42703") return false;
+    throw new Error(`firmaer.intro_behold_gratis: ${error.message}`);
+  }
+  return data?.intro_behold_gratis === true;
+}
+
 // Firmaets velkomstfordel i måned 1, når abonnementet starter
 // (erhverv_maaned1 - ÉN definition i databasen). PGRST202: migrationen
 // 20261102070000 er ikke kørt - samme regel her.
@@ -859,7 +874,7 @@ async function velkomstStatus(f: FirmaRaekke): Promise<VelkomstSkiftUdfald | nul
   if (!stripeTilgaengelig() || !f.stripe_subscription_id) return null;
   const sub = await hentAbonnement(f.stripe_subscription_id);
   if (sub.status !== "trialing" || !erKunVelkomstGratis(sub.metadata)) return null;
-  const udfald = velkomstUdfald(f, sub);
+  const udfald = velkomstUdfald(f, sub, await introBeholdGratis(f.id));
   if (udfald.udfald === "ret_rabat") await meldRetRabat(f, sub.id, udfald.aarsag);
   return udfald;
 }
@@ -969,7 +984,7 @@ export async function velkomstSkiftForPakke(brugerId: string, pakkeId: string): 
 
 // velkomstSkiftUdfald for firmaet og abonnementet (hentAbonnement: med
 // discounts.source.coupon).
-function velkomstUdfald(f: FirmaRaekke, sub: Stripe.Subscription): VelkomstSkiftUdfald {
+function velkomstUdfald(f: FirmaRaekke, sub: Stripe.Subscription, beholdGratis = false): VelkomstSkiftUdfald {
   const introer = sub.discounts.filter(erIntroRabat).map((d) => {
     const k = d.source.coupon as Stripe.Coupon;
     return { kuponId: k.id, procent: k.percent_off ?? null, slutSek: d.end ?? null };
@@ -990,6 +1005,7 @@ function velkomstUdfald(f: FirmaRaekke, sub: Stripe.Subscription): VelkomstSkift
       introNoegle: sub.metadata?.intro_noegle || null,
     },
     dato: (sek) => langDato(new Date(sek * 1000).toISOString()),
+    beholdGratis,
   });
 }
 
@@ -1462,7 +1478,8 @@ async function opgraderFraVelkomst(
       );
     }
     const foer = await hentAbonnement(sub.id);
-    const udfald = velkomstUdfald(f, foer);
+    const behold = await introBeholdGratis(f.id);
+    const udfald = velkomstUdfald(f, foer, behold);
     if (udfald.udfald === "venter") {
       // Introrabatten venter (anvendIntro og cron'en venter på en plan eller
       // en ventende ændring): ryd dem først - ellers kunne den vente, til den
@@ -1508,7 +1525,12 @@ async function opgraderFraVelkomst(
     // (fx en introrabat, som staff har gemt midt i skiftet): firmaet hentes
     // igen, så værnet bruger både det friske abonnement og den friske aftale.
     const fFrisk = await hentFirma("id", f.id);
-    if (!fFrisk || velkomstVisning(velkomstUdfald(fFrisk, frisk)) !== velkomstVisning(udfald)) {
+    const beholdFrisk = await introBeholdGratis(f.id);
+    if (
+      !fFrisk ||
+      beholdFrisk !== behold ||
+      velkomstVisning(velkomstUdfald(fFrisk, frisk, beholdFrisk)) !== velkomstVisning(udfald)
+    ) {
       throw new SkiftAfvist(
         FIRMA_ABONNEMENT.skiftPrisAendret,
         `Firma ${f.id}: rabatten på ${sub.id} ændrede sig under skiftet`,
@@ -1519,6 +1541,31 @@ async function opgraderFraVelkomst(
     // introrabat eller en særpris (særprisen udelukker velkomstfordelen og
     // bortfalder ved pakkeskiftet; Filip, 27. okt. 2026).
     const kupon = udfald.velkomstKupon ? await sikrVelkomstKupon() : null;
+    // "Behold Starts gratis måned + introrabat" (Filip, 29. okt. 2026): den
+    // gratis måned slutter, og introrabatten følger med til den nye pakke - i
+    // alt N betalte måneder regnet fra skiftet (ikke fra den gamle trial_end,
+    // som ville give N+1 med rabat). Introkuponen sættes på igen i SAMME kald
+    // som trial_end 'now': første faktura er nu, så K = N (introKuponMaaneder),
+    // og skift-kuponen (eget kupon-id, sikrIntroKupon) erstatter den kørende
+    // rabat med en ny, der starter nu. Uden valget bliver den kørende
+    // introrabat liggende som før.
+    let introKupon: string | null = null;
+    if (behold && udfald.rabat.slags === "intro") {
+      if (!fFrisk.intro_procent || !fFrisk.intro_maaneder) {
+        throw new Error(`Firma ${f.id}: introrabatten mangler procent eller måneder`);
+      }
+      const nuSek = await stripeNu(frisk);
+      const k = introKuponMaaneder({ nuSek, naesteFakturaSek: nuSek, maaneder: fFrisk.intro_maaneder, fra: "efter_gratis" });
+      if (k == null) throw new Error(`Firma ${f.id}: introrabatten kan ikke regnes ud fra skiftet`);
+      introKupon = await sikrIntroKupon(fFrisk.intro_procent, k, true);
+      // Værn: kuponen skal være en anden end den kørende - ellers beholder
+      // Stripe den gamle rabat og dens slutdato.
+      if (foer.discounts.some((d) => erIntroRabat(d) && (d.source.coupon as Stripe.Coupon).id === introKupon)) {
+        throw new Error(`Firma ${f.id}: introkuponen ${introKupon} ligger allerede på ${sub.id}`);
+      }
+    }
+    if (kupon && introKupon) throw new Error(`Firma ${f.id}: introrabat og velkomstrabat i samme skift`);
+    const nyKupon = kupon ?? introKupon;
 
     // Skiftets id på abonnementet (fakturaen får det med i
     // parent.subscription_details.metadata), så webhooken altid finder skiftet.
@@ -1535,7 +1582,7 @@ async function opgraderFraVelkomst(
           items: [{ id: item.id, price: prisId, quantity: 1 }],
           trial_end: "now",
           proration_behavior: "none",
-          ...(kupon ? { discounts: [{ coupon: kupon }] } : {}),
+          ...(nyKupon ? { discounts: [{ coupon: nyKupon }] } : {}),
           payment_behavior: "pending_if_incomplete",
           expand: ["latest_invoice"],
         },
@@ -2865,7 +2912,39 @@ async function betaltVelkomstOpgradering(f: FirmaRaekke, faktura: Stripe.Invoice
     throw new Error(`firma_pakkeskift_uden_betaling svarede ${String(svar.kode)}`);
   }
   await rydSkiftMetadata(sub.id, skift.id);
+  await spejlIntroEfterVelkomstSkift(f.id, sub.id);
   return `velkomst_opgradering:${svar.kode}`;
+}
+
+// Efter et betalt skift op fra den gratis måned med "Behold Starts gratis
+// måned + introrabat": introrabatten blev sat på igen fra skiftet
+// (opgraderFraVelkomst), så databasen spejler Stripes nye kupon og slutdato
+// (discount.end). Kun med valget - uden det er rabatten uændret. Kaster ikke
+// (skiftet er gennemført); fejler spejlingen, får staff en drift-alarm.
+async function spejlIntroEfterVelkomstSkift(firmaId: string, subId: string): Promise<void> {
+  try {
+    const f = await hentFirma("id", firmaId);
+    if (!f?.intro_noegle || !f.intro_procent || f.intro_status == null) return;
+    if (!(await introBeholdGratis(firmaId))) return;
+    const sub = await hentAbonnement(subId);
+    if (sub.pending_update) return;
+    const rabat = sub.discounts.find(erIntroRabat);
+    const kupon = rabat && typeof rabat.source.coupon !== "string" ? rabat.source.coupon : null;
+    if (!rabat || !kupon || kupon.percent_off !== f.intro_procent) return;
+    await rpc("firma_intro_spejl", {
+      p_firma: f.id,
+      p_noegle: f.intro_noegle,
+      p_status: "aktiv",
+      p_coupon: kupon.id,
+      p_til: tid(rabat.end ?? null),
+    });
+  } catch (err) {
+    await logDriftFejl({
+      kilde: "webhook",
+      hvor: "erhverv/velkomst-intro-spejl",
+      fejl: `Firma ${firmaId} (${subId}): introrabatten efter skiftet op fra den gratis måned kunne ikke spejles - tjek introrabattens slutdato i admin: ${fejltekst(err)}`,
+    });
+  }
 }
 
 async function betaltOpgradering(f: FirmaRaekke, faktura: Stripe.Invoice): Promise<string> {
@@ -3035,8 +3114,13 @@ async function hentAbonnement(subId: string): Promise<Stripe.Subscription> {
 
 // Kupon "Introrabat X %" med duration 'repeating' i K måneder (genbruges af
 // alle firmaer med samme procent og varighed - en kupon er en skabelon).
-async function sikrIntroKupon(procent: number, maaneder: number): Promise<string> {
-  const kuponId = `bidhamr_intro_${procent}_${maaneder}`;
+// skift: varianten til et skift op fra den gratis måned med "Behold Starts
+// gratis måned + introrabat" (opgraderFraVelkomst) - samme rabat, men et
+// andet kupon-id, for Stripe beholder den eksisterende rabat (samme start og
+// slutdato), når den samme kupon sendes igen (testet med test clock 29. okt.
+// 2026). Et nyt kupon-id giver en ny rabat med start ved skiftet.
+async function sikrIntroKupon(procent: number, maaneder: number, skift = false): Promise<string> {
+  const kuponId = `bidhamr_intro_${procent}_${maaneder}${skift ? "_skift" : ""}`;
   const s = stripe();
   try {
     const k = await s.coupons.retrieve(kuponId);

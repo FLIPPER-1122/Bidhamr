@@ -45,6 +45,7 @@ import { ADMIN_ERHVERV as A, ADMIN_ERHVERV_BETALING as AB, ADMIN_ERHVERV_EKSTRA 
 import { ADMIN_FIRMA as T } from "@/lib/tekster/adminFirma";
 import { KLAGE_ADMIN } from "@/lib/tekster/erhvervKlager";
 import { ABONNEMENT_STATUS_NAVN } from "@/lib/erhverv/regler";
+import { START_PAKKE_ID } from "@/lib/erhverv/abonnementRegler";
 import { KLAGE_FORSLAG_ANTAL, KLAGE_FORSLAG_MAANEDER } from "@/lib/erhverv/klager";
 import { kr, krFraOere, visTelefon } from "@/lib/erhverv/visning";
 import { firmaTitel } from "@/lib/admin/erhvervTitel";
@@ -131,7 +132,20 @@ export default async function FirmaSide({
   const pakkePris = f.pakke?.maanedspris ?? null;
   const pris = f.pris ?? pakkePris;
   const kvote = f.kvote ?? null;
-  const intro = f.introrabat ?? null;
+  const introRaa = f.introrabat ?? null;
+  // "Første måned gratis, derefter ..." (intro.behold_gratis) vises kun, når
+  // den gratis måned stadig hører til aftalen: pakken er Start (gratis i måned
+  // 1), eller firmaets måned 1 er 'gratis'. Efter et skift op til Butik/Pro er
+  // den gratis måned slut, og rabatten gælder N måneder fra skiftet (Filip,
+  // 29. okt. 2026).
+  const intro = introRaa
+    ? {
+        ...introRaa,
+        behold_gratis:
+          introRaa.behold_gratis === true &&
+          (f.pakke_id === START_PAKKE_ID || f.pakke?.maaned1 === "gratis" || f.maaned1 === "gratis"),
+      }
+    : null;
   // intro_status kan ikke bruges (står altid 'aktiv') - intro_til afgør det.
   const introNu = intro ? introTilstand(intro.til, nu) : null;
   const gratisTil = f.gratis_til && new Date(f.gratis_til).getTime() > nu ? f.gratis_til : null;
