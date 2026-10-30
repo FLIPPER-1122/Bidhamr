@@ -153,8 +153,9 @@ const hentForsideAuktioner = cache(async () => {
 });
 
 // Hero, tryghed, kategorier, "Sådan virker det" og erhverv afhænger ikke af
-// databasen og sendes med det samme - kun auktionslisterne venter på
-// Supabase (Suspense). Så kan browseren hente hero-billedet (LCP) straks.
+// databasen og sendes med det samme - kun auktionslisterne og heroens højre
+// side (Ugens butik eller billedet) venter på Supabase (Suspense). Så kan
+// browseren tegne heroens grønne panel (LCP-kandidat) straks.
 //
 // Forside() er bevidst synkron (ingen await): så suspenderer den ikke, og
 // loading.tsx' skelet vises ikke først ved en almindelig sidevisning - ellers
@@ -292,9 +293,10 @@ function Hero() {
       </div>
 
       {/* Ugens butik (betalt annonce) erstatter billedet, når et firma har
-          ugen. Billedet sendes med det samme (LCP), og Ugens butik byttes
-          ind, når databasen svarer. */}
-      <Suspense fallback={<HeroBillede />}>
+          ugen. Indtil databasen svarer, står et neutralt skelet i Ugens
+          butiks plads - ikke billedet, for så blinker det, når Ugens butik
+          byttes ind. Billedet vises kun, når ingen har ugen. */}
+      <Suspense fallback={<UgensButikSkelet />}>
         <HeroHoejre />
       </Suspense>
     </section>
@@ -308,14 +310,44 @@ function HeroBillede() {
         src={heroBillede}
         alt=""
         fill
-        // LCP-billedet på mobil: hentes med det samme og med høj
-        // prioritet (anbefalet frem for preload i Next.js 16).
+        // Vises kun, når ingen har Ugens butik - så er det LCP-billedet på
+        // mobil (øverst). Det kommer med den streamede del af siden, så det
+        // hentes med det samme og med høj prioritet, når det dukker op.
         loading="eager"
         fetchPriority="high"
         placeholder="blur"
         sizes="(min-width: 1280px) 600px, (min-width: 768px) 48vw, 100vw"
         className="object-cover"
       />
+    </div>
+  );
+}
+
+// Pladsholder for Ugens butik, mens forside_ugens_butik svarer: samme flade,
+// højde og placering som UgensButikKarrusel (også max-md:order-first), så
+// intet hopper, når karrusellen byttes ind. Ingen tekst; animate-pulse slås
+// fra ved prefers-reduced-motion (globals.css).
+function UgensButikSkelet() {
+  return (
+    <div
+      aria-hidden="true"
+      className="flex h-[440px] min-w-0 flex-col bg-groen-mork max-md:order-first sm:h-[480px] md:h-auto md:flex-1"
+    >
+      <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-3.5 sm:px-6 sm:pt-6">
+        <div className="min-w-0 flex-1">
+          <div className="h-[22px] w-32 animate-pulse bg-white/15" />
+          <div className="mt-2.5 h-[30px] w-3/5 animate-pulse bg-white/15 sm:h-[36px]" />
+        </div>
+        <div className="h-11 w-28 shrink-0 animate-pulse rounded-md bg-white/15" />
+      </div>
+      <div className="mx-[3px] min-h-0 flex-1 animate-pulse bg-white/10" />
+      <div className="flex justify-center gap-2 py-3">
+        {Array.from({ length: 4 }, (_, i) => (
+          <span key={i} className="flex h-11 w-[26px] items-center">
+            <span className="block h-1 w-full bg-white/20" />
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
